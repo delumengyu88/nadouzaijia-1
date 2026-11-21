@@ -76,22 +76,30 @@ class ScopeLabel:
 
 
 class PlatformLabel:
-    """Display a platform with `PlatformNames`. Zero or several standards stay a hit."""
+    """Province+operator in 平台, network and subtype tags in 子类型."""
 
     @staticmethod
-    def display(network: str | None, platform: str | None) -> str:
-        resolved = PlatformNames.normalize(platform)
+    def cells(task: Task | None) -> tuple[str, str]:
+        raw = task.platform_name if task is not None else None
+        resolved = PlatformNames.normalize(raw)
         if resolved.unrecognized or not resolved.name:
-            return PlatformNames.UNRECOGNIZED
+            return PlatformNames.UNRECOGNIZED, ""
+        tags: list[str] = []
+        network = task.network_type if task is not None else None
         if network:
-            return f"{network} · {resolved.name}"
-        return resolved.name
+            tags.append(network)
+        subtype = resolved.subtype
+        if subtype is None and task is not None:
+            subtype = task.platform_subtype
+        if subtype and subtype not in tags:
+            tags.append(subtype)
+        return resolved.name, " ".join(tags)
 
 
 class HitColumns:
     """Hit-sheet columns. 命中类型 is only 确认命中, so it is omitted when uniform."""
 
-    LEAD = ("平台", "节目类型", "上传节目名", "匹配节目名")
+    LEAD = ("平台", "子类型", "节目类型", "上传节目名", "匹配节目名")
     TYPE = "命中类型"
     TAIL = ("检测日期", "命中画面截图")
     CONFIRMED = "确认命中"
@@ -150,6 +158,7 @@ class ExportHeader:
 @dataclass(frozen=True)
 class HitRow:
     platform: str
+    subtype: str
     program_type: str
     uploaded_name: str
     matched_name: str
@@ -355,7 +364,8 @@ class HitWorkbook:
             if hit.image:
                 self._embed(sheet, hit, row, len(columns))
         widths = {
-            "平台": 24,
+            "平台": 18,
+            "子类型": 14,
             "节目类型": 12,
             "上传节目名": 18,
             "匹配节目名": 18,
@@ -372,6 +382,7 @@ class HitWorkbook:
     def _values(hit: HitRow, columns: tuple[str, ...]) -> list[str | None]:
         fields = {
             "平台": hit.platform,
+            "子类型": hit.subtype or None,
             "节目类型": hit.program_type,
             "上传节目名": hit.uploaded_name,
             "匹配节目名": hit.matched_name,
@@ -578,10 +589,10 @@ class QueryExport:
         age = RecordAge.days(when, self.now)
         decision = EntitlementPolicy.decide(age, grants)
         prepared = self._frame(decision.thumbnail, record.id, user_id)
-        platform_raw = task.platform_name if task is not None else None
-        network = task.network_type if task is not None else None
+        platform, subtype = PlatformLabel.cells(task)
         return HitRow(
-            platform=PlatformLabel.display(network, platform_raw),
+            platform=platform,
+            subtype=subtype,
             program_type=item.program_type or "",
             uploaded_name=item.uploaded_name,
             matched_name=canonical,

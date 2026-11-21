@@ -152,11 +152,11 @@ Header block, then the columns. There is no 客户 field.
 | 查询范围 | `{n} 个节目 · 已收录平台 · ≥30 天记录` for VIP, `≥90 天记录` for 普通. `n` is the number of programs on the query. |
 | 生成日期 | Beijing calendar date `YYYY-MM-DD` of the export clock |
 
-Columns, in order: 平台, 节目类型, 上传节目名, 匹配节目名, 检测日期, 命中画面截图.
+Columns, in order: 平台, 子类型, 节目类型, 上传节目名, 匹配节目名, 检测日期, 命中画面截图.
 
 There is no 匹配方式 column, no yellow alias fill, and no 「名称相近，请核对」 note. An `alias` resolution is a confirmed hit through the admin alias table, and it uses the same columns as `exact` or `manual`. The only hit label is `确认命中`. Every exported row would show that same value, so the 命中类型 column is omitted.
 
-平台 uses `PlatformNames`, the same parser as import and search. Display is `专网 · 示例视频` when the network and a parsed name are both known, or the parsed name alone when the network is missing. A name that cannot be parsed is still a hit row, and the cell is exactly `平台未识别`.
+平台 is the province+operator name from `PlatformNames`, such as `山东移动` or `示例视频`. 子类型 is the network and subtype tags joined by a space, such as `专网 OTT`. A name that cannot be parsed is still a hit row: 平台 is `平台未识别` and 子类型 is blank.
 
 节目类型 is the query program's type, or blank. 上传节目名 is the uploaded text. 匹配节目名 is the canonical name. 检测日期 is the Beijing calendar date of the same timestamp search uses (`tasks.created_at`, else `tasks.file_uploaded_at`, else `index_records.uploaded_at`). Date only, not a time.
 

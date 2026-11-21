@@ -31,6 +31,7 @@ from nadou.text import RecordAge
 
 COLUMNS = (
     "平台",
+    "子类型",
     "节目类型",
     "上传节目名",
     "匹配节目名",
@@ -416,9 +417,10 @@ def test_header_columns_and_exact_strings(session, clock):
     headers, records, _styled = hit_table(sheet)
     assert headers == COLUMNS
     assert HitColumns.TYPE not in headers
-    assert [row[1] for row in records] == ["电视剧", None, "电影"]
-    assert [row[2] for row in records] == ["海边故事", "海边故事别名", "手工剧"]
-    assert records[1][3] == "别名故事"
+    assert [row[1] for row in records] == ["专网", "公网", "专网"]
+    assert [row[2] for row in records] == ["电视剧", None, "电影"]
+    assert [row[3] for row in records] == ["海边故事", "海边故事别名", "手工剧"]
+    assert records[1][4] == "别名故事"
     joined = " ".join("" if value is None else str(value) for row in records for value in row)
     assert "客户" not in joined
     assert "%" not in joined
@@ -469,7 +471,7 @@ def test_alias_match_is_a_confirmed_hit_without_a_label(session, clock):
     workbook = load_workbook(BytesIO(response.content))
     headers, records, _styled = hit_table(workbook["命中结果"])
     assert headers == COLUMNS
-    assert [(row[2], row[3]) for row in records] == [
+    assert [(row[3], row[4]) for row in records] == [
         ("标准故事的别名", "标准故事"),
         ("另一故事", "另一故事"),
     ]
@@ -482,7 +484,7 @@ def test_uniform_confirmed_label_drops_the_hit_type_column():
     assert confirmed == COLUMNS
     assert HitColumns.for_labels([]) == COLUMNS
     mixed = HitColumns.for_labels([HitColumns.CONFIRMED, "其他"])
-    assert mixed[4] == HitColumns.TYPE
+    assert mixed[len(HitColumns.LEAD)] == HitColumns.TYPE
     assert mixed[:4] == COLUMNS[:4]
     assert mixed[-2:] == COLUMNS[-2:]
 
@@ -520,10 +522,11 @@ def test_two_records_of_the_same_platform_and_program(session, clock):
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
     assert len(records) == 2
-    assert records[0][0] == records[1][0] == "专网 · 示例视频"
-    assert records[0][2] == records[1][2] == "重复节目"
+    assert records[0][0] == records[1][0] == "示例视频"
+    assert records[0][1] == records[1][1] == "专网"
     assert records[0][3] == records[1][3] == "重复节目"
-    assert records[0][4] != records[1][4]
+    assert records[0][4] == records[1][4] == "重复节目"
+    assert records[0][5] != records[1][5]
     images = embedded_images(response.content)
     assert len(images) == 2
     assert images[0] != images[1]
@@ -621,7 +624,7 @@ def test_excludes_test_prefix_and_non_done(session, clock):
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
     assert len(records) == 2
-    assert {row[0] for row in records} == {"专网 · 示例视频", PlatformNames.UNRECOGNIZED}
+    assert {row[0] for row in records} == {"示例视频", PlatformNames.UNRECOGNIZED}
     assert rest_table(workbook["未命中与待处理"]) == [("只有新记录", RestStatus.MISS, None)]
     text = " ".join(str(value) for row in records for value in row if value)
     assert "TEST_台" not in text
@@ -651,8 +654,8 @@ def test_detection_date_is_beijing_calendar_day(session, clock):
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
     assert len(records) == 1
-    assert records[0][4] == "2026-08-21"
-    assert records[0][4] != "2026-08-20"
+    assert records[0][5] == "2026-08-21"
+    assert records[0][5] != "2026-08-20"
     workbook.close()
 
 
@@ -726,7 +729,7 @@ def test_screenshot_is_embedded_watermarked_and_has_no_hyperlink(session, clock)
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
     assert len(records) == 3
-    assert records[2][5] == "暂无截图"
+    assert records[2][6] == "暂无截图"
     assert all(call[1] != "rec-open" for call in signer.calls)
     assert signer.calls
     assert {call[0] for call in signer.calls} == {"card"}
@@ -776,7 +779,7 @@ def test_sheet2_matches_the_unresolved_summary(session, clock):
     response = export(make_client(session, clock), "q-rest", "user-regular")
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
-    assert [row[2] for row in records] == ["看得见"]
+    assert [row[3] for row in records] == ["看得见"]
     summary = rest_table(workbook["未命中与待处理"])
     assert summary == [
         ("没有这场", RestStatus.MISS, None),
@@ -841,7 +844,7 @@ def test_membership_age_floor_changes_rows_and_scope(session, clock):
         _headers, vip_rows, _styled = hit_table(vip["命中结果"])
         _headers, regular_rows, _styled = hit_table(regular["命中结果"])
         assert len(vip_rows) == 3
-        assert [row[2] for row in regular_rows] == ["跨档节目"]
+        assert [row[3] for row in regular_rows] == ["跨档节目"]
         assert rest_table(regular["未命中与待处理"]) == [("仅四十天", RestStatus.MISS, None)]
         assert rest_table(vip["未命中与待处理"]) == []
     finally:
@@ -879,6 +882,15 @@ def test_unrecognized_platform_is_still_a_hit(session, clock):
         platform="示例视频ott",
         network="专网",
     )
+    add_record(
+        session,
+        task_id="task-sd",
+        record_id="rec-sd",
+        program="山东节目",
+        when=at_age(clock, 130),
+        platform="山东移动OTT",
+        network="专网",
+    )
     add_query(
         session,
         clock,
@@ -887,19 +899,21 @@ def test_unrecognized_platform_is_still_a_hit(session, clock):
             {"uploaded": "多解节目", "matched": "多解节目", "resolution": "exact"},
             {"uploaded": "无解节目", "matched": "无解节目", "resolution": "exact"},
             {"uploaded": "已知节目", "matched": "已知节目", "resolution": "exact"},
+            {"uploaded": "山东节目", "matched": "山东节目", "resolution": "exact"},
         ],
     )
     session.commit()
     response = export(make_client(session, clock), "q-platform", "user-vip")
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
-    by_name = {row[2]: row[0] for row in records}
+    by_name = {row[3]: (row[0], row[1]) for row in records}
     assert by_name == {
-        "多解节目": PlatformNames.UNRECOGNIZED,
-        "无解节目": PlatformNames.UNRECOGNIZED,
-        "已知节目": "专网 · 示例视频",
+        "多解节目": (PlatformNames.UNRECOGNIZED, None),
+        "无解节目": (PlatformNames.UNRECOGNIZED, None),
+        "已知节目": ("示例视频", "专网 OTT"),
+        "山东节目": ("山东移动", "专网 OTT"),
     }
-    assert len(records) == 3
+    assert len(records) == 4
     assert PlatformNames.UNRECOGNIZED == "平台未识别"
     assert rest_table(workbook["未命中与待处理"]) == []
     workbook.close()
@@ -943,7 +957,7 @@ def test_several_alias_targets_stay_one_title(session, clock):
     response = export(make_client(session, clock), "q-same-name", "user-vip")
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
-    assert [row[3] for row in records] == ["abc剧"]
+    assert [row[4] for row in records] == ["abc剧"]
     assert rest_table(workbook["未命中与待处理"]) == []
     workbook.close()
 
