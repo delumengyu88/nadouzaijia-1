@@ -97,7 +97,11 @@ Product ids: `screenshot` (one purchase opens one ≥90-day locked record; the c
 
 `platform_count` is distinct normalized platforms on counted records with a known age `≥30`. `unverified_source_count` is the number of those records marked `来源待核实`. Rows with no check time are in neither count. Outcome is `hit` when any dated record is `≥30`, `recent_only` when the only dated records are `<30`, otherwise `miss` (an unknown-age placeholder can still be listed). Cancelled, duplicate, and `test_` rows are omitted entirely.
 
-`IndexRecordStore.upsert` stores the program name only after `ProgramNormalizer` (the same fold and alias map search uses), so a later importer can pass a raw or full-width name and still match a search.
+`IndexRecordStore.upsert` stores the program name only after `ProgramNormalizer` (the same fold and alias map search uses), so a later importer can pass a raw or full-width name and still match a search. That match is a normal confirmed hit. The search response has no `match_type`, alias, or pending field, and it does not say the hit came from an alias.
+
+Only `hit_type=consensus` is returned. A `dispute` row (疑似 / not yet confirmed) is not a user hit and is left out of counts. The words 待确认 and 疑似 are not sent to the client.
+
+A locked row is an opaque placeholder: `record_id`, `age_bucket`, `locked`, `lock_reason`. It has no program name, platform, screenshot, or URL. The counts live only in `locked_summary`. The frontend draws the blurred card from that placeholder.
 
 Several grants at once: visibility is the widest; report download is only when a membership tier itself covers that age; screenshot download is membership-or-that-screenshot.
 

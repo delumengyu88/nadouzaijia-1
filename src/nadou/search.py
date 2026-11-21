@@ -52,7 +52,7 @@ class ProgramSearch:
         unverified = 0
         for record in rows:
             task = tasks.get(record.task_id)
-            if not self.included(task):
+            if not self.included(task) or not self.confirmed(record):
                 continue
             when = self.record_time(task, record)
             age = RecordAge.days(when, self.now) if when is not None else None
@@ -138,6 +138,11 @@ class ProgramSearch:
         )
 
     @staticmethod
+    def confirmed(record: IndexRecord) -> bool:
+        """Only a confirmed hit is user-facing. Dispute rows stay internal."""
+        return record.hit_type == "consensus"
+
+    @staticmethod
     def included(task: Task | None) -> bool:
         if task is None:
             return True
@@ -207,7 +212,6 @@ class ProgramSearch:
             payload["platform"] = self.UNVERIFIED if self._unverified(task) else task.platform_name
             if task is not None and task.network_type:
                 payload["network_type"] = task.network_type
-            payload["hit_type"] = record.hit_type
             payload["frame_count"] = record.frame_count
             payload["timestamps"] = list(record.timestamps or [])
             when = self.record_time(task, record)

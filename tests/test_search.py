@@ -512,7 +512,7 @@ def test_upsert_canonicalizes_program_alias(session, client, clock):
         task_id="alias-task",
         program_name="ａｂｃ剧",
         program_name_raw="ａｂｃ剧",
-        hit_type="dispute",
+        hit_type="consensus",
         frame_count=4,
         timestamps=["00:02:02"],
     )
@@ -527,7 +527,9 @@ def test_upsert_canonicalizes_program_alias(session, client, clock):
     assert by_standard["outcome"] == "hit"
     assert by_standard["records"][0]["record_id"] == by_alias["records"][0]["record_id"]
     assert by_standard["records"][0]["platform"] == "示例视频"
-    assert by_standard["records"][0]["hit_type"] == "dispute"
+    assert by_standard["records"][0]["frame_count"] == 4
+    assert "hit_type" not in by_standard["records"][0]
+    assert "match_type" not in json.dumps(by_standard)
 
 
 def test_locked_summary_by_entitlement(session, client, clock):
@@ -621,6 +623,89 @@ def test_locked_summary_by_entitlement(session, client, clock):
         unknown = by_id(body)["sum-rec-unknown"]
         assert unknown["lock_reason"] == "检测时间待核实"
         assert unknown["age_bucket"] == "unknown"
+
+
+def test_locked_rows_leak_no_real_fields_and_unconfirmed_stay_hidden(session, client, clock):
+    program = "泄漏节目"
+    platform = "保密平台甲"
+    raw_name = "泄漏节目原名"
+    add_hit(
+        session,
+        task_id="leak-locked",
+        record_id="leak-rec",
+        program=program,
+        when=at_age(clock, 100),
+        platform=platform,
+    )
+    session.add(
+        Task(
+            task_id="leak-dispute",
+            status="done",
+            created_at=at_age(clock, 100),
+            raw_filename="leak-dispute.mp4",
+            network_type="公网",
+            platform_name="疑似平台",
+            source_unverified=False,
+            is_test=False,
+        )
+    )
+    session.add(
+        IndexRecord(
+            id="leak-dispute-rec",
+            task_id="leak-dispute",
+            program_name=program,
+            program_name_raw=raw_name,
+            hit_type="dispute",
+            frame_count=2,
+            timestamps=["00:09:09"],
+        )
+    )
+    session.add(ProgramAlias(alias="泄漏别名", canonical_name=program))
+    session.commit()
+    body = client.get("/api/v1/programs/search", params={"name": "泄漏别名"}).json()
+    assert body["program_name"] == program
+    assert body["outcome"] == "hit"
+    assert body["platform_count"] == 1
+    assert "leak-dispute-rec" not in json.dumps(body)
+    assert "疑似平台" not in json.dumps(body)
+    assert body["locked_summary"]["locked_total"] == 1
+    assert body["locked_summary"]["by_required_tier"]["member"] == 1
+    forbidden_keys = {
+        "match_type",
+        "alias",
+        "pending",
+        "hit_type",
+        "program_name_raw",
+        "platform",
+        "thumbnail_url",
+        "hd_url",
+        "checked_at",
+        "timestamps",
+        "frame_count",
+        "network_type",
+    }
+
+    def keys(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                yield key
+                yield from keys(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from keys(item)
+
+    assert "match_type" not in set(keys(body))
+    assert "pending" not in set(keys(body))
+    locked = body["records"]
+    assert len(locked) == 1
+    row = locked[0]
+    assert set(row) == LOCKED_KEYS
+    assert forbidden_keys.isdisjoint(row)
+    text = json.dumps(row, ensure_ascii=False)
+    for secret in (program, platform, raw_name, "leak-dispute.mp4", "00:09:09", "待确认", "疑似"):
+        assert secret not in text
+    assert "http" not in text
+    assert "signed://" not in text
 
 
 def test_no_zip_or_download_route(client):
