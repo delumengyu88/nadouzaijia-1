@@ -84,6 +84,8 @@ class AuditView:
             "action": row.action,
             "before": row.before_json,
             "after": row.after_json,
+            "before_text": AuditView.change_text(row.before_json),
+            "after_text": AuditView.change_text(row.after_json),
             "ip": row.ip,
         }
 
@@ -104,6 +106,8 @@ class AuditView:
             return f"{name} {phone[-4:]}"
         if name:
             return str(name)
+        if "ban_type" in merged or "ban_reason" in merged:
+            return AuditView.change_text(merged)
         title = merged.get("title") or merged.get("program_name") or merged.get("slogan")
         if title:
             return str(title)
@@ -158,6 +162,61 @@ class AuditView:
                 return splash.slogan
             return "开屏"
         return "记录"
+
+    @staticmethod
+    def change_text(payload) -> str:
+        if not isinstance(payload, dict) or not payload:
+            return "—"
+        if "ban_type" in payload or "ban_reason" in payload:
+            if payload.get("ban_type") == "permanent":
+                return f"状态 已封禁；期限 永久；原因 {payload.get('ban_reason') or ''}"
+            if payload.get("ban_type") == "temporary":
+                return f"状态 已封禁；期限 临时；原因 {payload.get('ban_reason') or ''}"
+            return "状态 已解禁"
+        labels = {
+            "status": "状态",
+            "tier": "档位",
+            "duration_days": "天数",
+            "reason": "原因",
+            "days": "天数",
+            "channel": "渠道",
+            "count": "数量",
+            "code": "邀请码",
+            "text": "内容",
+            "username": "账号",
+            "role": "角色",
+            "application_number": "申请号",
+            "quote_amount": "报价",
+            "payment_amount": "收款",
+            "delivery_method": "交付方式",
+            "delivery_note": "说明",
+            "failure_reason": "失败原因",
+            "refund_method": "退款方式",
+            "refund_amount": "退款金额",
+            "refund_note": "退款记录",
+            "attempts": "尝试次数",
+            "new_rows": "新增行数",
+            "error": "说明",
+            "title": "标题",
+            "program_name": "节目",
+            "sort_order": "排序",
+            "amount": "金额",
+        }
+        parts = []
+        for key, label in labels.items():
+            if key not in payload or isinstance(payload[key], (dict, list)):
+                continue
+            item = payload[key]
+            if item is None:
+                continue
+            if key == "role":
+                item = "管理员" if item == "admin" else "客服"
+            elif key == "tier":
+                item = {"vip": "VIP", "regular": "普通会员"}.get(item, item)
+            elif isinstance(item, bool):
+                item = "是" if item else "否"
+            parts.append(f"{label} {item}")
+        return "；".join(parts) if parts else "—"
 
     @staticmethod
     def _person(user: User | None) -> str:

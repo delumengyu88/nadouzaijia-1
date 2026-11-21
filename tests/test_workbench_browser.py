@@ -332,15 +332,33 @@ def test_w02_filters_stay_clickable_beside_the_drawer():
             page.locator("h1", has_text="取证申请").wait_for()
             assert page.locator("aside.drawer").count() == 0
             assert page.locator("#evidence-from").get_attribute("placeholder") == "YYYY-MM-DD"
+            row_pay = page.locator("button.btn-sm[data-act=pay]")
+            if row_pay.count() == 0:
+                page.locator("button[data-act=accept]").first.click()
+                accepted = page.locator("tr").filter(has=page.get_by_text("已受理", exact=True))
+                accepted.first.locator("button", has_text="查看").click()
+                page.locator("#quote-amount").wait_for()
+                page.locator("#quote-amount").fill("100")
+                page.locator("button[data-act=quote]").click()
+                page.locator("button.btn-sm[data-act=pay]").first.wait_for()
+                page.locator("button[data-act=close-drawer]").click()
+                page.locator("aside.drawer").wait_for(state="detached")
             page.locator("button", has_text="查看").first.click()
             page.locator("aside.drawer").wait_for()
+            page.locator("button.btn-sm[data-act=pay]").first.scroll_into_view_if_needed()
             for selector in (
                 "#evidence-search",
                 "#evidence-vip-label",
                 "#evidence-from",
                 "#evidence-to",
+                "button.btn-sm[data-act=pay]",
             ):
                 assert _hit_is(page, selector), selector
+            pay = page.locator("button.btn-sm[data-act=pay]").first.bounding_box()
+            card = page.locator(".card.grow .card-bd.flush").bounding_box()
+            assert pay["x"] + pay["width"] <= card["x"] + card["width"] + 1
+            page.locator("button.btn-sm[data-act=pay]").first.click()
+            page.locator("button.btn-sm[data-act=pay]").wait_for(state="detached")
             page.locator("#evidence-vip-label").click()
             page.locator("#evidence-search").click()
             page.locator("td", has_text="南风知我意").wait_for(state="detached")

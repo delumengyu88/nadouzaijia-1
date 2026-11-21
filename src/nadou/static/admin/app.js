@@ -904,8 +904,8 @@ async function renderLogs() {
         <td class="nowrap">${escapeHtml(row.actor_username || "—")}</td>
         <td class="nowrap">${escapeHtml(ACTION_LABELS[row.action] || "操作")}</td>
         <td>${escapeHtml(row.object_label || "记录")}</td>
-        <td>${auditText(row.before)}</td>
-        <td>${auditText(row.after)}</td>
+        <td>${row.before_text ? escapeHtml(row.before_text) : auditText(row.before)}</td>
+        <td>${row.after_text ? escapeHtml(row.after_text) : auditText(row.after)}</td>
       </tr>`,
     )
     .join("");

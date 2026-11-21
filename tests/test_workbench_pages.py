@@ -137,6 +137,12 @@ def test_evidence_membership_reissue_and_ban_are_audited(workbench):
         workbench.admin_token,
         json={"type": "permanent", "reason": "演示封禁"},
     )
+    call(
+        workbench,
+        "POST",
+        f"/api/v1/admin/users/{user.id}/unban",
+        workbench.admin_token,
+    )
     order = add_order(workbench.session, user, workbench.clock.now, "DD-AUDIT-1")
     call(
         workbench,
@@ -156,6 +162,7 @@ def test_evidence_membership_reissue_and_ban_are_audited(workbench):
         "add_evidence_note",
         "grant_membership",
         "ban_user",
+        "unban_user",
         "reissue_entitlement",
     ):
         assert name in actions
@@ -166,6 +173,11 @@ def test_evidence_membership_reissue_and_ban_are_audited(workbench):
     for row in logs:
         assert row["object_label"] not in {"", "记录"}
         assert uuid.fullmatch(row["object_label"]) is None
+    ban = next(row for row in logs if row["action"] == "ban_user")
+    assert ban["after_text"] == "状态 已封禁；期限 永久；原因 演示封禁"
+    unban = next(row for row in logs if row["action"] == "unban_user")
+    assert unban["after_text"] == "状态 已解禁"
+    assert "已封禁" in unban["before_text"]
 
 
 def test_refund_revokes_the_issued_entitlement_and_is_audited(workbench):
