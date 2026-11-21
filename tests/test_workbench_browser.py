@@ -345,6 +345,32 @@ def test_w02_filters_stay_clickable_beside_the_drawer():
                 page.locator("aside.drawer").wait_for(state="detached")
             page.locator("button", has_text="查看").first.click()
             page.locator("aside.drawer").wait_for()
+            page.locator(".card.grow .card-bd.flush").evaluate("(el) => { el.scrollLeft = 0; }")
+            covered = page.evaluate(
+                """() => {
+                  const card = document.querySelector(".card.grow .card-bd.flush");
+                  const bounds = card.getBoundingClientRect();
+                  const nodes = document.querySelectorAll("td.col-actions .btn");
+                  const buttons = [...nodes].filter((btn) => {
+                    const box = btn.getBoundingClientRect();
+                    const tall = box.height > 0;
+                    const inView = box.top >= bounds.top - 1 && box.bottom <= bounds.bottom + 1;
+                    return tall && inView;
+                  });
+                  if (buttons.length < 3) return ["too-few"];
+                  return buttons.flatMap((btn) => {
+                    const box = btn.getBoundingClientRect();
+                    const inside = box.left >= bounds.left - 1 && box.right <= bounds.right + 1;
+                    const hit = document.elementFromPoint(
+                      box.left + box.width / 2,
+                      box.top + box.height / 2,
+                    );
+                    if (inside && (hit === btn || btn.contains(hit))) return [];
+                    return [btn.textContent];
+                  });
+                }"""
+            )
+            assert covered == []
             for selector in (
                 "#evidence-search",
                 "#evidence-vip-label",

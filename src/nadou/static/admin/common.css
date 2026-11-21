@@ -732,7 +732,7 @@ table.data.tight th, table.data.tight td {
 .filter-bar.dense { flex-wrap: nowrap; gap: 6px; }
 .filter-bar.dense .input.query { width: 112px; }
 .filter-bar.dense .select.status { width: 96px; }
-.filter-bar.dense .select.kind { width: 64px; }
+.filter-bar.dense .select.kind { width: 96px; min-width: 96px; padding-right: 28px; }
 .filter-bar.dense .input.w-date { width: 132px; min-width: 132px; }
 .filter-bar.dense .vip-filter { font-size: 12px; white-space: nowrap; }
 .filter-bar.labeled {
@@ -768,11 +768,20 @@ table.data.tight td.cell-who {
 table.data.tight td.cell-who .muted { white-space: nowrap; }
 table.data.tight th.col-actions,
 table.data.tight td.col-actions {
-  width: 158px;
-  min-width: 158px;
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  width: 168px;
+  min-width: 168px;
   white-space: nowrap;
   text-align: right;
+  background: #fff;
+  box-shadow: -1px 0 0 var(--border);
 }
+table.data.tight th.col-actions { z-index: 3; background: #FAFAFA; }
+table.data tr.selected td.col-actions { background: var(--primary-soft); }
+table.data tr.overdue td.col-actions { background: var(--danger-row); }
+table.data tr.overdue.selected td.col-actions { background: #F8D4D2; }
 table.data.tight td.col-actions .btn {
   white-space: nowrap;
   vertical-align: middle;
