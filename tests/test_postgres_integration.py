@@ -139,9 +139,10 @@ def test_importer_and_search_on_postgres(pg_session):
     assert found.program_name == "pg节目"
     assert found.outcome == "hit"
     assert found.platform_count == 1
-    assert found.records[0].locked is False
-    assert found.records[0].platform == "示例视频"
-    assert found.records[0].thumbnail_url.startswith("signed://derived/lowres/")
+    visible = found.platform_groups[0].records[0]
+    assert visible.locked is False
+    assert visible.platform == "示例视频"
+    assert visible.thumbnail_url.startswith("signed://derived/lowres/")
 
 
 def test_autogenerate_has_no_drift():

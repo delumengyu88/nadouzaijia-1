@@ -75,6 +75,7 @@ class IndexRecord(Base):
     program_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     program_name_raw: Mapped[str] = mapped_column(String(200), nullable=False)
     hit_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(64))
     frame_count: Mapped[int] = mapped_column(Integer, nullable=False)
     timestamps: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     uploaded_at: Mapped[datetime | None] = mapped_column(AwareDateTime)

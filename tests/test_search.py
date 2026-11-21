@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from nadou.models import Entitlement, IndexRecord, ProgramAlias, Task, User
 from nadou.platform_names import PlatformNames
+from nadou.program_titles import ProgramTitleGuard
 from nadou.records import IndexRecordStore
 from nadou.text import RecordAge
 
@@ -87,8 +88,14 @@ def add_hit(
     )
 
 
+def all_rows(body):
+    rows = [row for group in body.get("platform_groups", []) for row in group["records"]]
+    rows.extend(body.get("locked_records", []))
+    return rows
+
+
 def by_id(body):
-    return {row["record_id"]: row for row in body["records"]}
+    return {row["record_id"]: row for row in all_rows(body)}
 
 
 def test_server_filters_every_tier(session, client, clock):
@@ -146,7 +153,7 @@ def test_server_filters_every_tier(session, client, clock):
         params={"name": "其他节目"},
         headers={"X-User-Id": "user-p90"},
     ).json()
-    assert other["records"][0]["locked"] is True
+    assert other["locked_records"][0]["locked"] is True
     assert "plat-other" not in json.dumps(other)
 
     for body in (free, vip, regular, program_90, program_30, shot, expired):
@@ -349,7 +356,7 @@ def test_recent_only_and_miss(session, client, clock):
     assert recent["outcome"] == "recent_only"
     assert recent["platform_count"] == 0
     assert recent["unverified_source_count"] == 0
-    assert recent["records"][0]["lock_reason"] == "有最新记录，可委托取证"
+    assert recent["locked_records"][0]["lock_reason"] == "有最新记录，可委托取证"
     assert "保密平台" not in json.dumps(recent)
 
     add_hit(
@@ -363,7 +370,8 @@ def test_recent_only_and_miss(session, client, clock):
     session.commit()
     missed = client.get("/api/v1/programs/search", params={"name": "取消片"}).json()
     assert missed["outcome"] == "miss"
-    assert missed["records"] == []
+    assert missed["platform_groups"] == []
+    assert missed["locked_records"] == []
     assert missed["platform_count"] == 0
 
 
@@ -380,7 +388,7 @@ def test_created_at_beats_upload_time(session, client, clock):
     session.commit()
     body = client.get("/api/v1/programs/search", params={"name": "时间片"}).json()
     assert body["outcome"] == "recent_only"
-    assert body["records"][0]["age_bucket"] == "lt_30"
+    assert body["locked_records"][0]["age_bucket"] == "lt_30"
     assert "不应出现" not in json.dumps(body)
 
 
@@ -480,8 +488,8 @@ def test_unknown_age_is_not_a_fresh_hit(session, client, clock):
     assert alone["outcome"] == "miss"
     assert alone["platform_count"] == 0
     assert alone["unverified_source_count"] == 0
-    assert alone["records"][0]["age_bucket"] == "unknown"
-    assert alone["records"][0]["lock_reason"] == "检测时间待核实"
+    assert alone["locked_records"][0]["age_bucket"] == "unknown"
+    assert alone["locked_records"][0]["lock_reason"] == "检测时间待核实"
     assert "仍不泄露" not in json.dumps(alone)
     assert "有最新记录，可委托取证" not in json.dumps(alone)
 
@@ -528,10 +536,12 @@ def test_upsert_canonicalizes_program_alias(session, client, clock):
     by_alias = client.get("/api/v1/programs/search", params={"name": "ａｂｃ剧"}).json()
     assert by_standard["program_name"] == "标准剧"
     assert by_standard["outcome"] == "hit"
-    assert by_standard["records"][0]["record_id"] == by_alias["records"][0]["record_id"]
-    assert by_standard["records"][0]["platform"] == "示例视频"
-    assert by_standard["records"][0]["frame_count"] == 4
-    assert "hit_type" not in by_standard["records"][0]
+    visible = by_standard["platform_groups"][0]["records"][0]
+    alias_visible = by_alias["platform_groups"][0]["records"][0]
+    assert visible["record_id"] == alias_visible["record_id"]
+    assert visible["platform"] == "示例视频"
+    assert visible["frame_count"] == 4
+    assert "hit_type" not in visible
     assert "match_type" not in json.dumps(by_standard)
 
 
@@ -616,7 +626,7 @@ def test_locked_summary_by_entitlement(session, client, clock):
         assert body["locked_summary"] == summary
         tiers = summary["by_required_tier"]
         assert summary["unlockable_total"] == tiers["member"] + tiers["vip"]
-        raw = json.dumps(body["records"])
+        raw = json.dumps(body["locked_records"])
         for age in (10, 40, 50, 100, 120):
             row = by_id(body)[f"sum-rec-{age}"]
             if row["locked"]:
@@ -702,7 +712,7 @@ def test_locked_rows_leak_no_real_fields_and_unconfirmed_stay_hidden(session, cl
 
     assert "match_type" not in set(keys(body))
     assert "pending" not in set(keys(body))
-    locked = body["records"]
+    locked = body["locked_records"]
     assert len(locked) == 1
     row = locked[0]
     assert set(row) == LOCKED_KEYS
@@ -823,16 +833,24 @@ def test_fragment_titles_are_not_billable(session, client, clock):
             platform="广东移动",
         )
     session.commit()
-    for name in ("狗", "家庭", "怪", "远方", "甲乙"):
-        body = client.get("/api/v1/programs/search", params={"name": name}).json()
-        assert body["outcome"] == "miss"
-        assert body["records"] == []
-        assert body["platform_count"] == 0
-        assert body["locked_summary"]["locked_total"] == 0
-        assert body["locked_summary"]["unlockable_total"] == 0
-    found = client.get("/api/v1/programs/search", params={"name": "西游记"}).json()
-    assert found["outcome"] == "hit"
-    assert found["records"][0]["record_id"] == "frag-ok-rec"
+    ProgramTitleGuard.set_stop_words(frozenset({"家庭", "狗", "怪", "远方"}))
+    try:
+        for name in ("狗", "家庭", "怪", "远方"):
+            body = client.get("/api/v1/programs/search", params={"name": name}).json()
+            assert body["outcome"] == "miss"
+            assert body["platform_groups"] == []
+            assert body["locked_records"] == []
+            assert body["platform_count"] == 0
+            assert body["locked_summary"]["locked_total"] == 0
+            assert body["locked_summary"]["unlockable_total"] == 0
+        short = client.get("/api/v1/programs/search", params={"name": "甲乙"}).json()
+        assert short["outcome"] == "hit"
+        assert short["platform_groups"][0]["records"][0]["record_id"] == "frag-short-rec"
+        found = client.get("/api/v1/programs/search", params={"name": "西游记"}).json()
+        assert found["outcome"] == "hit"
+        assert found["platform_groups"][0]["records"][0]["record_id"] == "frag-ok-rec"
+    finally:
+        ProgramTitleGuard.set_stop_words(frozenset())
 
 
 def test_no_zip_or_download_route(client):

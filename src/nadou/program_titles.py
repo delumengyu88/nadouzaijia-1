@@ -2,29 +2,24 @@ from nadou.text import TextNormalizer
 
 
 class ProgramTitleGuard:
-    """Block OCR fragments and very short titles from becoming billable hits.
+    """Stop-word hook. The default list is empty; callers pass words in tests or config."""
 
-    `allow_short` is the later flag that lets a title of two characters or fewer match.
-    Stop-words never match, even when that flag is set.
-    """
-
-    DEFAULT_STOP_WORDS = frozenset({"家庭", "狗", "怪", "远方"})
-    SHORT_MAX = 2
+    _stop_words: frozenset[str] = frozenset()
 
     @staticmethod
-    def is_billable(
-        title: str,
-        *,
-        allow_short: bool = False,
-        stop_words: frozenset[str] | None = None,
-    ) -> bool:
+    def stop_words() -> frozenset[str]:
+        return ProgramTitleGuard._stop_words
+
+    @staticmethod
+    def set_stop_words(words: frozenset[str]) -> None:
+        folded = {TextNormalizer.fold(word) for word in words if word}
+        ProgramTitleGuard._stop_words = frozenset(folded)
+
+    @staticmethod
+    def is_billable(title: str, *, stop_words: frozenset[str] | None = None) -> bool:
         folded = TextNormalizer.fold(title)
         if not folded:
             return False
-        words = ProgramTitleGuard.DEFAULT_STOP_WORDS if stop_words is None else stop_words
-        blocked = {TextNormalizer.fold(word) for word in words}
-        if folded in blocked:
-            return False
-        if len(folded) <= ProgramTitleGuard.SHORT_MAX and not allow_short:
-            return False
-        return True
+        words = ProgramTitleGuard._stop_words if stop_words is None else stop_words
+        blocked = {TextNormalizer.fold(word) for word in words if word}
+        return folded not in blocked

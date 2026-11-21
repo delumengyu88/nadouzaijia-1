@@ -100,7 +100,9 @@ The index stores titles only. One normalized title is one program, so search ret
 
 `platform_count` is distinct province+operator pairs on records with a known age `≥30`. 广东移动 and 浙江移动 are two. OTT, 百视通, 公网, and 专网 are display tags on the same pair and do not add to the count. A name that cannot be parsed is still a hit, shown as `平台未识别`, and is left out of `platform_count`. `unverified_source_count` is how many of those aged rows are unrecognized. Rows with no check time are in neither count.
 
-`ProgramTitleGuard` blocks billable hits for a configurable stop-word list (seeded with 家庭, 狗, 怪, 远方) and for titles of two characters or fewer. `allow_short=True` is the later flag that permits short titles. Stop-words never match. A blocked query is `miss` with an empty `locked_summary`.
+`ProgramTitleGuard` is a configurable stop-word hook. The built-in list is empty. A blocked title is `miss` with an empty `locked_summary` and is not priced. There is no character-length cutoff.
+
+Search returns one program title, then `platform_groups` keyed by province+operator. Each open record carries `platform_subtype` and, when the old consensus sheet had it, `category`. `AI分歧` and `非共识节目` are not indexed. Locked rows stay in `locked_records` with no platform, subtype, or category.
 
 Outcome is `hit` when any dated record is `≥30`, `recent_only` when the only dated records are `<30`, otherwise `miss` (an unknown-age placeholder can still be listed). Cancelled, duplicate, and `test_` rows are omitted entirely.
 
