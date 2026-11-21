@@ -144,6 +144,39 @@ def test_importer_and_search_on_postgres(pg_session):
     assert found.records[0].thumbnail_url.startswith("signed://derived/lowres/")
 
 
+def test_audit_and_notes_reject_mutation(pg_session):
+    from sqlalchemy import text
+
+    from nadou.models import AuditLog
+
+    pg_session.add(
+        AuditLog(
+            created_at=datetime.now(RecordAge.TZ),
+            object_type="user",
+            object_id="pg-user",
+            action="ban_user",
+            before_json=None,
+            after_json={"ban_type": "permanent"},
+        )
+    )
+    pg_session.flush()
+    with pytest.raises(Exception):
+        pg_session.execute(text("UPDATE audit_logs SET action = 'tamper'"))
+    pg_session.rollback()
+    pg_session.add(
+        AuditLog(
+            created_at=datetime.now(RecordAge.TZ),
+            object_type="user",
+            object_id="pg-user",
+            action="ban_user",
+        )
+    )
+    pg_session.flush()
+    with pytest.raises(Exception):
+        pg_session.execute(text("DELETE FROM audit_logs"))
+    pg_session.rollback()
+
+
 def test_autogenerate_has_no_drift():
     from alembic.autogenerate import produce_migrations
     from alembic.runtime.migration import MigrationContext

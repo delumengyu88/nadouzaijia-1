@@ -12,6 +12,16 @@ curl -s "http://localhost:8000/api/v1/programs/search?name=%E7%A4%BA%E4%BE%8B%E5
 
 `docker-compose.yml` starts Postgres on `127.0.0.1:5432` with a local-only password, and sets `NADOU_ALLOW_DEV_SEED=1` so the seed command above can create the demo VIP user. The flag defaults off. `X-User-Id` is a local stand-in until WeChat login. Copy `.env.example` if you run the API on the host instead of in Compose, and export `NADOU_ALLOW_DEV_SEED=1` before `python -m nadou.seed`.
 
+The workbench API is under `/api/v1/admin`. Staff sign in with a username and password; the session is an httpOnly cookie, and the same token is accepted as a bearer. See [docs/DESIGN.md](docs/DESIGN.md) for roles, lockout, audit, evidence, and orders.
+
+Hourly index import, after the database has been migrated:
+
+```bash
+NADOU_TASK_EXPORT_PATH=./export.csv python -m nadou index-run
+```
+
+`NADOU_TASK_EXPORT_PATH` is a local CSV. DingTalk alerts use `NADOU_DINGTALK_WEBHOOK_URL` and `NADOU_DINGTALK_WEBHOOK_SECRET` when both are set. Leave them empty to disable alerts. Do not commit real values.
+
 ## Tests
 
 ```bash

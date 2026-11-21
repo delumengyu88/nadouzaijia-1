@@ -97,7 +97,7 @@ class TaskExportImporter:
         else:
             network = parsed.network_type
         platform_raw = platform_cell if platform_cell else parsed.platform
-        normalized = normalizer.normalize(platform_raw)
+        normalized = normalizer.normalize(platform_raw, network)
         is_test = TestTaskFilter.excluded(filename, platform_raw, normalized.name)
 
         existing = self.session.get(Task, task_id)

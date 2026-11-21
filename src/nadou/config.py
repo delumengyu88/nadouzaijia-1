@@ -15,6 +15,18 @@ class Settings(BaseSettings):
         default=False,
         validation_alias=AliasChoices("NADOU_ALLOW_DEV_SEED"),
     )
+    dingtalk_webhook_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("NADOU_DINGTALK_WEBHOOK_URL"),
+    )
+    dingtalk_webhook_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices("NADOU_DINGTALK_WEBHOOK_SECRET"),
+    )
+    task_export_path: str = Field(
+        default="",
+        validation_alias=AliasChoices("NADOU_TASK_EXPORT_PATH"),
+    )
 
 
 @lru_cache
