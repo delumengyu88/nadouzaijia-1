@@ -366,9 +366,9 @@ def test_w02_filters_stay_clickable_beside_the_drawer():
             )
             assert clipped == []
             for selector in ("#evidence-from", "#evidence-to"):
-                assert page.locator(selector).evaluate(
-                    "(el) => getComputedStyle(el).minWidth"
-                ) in {"132px"}
+                assert page.locator(selector).evaluate("(el) => getComputedStyle(el).minWidth") in {
+                    "132px"
+                }
             page.locator("button.btn-sm[data-act=pay]").first.click()
             page.locator("button.btn-sm[data-act=pay]").wait_for(state="detached")
             page.locator("#evidence-vip-label").click()
