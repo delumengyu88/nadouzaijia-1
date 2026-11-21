@@ -359,6 +359,16 @@ def test_w02_filters_stay_clickable_beside_the_drawer():
             pay = page.locator("button.btn-sm[data-act=pay]").first.bounding_box()
             card = page.locator(".card.grow .card-bd.flush").bounding_box()
             assert pay["x"] + pay["width"] <= card["x"] + card["width"] + 1
+            clipped = page.evaluate(
+                """() => [...document.querySelectorAll("td.cell-no, td.cell-status")]
+                  .filter((cell) => cell.scrollWidth > cell.clientWidth)
+                  .map((cell) => cell.innerText)"""
+            )
+            assert clipped == []
+            for selector in ("#evidence-from", "#evidence-to"):
+                assert page.locator(selector).evaluate(
+                    "(el) => getComputedStyle(el).minWidth"
+                ) in {"132px"}
             page.locator("button.btn-sm[data-act=pay]").first.click()
             page.locator("button.btn-sm[data-act=pay]").wait_for(state="detached")
             page.locator("#evidence-vip-label").click()

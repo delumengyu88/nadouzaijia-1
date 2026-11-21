@@ -730,10 +730,10 @@ table.data.tight th, table.data.tight td {
 .filter-bar .vip-filter,
 .filter-bar .field { flex: none; }
 .filter-bar.dense { flex-wrap: nowrap; gap: 6px; }
-.filter-bar.dense .input.query { width: 128px; }
-.filter-bar.dense .select.status { width: 108px; }
-.filter-bar.dense .select.kind { width: 72px; }
-.filter-bar.dense .input.w-date { width: 104px; }
+.filter-bar.dense .input.query { width: 112px; }
+.filter-bar.dense .select.status { width: 96px; }
+.filter-bar.dense .select.kind { width: 64px; }
+.filter-bar.dense .input.w-date { width: 132px; min-width: 132px; }
 .filter-bar.dense .vip-filter { font-size: 12px; white-space: nowrap; }
 .filter-bar.labeled {
   align-items: flex-end;
@@ -746,23 +746,32 @@ table.data.tight th, table.data.tight td {
 .range .tilde { color: var(--text-3); }
 .pager { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .input.w-date { width: 128px; }
-table.data.tight.fit {
-  width: 100%;
-  min-width: 0;
-  table-layout: fixed;
+table.data.tight td.cell-no,
+table.data.tight th.cell-no {
+  white-space: nowrap;
+  min-width: 168px;
 }
-table.data.tight.fit td,
-table.data.tight.fit th {
+table.data.tight td.cell-status,
+table.data.tight th.cell-status {
+  white-space: nowrap;
+  min-width: 168px;
+}
+table.data.tight td.cell-program {
+  max-width: 88px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+table.data.tight td.cell-who {
+  white-space: normal;
+  line-height: 1.35;
+}
+table.data.tight td.cell-who .muted { white-space: nowrap; }
 table.data.tight th.col-actions,
 table.data.tight td.col-actions {
   width: 158px;
+  min-width: 158px;
   white-space: nowrap;
   text-align: right;
-  overflow: visible;
-  text-overflow: clip;
 }
 table.data.tight td.col-actions .btn {
   white-space: nowrap;

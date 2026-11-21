@@ -331,7 +331,8 @@ async function renderEvidence() {
       const selected = row.id === state.evidenceId ? "selected" : "";
       const late = row.overdue ? "overdue" : "";
       const pin = row.overdue ? '<span class="pin">置顶</span> ' : "";
-      const who = `${escapeHtml(row.contact_name || "—")} <span class="muted">${escapeHtml(row.phone || "—")}</span>`;
+      const who = `<div>${escapeHtml(row.contact_name || "—")}</div><div class="muted">${escapeHtml(row.phone || "—")}</div>`;
+      const program = row.program_name || "—";
       const quick =
         row.status === "已提交"
           ? `<button class="btn btn-primary btn-sm" type="button" data-act="accept" data-id="${escapeHtml(row.id)}">接单</button>`
@@ -339,12 +340,11 @@ async function renderEvidence() {
             ? `<button class="btn btn-primary btn-sm" type="button" data-act="pay" data-id="${escapeHtml(row.id)}" data-amount="${escapeHtml(row.quote_amount || "")}">确认收款</button>`
             : "";
       return `<tr class="${selected} ${late}">
-        <td class="nowrap">${pin}<span class="mono">${escapeHtml(row.application_number)}</span></td>
-        <td>${escapeHtml(row.request_type)}</td>
-        <td class="cell-main">${escapeHtml(row.program_name || "—")}</td>
+        <td class="cell-no">${pin}<span class="mono">${escapeHtml(row.application_number)}</span></td>
+        <td class="cell-program" title="${escapeHtml(program)}">${escapeHtml(program)}</td>
         <td>${memberTag(row)}</td>
-        <td>${who}</td>
-        <td class="nowrap">${evidenceLabel(row)}</td>
+        <td class="cell-who">${who}</td>
+        <td class="cell-status">${evidenceLabel(row)}</td>
         <td class="nowrap">${escapeHtml(shortWhen(row.created_at))}</td>
         <td class="col-actions">${quick}<button class="btn btn-default btn-sm" type="button" data-act="open-evidence" data-id="${escapeHtml(row.id)}">查看</button></td>
       </tr>`;
@@ -381,9 +381,9 @@ async function renderEvidence() {
           <label class="help vip-filter" id="evidence-vip-label" style="margin:0"><input id="evidence-vip" type="checkbox"${vipOnly ? " checked" : ""}> VIP 优先</label>
           <button class="btn btn-primary btn-sm" id="evidence-search" type="button" data-act="evidence-filter">查询</button>
         </div>
-        <div class="card-bd flush"><table class="data tight fit"><thead><tr>
-          <th>申请号</th><th>类型</th><th>节目</th><th>会员</th><th>联系人 / 手机</th><th>状态</th><th>提交时间</th><th class="col-actions"></th>
-        </tr></thead><tbody>${rows || '<tr><td colspan="8">暂无申请</td></tr>'}</tbody></table></div></div>
+        <div class="card-bd flush"><table class="data tight"><thead><tr>
+          <th class="cell-no">申请号</th><th>节目</th><th>会员</th><th>联系人 / 手机</th><th class="cell-status">状态</th><th>提交时间</th><th class="col-actions"></th>
+        </tr></thead><tbody>${rows || '<tr><td colspan="7">暂无申请</td></tr>'}</tbody></table></div></div>
     </div>${drawer}</div>`,
     true,
     "超时未受理的申请置顶。日期按北京时间的自然日筛选，含当天 0 点，不含次日 0 点。标记失败会记下原因；取证中还要记下退款方式和金额，并同时关闭申请。",
