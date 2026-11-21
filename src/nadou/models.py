@@ -53,6 +53,9 @@ class Task(Base):
     raw_filename: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     network_type: Mapped[str | None] = mapped_column(String(8))
     platform_name: Mapped[str | None] = mapped_column(String(200))
+    platform_province: Mapped[str | None] = mapped_column(String(32))
+    platform_operator: Mapped[str | None] = mapped_column(String(64))
+    platform_subtype: Mapped[str | None] = mapped_column(String(32))
     source_unverified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 

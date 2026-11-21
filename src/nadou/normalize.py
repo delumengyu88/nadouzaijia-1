@@ -47,10 +47,14 @@ class ProgramNormalizer:
         return list(mapped)
 
     def canonical(self, raw: str) -> str:
-        names = self.candidates(raw)
-        if len(names) == 1:
-            return names[0]
-        return ""
+        """One normalized title. Several alias targets are not collapsed into one of them."""
+        folded = TextNormalizer.fold(raw)
+        if not folded:
+            return ""
+        mapped = self._aliases.get(folded, [])
+        if len(mapped) == 1:
+            return mapped[0]
+        return folded
 
     def dedupe(self, names: list[str]) -> list[str]:
         seen: set[str] = set()

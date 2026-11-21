@@ -108,6 +108,9 @@ class TaskExportImporter:
         existing.raw_filename = filename
         existing.network_type = network
         existing.platform_name = normalized.name
+        existing.platform_province = normalized.province
+        existing.platform_operator = normalized.operator
+        existing.platform_subtype = normalized.subtype
         existing.source_unverified = normalized.unrecognized
         existing.is_test = is_test
         return created, is_test

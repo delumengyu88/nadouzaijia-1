@@ -22,6 +22,9 @@ class OpenRecordOut(BaseModel):
     can_download_report: bool
     can_download_screenshot: bool
     platform: str | None = None
+    platform_province: str | None = None
+    platform_operator: str | None = None
+    platform_subtype: str | None = None
     network_type: str | None = None
     frame_count: int | None = None
     timestamps: list[str] | None = None
@@ -58,9 +61,8 @@ class LockedSummaryOut(BaseModel):
 
 class SearchOut(BaseModel):
     program_name: str
-    outcome: Literal["hit", "miss", "recent_only", "ambiguous"]
+    outcome: Literal["hit", "miss", "recent_only"]
     platform_count: int
     unverified_source_count: int
     locked_summary: LockedSummaryOut
     records: list[LockedRecordOut | OpenRecordOut]
-    message: str | None = None

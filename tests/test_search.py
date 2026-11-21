@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 
 from nadou.models import Entitlement, IndexRecord, ProgramAlias, Task, User
+from nadou.platform_names import PlatformNames
 from nadou.records import IndexRecordStore
 from nadou.text import RecordAge
 
@@ -65,6 +66,9 @@ def add_hit(
                 raw_filename=filename or f"{task_id}.mp4",
                 network_type=None if unverified else network,
                 platform_name=None if unverified else platform,
+                platform_operator=None if unverified else platform,
+                platform_province=None,
+                platform_subtype=None,
                 source_unverified=unverified,
                 is_test=is_test,
             )
@@ -676,6 +680,9 @@ def test_locked_rows_leak_no_real_fields_and_unconfirmed_stay_hidden(session, cl
         "hit_type",
         "program_name_raw",
         "platform",
+        "platform_operator",
+        "platform_province",
+        "platform_subtype",
         "thumbnail_url",
         "hd_url",
         "checked_at",
@@ -745,47 +752,87 @@ def test_unrecognized_platform_still_counts_as_a_hit(session, client, clock):
     assert "双解平台" not in json.dumps(body)
 
 
-def test_ambiguous_program_is_not_a_hit(session, client, clock):
-    session.add(ProgramAlias(alias="abc剧", canonical_name="节目1986"))
-    session.add(ProgramAlias(alias="ａｂｃ剧", canonical_name="节目2010"))
-    add_hit(
-        session,
-        task_id="amb-1986",
-        record_id="amb-rec-1986",
-        program="节目1986",
-        when=at_age(clock, 200),
-        platform="广东移动",
+def _store_platform(session, task_id, record_id, program, when, raw_platform, network="公网"):
+    parsed = PlatformNames.normalize(raw_platform)
+    session.add(
+        Task(
+            task_id=task_id,
+            status="done",
+            created_at=when,
+            raw_filename=f"{task_id}.mp4",
+            network_type=network,
+            platform_name=parsed.name,
+            platform_province=parsed.province,
+            platform_operator=parsed.operator,
+            platform_subtype=parsed.subtype,
+            source_unverified=parsed.unrecognized,
+            is_test=False,
+        )
     )
-    add_hit(
-        session,
-        task_id="amb-2010",
-        record_id="amb-rec-2010",
-        program="节目2010",
-        when=at_age(clock, 40),
-        platform="示例视频",
+    session.add(
+        IndexRecord(
+            id=record_id,
+            task_id=task_id,
+            program_name=program,
+            program_name_raw=program,
+            hit_type="consensus",
+            frame_count=1,
+            timestamps=["00:00:01"],
+        )
     )
+
+
+def test_platform_count_is_province_plus_operator(session, client, clock):
+    program = "运营商节目"
+    when = at_age(clock, 200)
+    _store_platform(session, "op-gd-ott", "op-gd-ott-rec", program, when, "广东移动OTT")
+    _store_platform(session, "op-gd-bestv", "op-gd-bestv-rec", program, when, "广东移动百视通")
+    _store_platform(session, "op-zj", "op-zj-rec", program, when, "浙江移动", network="专网")
+    _store_platform(session, "op-bad", "op-bad-rec", program, when, "没有这个平台")
     session.commit()
-    body = client.get("/api/v1/programs/search", params={"name": " ABC剧 "}).json()
-    assert body["outcome"] == "ambiguous"
-    assert body["program_name"] == "abc剧"
-    assert body["message"] == "匹配到多个同名节目，补充年份或集数后重新查询"
-    assert body["records"] == []
-    assert body["platform_count"] == 0
-    assert body["unverified_source_count"] == 0
-    summary = body["locked_summary"]
-    assert summary["locked_total"] == 0
-    assert summary["unlockable_total"] == 0
-    assert summary["by_required_tier"] == {"member": 0, "vip": 0, "evidence_only": 0}
-    assert summary["cheapest_full_unlock"] is None
-    assert summary["unlocks_by_product"] == {}
-    text = json.dumps(body, ensure_ascii=False)
-    assert "节目1986" not in text
-    assert "节目2010" not in text
-    assert "amb-rec-1986" not in text
-    assert "广东移动" not in text
-    direct = client.get("/api/v1/programs/search", params={"name": "节目1986"}).json()
-    assert direct["outcome"] == "hit"
-    assert direct["records"][0]["record_id"] == "amb-rec-1986"
+    body = client.get("/api/v1/programs/search", params={"name": program}).json()
+    assert body["outcome"] == "hit"
+    assert body["platform_count"] == 2
+    assert body["unverified_source_count"] == 1
+    rows = by_id(body)
+    assert rows["op-gd-ott-rec"]["platform"] == "广东移动"
+    assert rows["op-gd-ott-rec"]["platform_operator"] == "移动"
+    assert rows["op-gd-ott-rec"]["platform_province"] == "广东"
+    assert rows["op-gd-ott-rec"]["platform_subtype"] == "OTT"
+    assert rows["op-gd-bestv-rec"]["platform_subtype"] == "百视通"
+    assert rows["op-zj-rec"]["platform"] == "浙江移动"
+    assert rows["op-zj-rec"]["network_type"] == "专网"
+    assert rows["op-bad-rec"]["platform"] == "平台未识别"
+    assert "platform_operator" not in rows["op-bad-rec"]
+
+
+def test_fragment_titles_are_not_billable(session, client, clock):
+    when = at_age(clock, 200)
+    for task_id, program in (
+        ("frag-dog", "狗"),
+        ("frag-home", "家庭"),
+        ("frag-short", "甲乙"),
+        ("frag-ok", "西游记"),
+    ):
+        add_hit(
+            session,
+            task_id=task_id,
+            record_id=f"{task_id}-rec",
+            program=program,
+            when=when,
+            platform="广东移动",
+        )
+    session.commit()
+    for name in ("狗", "家庭", "怪", "远方", "甲乙"):
+        body = client.get("/api/v1/programs/search", params={"name": name}).json()
+        assert body["outcome"] == "miss"
+        assert body["records"] == []
+        assert body["platform_count"] == 0
+        assert body["locked_summary"]["locked_total"] == 0
+        assert body["locked_summary"]["unlockable_total"] == 0
+    found = client.get("/api/v1/programs/search", params={"name": "西游记"}).json()
+    assert found["outcome"] == "hit"
+    assert found["records"][0]["record_id"] == "frag-ok-rec"
 
 
 def test_no_zip_or_download_route(client):

@@ -41,7 +41,7 @@ Ages use the Beijing calendar date of `tasks.created_at`. If that is null, use `
 | `users` | Caller of the search endpoint. `X-User-Id` is a local-only stand-in until WeChat login; it is not production authentication. |
 | `entitlements` | Active grants: `regular` / `vip` (expiry), `program_90` / `program_30` (canonical program + expiry), `screenshot` (one record id + expiry). The policy takes the widest live grant. Payment upgrade rules (suspended 普通 days, 7-day renewals) are not implemented; a grant counts when `expires_at` is in the future. |
 
-`PlatformNames` maps a variant such as `GD移动` to one standard name, `广东移动`. The same class is used for the CSV `平台名` and for the filename parser. A value that maps to zero standards, or to more than one, is unrecognized: the row is still a hit, the visible platform is `平台未识别`, and it is not included in `platform_count`. The map never guesses a platform. `tasks.platform_name` is null and `source_unverified` is true in that case. `is_test` is set when the raw filename, the raw platform, or the canonical platform starts with `test_` (case-insensitive, after full/half-width fold). Test rows are stored so a later export can clear the flag, and they never appear in search.
+`PlatformNames` maps a variant such as `GD移动` to operator `移动` and province `广东`. OTT and 百视通 are stored in `platform_subtype` and are not part of the count. The same class is used for the CSV `平台名` and for the filename parser. A name that cannot be parsed leaves the three fields null and `source_unverified` true. `is_test` is set when the raw filename, the raw platform, or the canonical platform starts with `test_` (case-insensitive, after full/half-width fold). Test rows are stored so a later export can clear the flag, and they never appear in search.
 
 No other tables. In particular there is no order table and no ZIP / archive table.
 
@@ -60,7 +60,7 @@ CSV header, exact names: `task_id,状态,提交时间,filename,公网/专网,平
 - `状态`: `done` / `cancelled` / `duplicate`.
 - `提交时间`: `YYYY-MM-DD HH:MM:SS` in Beijing, stored as `created_at`.
 - Network and platform columns are used when non-empty. An empty column falls back to `FilenameParser`. Each field falls back on its own.
-- The chosen platform string then goes through `PlatformNames` (trim, full/half-width, casefold, then the code map). Zero or several standard names → `平台未识别`.
+- The chosen platform string then goes through `PlatformNames` (trim, full/half-width, casefold, alias such as `GD移动`, then province/operator/subtype). Unparsed names → `平台未识别`.
 - A non-empty network value that is not `公网` or `专网` is not replaced by the parser.
 
 `FilenameParser` reads a leading `公网` / `专网` and the next `-` or whitespace field as the platform. `unknown.mp4`, `1905.mp4`, and `VID_...` have no network prefix and stay unknown.
@@ -96,7 +96,13 @@ Record age buckets, Beijing calendar days: `<30`, `30–89`, `90–179`, `≥180
 
 Product ids: `screenshot` (one purchase opens one ≥90-day locked record; the count is how many such records are locked), `single_program_90d`, `single_program_30d`, `membership_regular`, `membership_vip`. `single_program_30d` and `membership_vip` open both the vip and member buckets. The other three open only the member bucket. Nothing opens `evidence_only`.
 
-`platform_count` is distinct recognized platforms on counted records with a known age `≥30`. `平台未识别` rows are hits but are not part of that count; `unverified_source_count` is how many of those aged rows are unrecognized. If the caller's program name matches more than one catalog program, the outcome is `ambiguous`, the message is `匹配到多个同名节目，补充年份或集数后重新查询`, and those rows are not hits: empty `records`, and `locked_summary` / pricing stay at zero. The API does not choose the closest program. Rows with no check time are in neither count. Outcome is `hit` when any dated record is `≥30`, `recent_only` when the only dated records are `<30`, otherwise `miss` (an unknown-age placeholder can still be listed). Cancelled, duplicate, and `test_` rows are omitted entirely.
+The index stores titles only. One normalized title is one program, so search returns all of that title's records together. There is no `ambiguous` outcome.
+
+`platform_count` is distinct province+operator pairs on records with a known age `≥30`. 广东移动 and 浙江移动 are two. OTT, 百视通, 公网, and 专网 are display tags on the same pair and do not add to the count. A name that cannot be parsed is still a hit, shown as `平台未识别`, and is left out of `platform_count`. `unverified_source_count` is how many of those aged rows are unrecognized. Rows with no check time are in neither count.
+
+`ProgramTitleGuard` blocks billable hits for a configurable stop-word list (seeded with 家庭, 狗, 怪, 远方) and for titles of two characters or fewer. `allow_short=True` is the later flag that permits short titles. Stop-words never match. A blocked query is `miss` with an empty `locked_summary`.
+
+Outcome is `hit` when any dated record is `≥30`, `recent_only` when the only dated records are `<30`, otherwise `miss` (an unknown-age placeholder can still be listed). Cancelled, duplicate, and `test_` rows are omitted entirely.
 
 `IndexRecordStore.upsert` stores the program name only after `ProgramNormalizer` (the same fold and alias map search uses), so a later importer can pass a raw or full-width name and still match a search. That match is a normal confirmed hit. The search response has no `match_type`, alias, or pending field, and it does not say the hit came from an alias.
 

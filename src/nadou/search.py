@@ -7,9 +7,10 @@ from nadou.entitlements import AccessDecision, AccessGrants, EntitlementPolicy, 
 from nadou.models import Entitlement, IndexRecord, Task, User
 from nadou.normalize import ProgramNormalizer
 from nadou.platform_names import PlatformNames
+from nadou.program_titles import ProgramTitleGuard
 from nadou.schemas import LockedRecordOut, LockedSummaryOut, OpenRecordOut, SearchOut, TierCounts
 from nadou.signed_url import SignedUrlProvider
-from nadou.text import RecordAge, TextNormalizer
+from nadou.text import RecordAge
 
 
 class UnknownUser(Exception):
@@ -25,7 +26,6 @@ class ProgramSearch:
 
     UNRECOGNIZED_PLATFORM = PlatformNames.UNRECOGNIZED
     REASON_UNKNOWN_AGE = "检测时间待核实"
-    AMBIGUOUS_MESSAGE = "匹配到多个同名节目，补充年份或集数后重新查询"
     _LOCKED_KEYS = ("record_id", "age_bucket", "locked", "lock_reason")
 
     def __init__(self, session: Session, urls: SignedUrlProvider, now: datetime) -> None:
@@ -34,13 +34,11 @@ class ProgramSearch:
         self.now = now
 
     def search(self, raw_name: str, user_id: str | None) -> SearchOut:
-        normalizer = ProgramNormalizer.from_session(self.session)
-        candidates = normalizer.candidates(raw_name)
-        if not candidates:
+        canonical = ProgramNormalizer.from_session(self.session).canonical(raw_name)
+        if not canonical:
             raise EmptyQuery(raw_name)
-        if len(candidates) > 1:
-            return self._ambiguous(TextNormalizer.fold(raw_name))
-        canonical = candidates[0]
+        if not ProgramTitleGuard.is_billable(canonical):
+            return self._not_billable(canonical)
         grants = self._live_grants(user_id)
         rows = list(
             self.session.scalars(
@@ -63,10 +61,11 @@ class ProgramSearch:
             when = self.record_time(task, record)
             age = RecordAge.days(when, self.now) if when is not None else None
             if age is not None and age >= 30:
-                if self._unverified(task):
+                key = self._platform_key(task)
+                if key is None:
                     unverified += 1
-                elif task is not None and task.platform_name:
-                    platforms.add(task.platform_name)
+                else:
+                    platforms.add(key)
             kept.append((age, record, task))
 
         kept.sort(
@@ -143,17 +142,22 @@ class ProgramSearch:
             screenshot=screenshot,
         )
 
-    def _ambiguous(self, folded_name: str) -> SearchOut:
+    def _not_billable(self, canonical: str) -> SearchOut:
         summary = EntitlementPolicy.summarize_locked([], AccessGrants())
         return SearchOut(
-            program_name=folded_name,
-            outcome="ambiguous",
+            program_name=canonical,
+            outcome="miss",
             platform_count=0,
             unverified_source_count=0,
             locked_summary=self._summary_out(summary),
             records=[],
-            message=self.AMBIGUOUS_MESSAGE,
         )
+
+    @staticmethod
+    def _platform_key(task: Task | None) -> tuple[str, str] | None:
+        if task is None or task.source_unverified or not task.platform_operator:
+            return None
+        return (task.platform_province or "", task.platform_operator)
 
     @staticmethod
     def confirmed(record: IndexRecord) -> bool:
@@ -230,6 +234,13 @@ class ProgramSearch:
             payload["platform"] = (
                 self.UNRECOGNIZED_PLATFORM if self._unverified(task) else task.platform_name
             )
+            if task is not None and not self._unverified(task):
+                if task.platform_province:
+                    payload["platform_province"] = task.platform_province
+                if task.platform_operator:
+                    payload["platform_operator"] = task.platform_operator
+                if task.platform_subtype:
+                    payload["platform_subtype"] = task.platform_subtype
             if task is not None and task.network_type:
                 payload["network_type"] = task.network_type
             payload["frame_count"] = record.frame_count
