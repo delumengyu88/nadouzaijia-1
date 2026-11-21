@@ -147,6 +147,10 @@ function seedEvidence() {
   rows[6].refundAmount = 680
   rows[6].refundMethod = '线下原路退回'
   rows[6].refundTime = '2026-11-21 16:30'
+  var plainFail = base('7a', 'failed')
+  plainFail.name = '长街烟火'
+  plainFail.reason = '失败原因：目标平台当期无可用片源。'
+  rows.push(plainFail)
   return rows
 }
 

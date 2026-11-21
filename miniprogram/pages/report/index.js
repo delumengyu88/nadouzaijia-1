@@ -1,6 +1,6 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
-var present = require('../../utils/present')
+var present = require('../../utils/present').present
 
 function decode(value) {
   if (!value) return ''

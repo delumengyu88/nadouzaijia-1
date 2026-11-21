@@ -15,6 +15,7 @@
       "outputPath": ""
     }
   },
+  "miniprogramRoot": "./",
   "compileType": "miniprogram",
   "libVersion": "3.6.5",
   "appid": "touristappid",

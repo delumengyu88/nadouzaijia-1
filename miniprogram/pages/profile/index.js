@@ -20,6 +20,7 @@ Page({
   go: function (e) {
     wx.navigateTo({ url: e.currentTarget.dataset.url })
   },
+  noop: function () {},
   openSheet: function () { this.setData({ showSheet: true }) },
   closeSheet: function () { this.setData({ showSheet: false }) },
   useAccount: function (e) {
