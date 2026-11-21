@@ -151,3 +151,93 @@ def test_each_workbench_page_loads_without_console_errors():
             server.wait(timeout=10)
         except subprocess.TimeoutExpired:
             server.kill()
+
+
+def test_support_does_not_inherit_admin_user_details():
+    if os.environ.get("NADOU_RUN_BROWSER") != "1":
+        pytest.skip("set NADOU_RUN_BROWSER=1 to load the workbench in Chromium")
+    database = os.environ.get("DATABASE_URL", "")
+    if not database.startswith("postgresql"):
+        pytest.skip("browser check uses the Postgres started for CI")
+    playwright_sync = pytest.importorskip("playwright.sync_api")
+    from nadou.__main__ import DemoCommand
+
+    assert DemoCommand.run() == 0
+    port = _free_port()
+    server = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "nadou.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+        env=os.environ.copy(),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    base = f"http://127.0.0.1:{port}"
+    phone = "13700009054"
+    openid = "o0000000000000a5"
+    try:
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+                    break
+            except OSError:
+                if server.poll() is not None:
+                    raise AssertionError("server exited")
+                time.sleep(0.2)
+        else:
+            raise AssertionError("workbench did not start")
+        with playwright_sync.sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.goto(f"{base}/admin/#/login", wait_until="networkidle")
+            page.fill("input[name=username]", DemoAccounts.ADMIN)
+            page.fill("input[name=password]", DemoAccounts.ADMIN_PASSWORD)
+            page.click("button[type=submit]")
+            page.locator("h1", has_text="取证申请").wait_for()
+            page.goto(f"{base}/admin/#/w04", wait_until="networkidle")
+            page.locator("h1", has_text="用户与会员").wait_for()
+            page.fill("#user-query", phone)
+            page.click("button[data-act=user-search]")
+            page.locator("text=何帆").wait_for()
+            admin_text = page.locator("body").inner_text()
+            assert phone in admin_text
+            assert openid in admin_text
+            page.click("button[data-act=ban-open]")
+            page.locator("#ban-type").wait_for()
+            page.select_option("#ban-type", "permanent")
+            page.fill("#ban-reason", "验收封禁")
+            page.click("button[data-act=ban]")
+            page.locator("text=已封禁").wait_for()
+            page.goto(f"{base}/admin/#/w05", wait_until="networkidle")
+            page.click("button[data-act=logout]")
+            page.locator("h2", has_text="账号登录").wait_for()
+            page.fill("input[name=username]", DemoAccounts.SUPPORT)
+            page.fill("input[name=password]", DemoAccounts.SUPPORT_PASSWORD)
+            page.click("button[type=submit]")
+            page.locator("h1", has_text="取证申请").wait_for()
+            page.goto(f"{base}/admin/#/w04", wait_until="networkidle")
+            page.locator("h1", has_text="用户与会员").wait_for()
+            support_text = page.locator("body").inner_text()
+            assert phone not in support_text
+            assert openid not in support_text
+            assert page.locator("#user-query").input_value() == ""
+            page.goto(f"{base}/admin/#/w05", wait_until="networkidle")
+            orders = page.locator("body").inner_text()
+            assert phone not in orders
+            assert openid not in orders
+            browser.close()
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()

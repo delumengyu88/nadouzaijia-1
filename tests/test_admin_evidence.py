@@ -38,7 +38,7 @@ def test_evidence_flow_for_each_role(workbench, who):
         expected=201,
     ).json()
     request_id = created["id"]
-    assert created["status"] == "待受理"
+    assert created["status"] == "已提交"
     assert created["application_number"] == f"QZ-FLOW-{who}"
     if who == "support":
         assert created["phone"] == "*******2002"
@@ -104,7 +104,7 @@ def test_evidence_flow_for_each_role(workbench, who):
         token,
         json={"reason": "用户取消"},
     ).json()
-    assert failed["status"] == "已失败"
+    assert failed["status"] == "取证失败"
     assert failed["refund_method"] is None
     assert failed["refund_amount"] is None
     workbench.session.expire_all()
@@ -169,6 +169,13 @@ def test_refund_rules_and_delivery_methods(workbench):
     call(
         workbench,
         "POST",
+        f"/api/v1/admin/evidence-requests/{paid}/quote",
+        token,
+        json={"amount": 80},
+    )
+    call(
+        workbench,
+        "POST",
         f"/api/v1/admin/evidence-requests/{paid}/confirm-payment",
         token,
         json={"amount": 80},
@@ -186,13 +193,20 @@ def test_refund_rules_and_delivery_methods(workbench):
         "POST",
         f"/api/v1/admin/evidence-requests/{paid}/fail",
         token,
-        json={"reason": "无法取证", "refund_method": "线下退回"},
+        json={"reason": "无法取证", "refund_method": "原路退回"},
     ).json()
     assert defaulted["refund_amount"] == 80
-    assert defaulted["refund_method"] == "线下退回"
+    assert defaulted["refund_method"] == "原路退回"
 
     custom = make("QZ-RULE-CUSTOM")
     call(workbench, "POST", f"/api/v1/admin/evidence-requests/{custom}/accept", token)
+    call(
+        workbench,
+        "POST",
+        f"/api/v1/admin/evidence-requests/{custom}/quote",
+        token,
+        json={"amount": 80},
+    )
     call(
         workbench,
         "POST",
@@ -205,12 +219,19 @@ def test_refund_rules_and_delivery_methods(workbench):
         "POST",
         f"/api/v1/admin/evidence-requests/{custom}/fail",
         token,
-        json={"reason": "部分退回", "refund_method": "线下退回", "refund_amount": 30},
+        json={"reason": "部分退回", "refund_method": "原路退回", "refund_amount": 30},
     ).json()
     assert adjusted["refund_amount"] == 30
 
     delivery = make("QZ-RULE-DELIVERY")
     call(workbench, "POST", f"/api/v1/admin/evidence-requests/{delivery}/accept", token)
+    call(
+        workbench,
+        "POST",
+        f"/api/v1/admin/evidence-requests/{delivery}/quote",
+        token,
+        json={"amount": 10},
+    )
     call(
         workbench,
         "POST",
@@ -237,6 +258,13 @@ def test_refund_rules_and_delivery_methods(workbench):
     for method in ("快递", "企业网盘"):
         another = make(f"QZ-RULE-{method}")
         call(workbench, "POST", f"/api/v1/admin/evidence-requests/{another}/accept", token)
+        call(
+            workbench,
+            "POST",
+            f"/api/v1/admin/evidence-requests/{another}/quote",
+            token,
+            json={"amount": 10},
+        )
         call(
             workbench,
             "POST",

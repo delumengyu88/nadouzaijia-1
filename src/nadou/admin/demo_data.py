@@ -372,7 +372,7 @@ class DemoData:
             users["member"].id, "常规", now - timedelta(hours=3), "QZ20261121007"
         )
         flow.accept(accepted.id, now - timedelta(hours=2))
-        flow.set_quote(accepted.id, 680)
+        flow.set_quote(accepted.id, 680, now - timedelta(minutes=90))
         flow.confirm_payment(accepted.id, 680, now - timedelta(hours=1))
         flow.add_note(accepted.id, support, "用户已确认线下收款，约定次日上午当面交付。", now)
         accepted.program_name = "长街烟火"
@@ -398,6 +398,10 @@ class DemoData:
                 payment_amount=extra.get("payment_amount"),
                 payment_confirmed_at=extra.get("payment_confirmed_at"),
                 accepted_at=extra.get("accepted_at"),
+                quoted_at=extra.get("quoted_at"),
+                completed_at=extra.get("completed_at"),
+                closed_at=extra.get("closed_at"),
+                cancelled_at=extra.get("cancelled_at"),
                 delivery_method=extra.get("delivery_method"),
                 delivery_note=extra.get("delivery_note"),
                 delivered_at=extra.get("delivered_at"),
@@ -411,7 +415,7 @@ class DemoData:
         parked(
             "QZ20261119028",
             users["vip"],
-            "待受理",
+            "已提交",
             "星河旧梦",
             "广东移动 · 公网",
             "赵闻",
@@ -421,13 +425,24 @@ class DemoData:
         parked(
             "QZ20261120041",
             users["grant"],
-            "已受理",
+            "待付款（线下）",
             "故人归途",
             "北京移动 · 公网",
             "许南",
             now - timedelta(days=1),
             quote_amount=420,
+            quoted_at=now - timedelta(hours=20),
             accepted_at=now - timedelta(days=1),
+        )
+        parked(
+            "QZ20261120055",
+            users["member"],
+            "已受理",
+            "雾港来信",
+            "上海电信 · 公网",
+            "林秋",
+            now - timedelta(hours=8),
+            accepted_at=now - timedelta(hours=6),
         )
         parked(
             "QZ20261118012",
@@ -446,9 +461,36 @@ class DemoData:
             delivered_at=now - timedelta(days=1),
         )
         parked(
+            "QZ20261118020",
+            users["vip"],
+            "已完成",
+            "南岭追光",
+            "广东移动 · 公网",
+            "赵闻",
+            now - timedelta(days=8),
+            quote_amount=360,
+            quoted_at=now - timedelta(days=7),
+            payment_amount=360,
+            payment_confirmed_at=now - timedelta(days=6),
+            accepted_at=now - timedelta(days=8),
+            delivery_method="当面",
+            delivered_at=now - timedelta(days=2),
+            completed_at=now - timedelta(days=1),
+        )
+        parked(
+            "QZ20261115003",
+            users["free"],
+            "已取消",
+            "竹影清风",
+            "浙江联通 · 公网",
+            "周安",
+            now - timedelta(days=7),
+            cancelled_at=now - timedelta(days=7),
+        )
+        parked(
             "QZ20261117033",
             users["free"],
-            "已失败",
+            "取证失败",
             "竹影清风",
             "浙江联通 · 公网",
             "周安",
@@ -460,7 +502,7 @@ class DemoData:
         parked(
             "QZ20261116008",
             users["member"],
-            "已失败",
+            "已关闭",
             "长街烟火",
             "江苏电信 · 专网",
             "林秋",
@@ -470,9 +512,10 @@ class DemoData:
             payment_confirmed_at=now - timedelta(days=5),
             accepted_at=now - timedelta(days=6),
             failure_reason="片源无法核验",
-            refund_method="银行转账",
+            refund_method="原路退回",
             refund_amount=500,
             failed_at=now - timedelta(days=4),
+            closed_at=now - timedelta(days=3),
         )
         session.flush()
 

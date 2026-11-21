@@ -228,7 +228,10 @@ class EvidenceRequest(Base):
     __tablename__ = "evidence_requests"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('待受理', '已受理', '取证中', '已交付', '已失败')",
+            "status IN ("
+            "'已提交', '已受理', '待付款（线下）', '取证中', '已交付', "
+            "'已完成', '取证失败', '已关闭', '已取消'"
+            ")",
             name="ck_evidence_status",
         ),
         CheckConstraint(
@@ -245,12 +248,16 @@ class EvidenceRequest(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False, index=True)
     accepted_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+    quoted_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
     quote_amount: Mapped[int | None] = mapped_column(Integer)
     payment_amount: Mapped[int | None] = mapped_column(Integer)
     payment_confirmed_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
     delivery_method: Mapped[str | None] = mapped_column(String(16))
     delivery_note: Mapped[str | None] = mapped_column(String(500))
     delivered_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+    closed_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+    cancelled_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
     failure_reason: Mapped[str | None] = mapped_column(String(500))
     refund_method: Mapped[str | None] = mapped_column(String(32))
     refund_amount: Mapped[int | None] = mapped_column(Integer)

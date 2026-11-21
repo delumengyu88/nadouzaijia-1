@@ -437,6 +437,7 @@ table.data .mono { font-variant-numeric: tabular-nums; font-family: "Noto Sans M
   border: 2px solid #fff;
   box-shadow: 0 0 0 1px var(--primary);
 }
+.tl-item.bad::before { background: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
 .tl-item.done::before { background: var(--success); box-shadow: 0 0 0 1px var(--success); }
 .tl-item.wait::before { background: #fff; box-shadow: 0 0 0 1px var(--border-2); }
 .tl-item .t { color: var(--text-3); font-size: 12px; margin-left: 8px; }
@@ -472,8 +473,11 @@ table.data .mono { font-variant-numeric: tabular-nums; font-family: "Noto Sans M
   text-align: center;
   padding: 16px 10px;
   font-size: 12px;
+  line-height: 1.4;
   position: relative;
   flex: none;
+  overflow: auto;
+  overflow-wrap: anywhere;
 }
 .poster .brand { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
 .poster .skip {

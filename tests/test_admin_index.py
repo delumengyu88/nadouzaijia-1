@@ -125,7 +125,7 @@ def test_overdue_evidence_is_notified_once_from_the_index_job(session, clock):
             application_number="QZ-IDX-1",
             user_id=user.id,
             request_type="单条",
-            status="待受理",
+            status="已提交",
             created_at=clock - timedelta(days=4),
         )
     )

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from nadou.admin.audit import AuditWriter
 from nadou.admin.errors import WorkbenchError
-from nadou.admin.phone import OpenIdMask, PhoneMask
+from nadou.admin.phone import PhoneMask
 from nadou.models import Entitlement, InviteCode, User
 
 
@@ -38,7 +38,7 @@ class UserView:
     @staticmethod
     def render(user: User, *, reveal_phone: bool) -> dict:
         phone = user.phone if reveal_phone else PhoneMask.apply(user.phone)
-        openid = user.wechat_openid if reveal_phone else OpenIdMask.apply(user.wechat_openid)
+        openid = user.wechat_openid if reveal_phone else None
         return {
             "id": user.id,
             "phone": phone,

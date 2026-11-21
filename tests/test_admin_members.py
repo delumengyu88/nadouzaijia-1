@@ -36,6 +36,27 @@ def test_support_sees_masked_phone_and_cannot_mutate_users(workbench):
         workbench.support_token,
     ).json()
     assert masked_detail["phone"] == "*******1234"
+    user.wechat_openid = "o0000000000000a5"
+    workbench.session.commit()
+    listed = call(
+        workbench,
+        "GET",
+        "/api/v1/admin/users?phone=90000001234",
+        workbench.support_token,
+    )
+    detail = call(
+        workbench,
+        "GET",
+        f"/api/v1/admin/users/{user.id}",
+        workbench.support_token,
+    )
+    for response in (listed, detail):
+        assert "90000001234" not in response.text
+        assert "o0000000000000a5" not in response.text
+    assert listed.json()[0]["phone"].endswith("1234")
+    assert listed.json()[0]["wechat_openid"] is None
+    assert detail.json()["wechat_openid"] is None
+    assert detail.json()["phone"].endswith("1234")
     call(
         workbench,
         "POST",

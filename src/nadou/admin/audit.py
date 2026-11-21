@@ -68,11 +68,31 @@ class AuditView:
             "created_at": row.created_at.isoformat(),
             "object_type": row.object_type,
             "object_id": row.object_id,
+            "object_label": AuditView.label(row),
             "action": row.action,
             "before": row.before_json,
             "after": row.after_json,
             "ip": row.ip,
         }
+
+    @staticmethod
+    def label(row: AuditLog) -> str:
+        payload = row.after_json if isinstance(row.after_json, dict) else {}
+        earlier = row.before_json if isinstance(row.before_json, dict) else {}
+        merged = {**earlier, **payload}
+        if merged.get("application_number"):
+            return str(merged["application_number"])
+        if merged.get("order_number"):
+            return str(merged["order_number"])
+        if merged.get("code"):
+            return str(merged["code"])
+        name = merged.get("display_name") or merged.get("username")
+        phone = merged.get("phone")
+        if name and isinstance(phone, str) and len(phone) >= 4:
+            return f"{name} {phone[-4:]}"
+        if name:
+            return str(name)
+        return "记录"
 
 
 class AuditQuery:

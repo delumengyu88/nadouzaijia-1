@@ -4,7 +4,7 @@ Backend skeleton for the 那豆在架 copyright-monitoring lookup service, plus 
 
 ## 验收（MacBook Air）
 
-这一节给一台装了 Docker、git 和 python3、没有 Node 的 arm64 MacBook Air。工作台不需要本机安装 Python 或 Node：镜像是官方多架构的 `python:3.12-slim` 和 `postgres:16`。
+这一节给一台装了 Docker、git 和 python3、没有 Node 的 arm64 MacBook Air。工作台不需要本机安装 Python 或 Node：镜像是官方多架构的 `python:3.12-slim` 和 `postgres:16`。请用下面的 Docker 命令启动。不要在本机用 SQLite 跑 `seed-demo`：迁移里的表结构变更依赖 Postgres，SQLite 会在改约束时失败。
 
 ```bash
 git clone https://github.com/delumengyu88/nadouzaijia-1.git
@@ -109,4 +109,4 @@ ruff format --check .
 pytest
 ```
 
-The mini program has no build step. CI runs `node scripts/check-miniprogram.js`.
+The mini program has no build step. CI runs `node scripts/check-miniprogram.js`. That script checks syntax, tags, `wx:for` keys, image paths, and WXSS. `miniprogram-ci` is not in CI: it needs a real AppID and upload key, and `touristappid` cannot stand in for them.

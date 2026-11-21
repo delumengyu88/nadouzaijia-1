@@ -156,7 +156,7 @@ Five consecutive failures lock that account from that client IP for 30 minutes. 
 
 ### Evidence requests
 
-`evidence_requests` moves `待受理` → `已受理` → `取证中` → `已交付`, or `已失败` from `已受理` or `取证中`. List filters are status, type, and created time. Overdue requests (still `待受理` after one Beijing working day) sort first, then VIP requesters when `vip_first` is true (the default). A working day is Monday–Friday in Asia/Shanghai; public holidays are not excluded. The deadline keeps the original clock time, so Friday 15:00 is due Monday 15:00.
+`evidence_requests` moves `已提交` → `已受理` → `待付款（线下）` → `取证中` → `已交付` → `已完成`. `取证失败` can follow `已受理`, `待付款（线下）`, or `取证中`, and then `已关闭`. `已取消` is only from `已提交`. List filters are status, type, and created time. Overdue requests (still `待受理` after one Beijing working day) sort first, then VIP requesters when `vip_first` is true (the default). A working day is Monday–Friday in Asia/Shanghai; public holidays are not excluded. The deadline keeps the original clock time, so Friday 15:00 is due Monday 15:00.
 
 Marking `取证中` failed requires a reason and a refund method. The refund amount defaults to the confirmed offline payment and may be overridden. Marking `已受理` failed requires a reason and rejects any refund field. Other statuses cannot be failed. Offline delivery methods are `当面`, `快递`, `企业网盘`, and `其他`. `其他` requires a note. Nothing in the response is a URL or a ZIP.
 

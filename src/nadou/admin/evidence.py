@@ -14,16 +14,33 @@ from nadou.text import RecordAge
 
 
 class EvidenceStatus:
-    PENDING = "待受理"
+    SUBMITTED = "已提交"
     ACCEPTED = "已受理"
+    AWAITING_PAYMENT = "待付款（线下）"
     IN_PROGRESS = "取证中"
     DELIVERED = "已交付"
-    FAILED = "已失败"
+    COMPLETED = "已完成"
+    FAILED = "取证失败"
+    CLOSED = "已关闭"
+    CANCELLED = "已取消"
+    UNPAID = frozenset({ACCEPTED, AWAITING_PAYMENT})
+    FLOW = (
+        SUBMITTED,
+        ACCEPTED,
+        AWAITING_PAYMENT,
+        IN_PROGRESS,
+        DELIVERED,
+        COMPLETED,
+    )
 
 
 class DeliveryMethod:
     CHOICES = frozenset({"当面", "快递", "企业网盘", "其他"})
     OTHER = "其他"
+
+
+class RefundMethod:
+    CHOICES = frozenset({"原路退回", "银行转账", "微信转账", "其他"})
 
 
 class EvidenceLookup:
@@ -52,7 +69,7 @@ class ApplicationNumbers:
 class EvidenceOverdue:
     @staticmethod
     def is_overdue(request: EvidenceRequest, now: datetime) -> bool:
-        if request.status != EvidenceStatus.PENDING:
+        if request.status != EvidenceStatus.SUBMITTED:
             return False
         deadline = WorkingDays.add(request.created_at, 1)
         return now.astimezone(RecordAge.TZ) >= deadline
@@ -69,7 +86,7 @@ class EvidenceOverdueScanner:
         rows = list(
             self.session.scalars(
                 select(EvidenceRequest).where(
-                    EvidenceRequest.status == EvidenceStatus.PENDING,
+                    EvidenceRequest.status == EvidenceStatus.SUBMITTED,
                     EvidenceRequest.overdue_notified_at.is_(None),
                 )
             ).all()
@@ -134,6 +151,11 @@ class EvidenceView:
                 "refund_method": request.refund_method,
                 "refund_amount": request.refund_amount,
                 "failed_at": EvidenceView._iso(request.failed_at),
+                "quoted_at": EvidenceView._iso(request.quoted_at),
+                "completed_at": EvidenceView._iso(request.completed_at),
+                "closed_at": EvidenceView._iso(request.closed_at),
+                "cancelled_at": EvidenceView._iso(request.cancelled_at),
+                "timeline": EvidenceView.timeline(request),
                 "record_ref": request.record_ref,
                 "organization": request.organization,
                 "requirement": request.requirement,
@@ -150,6 +172,51 @@ class EvidenceView:
             "created_at": note.created_at.isoformat(),
             "text": note.body,
         }
+
+    @staticmethod
+    def timeline(request: EvidenceRequest) -> list[dict]:
+        stamps = {
+            EvidenceStatus.SUBMITTED: request.created_at,
+            EvidenceStatus.ACCEPTED: request.accepted_at,
+            EvidenceStatus.AWAITING_PAYMENT: request.quoted_at,
+            EvidenceStatus.IN_PROGRESS: request.payment_confirmed_at,
+            EvidenceStatus.DELIVERED: request.delivered_at,
+            EvidenceStatus.COMPLETED: request.completed_at,
+        }
+        if request.status == EvidenceStatus.CANCELLED:
+            return [
+                EvidenceView._step(EvidenceStatus.SUBMITTED, request.created_at, "done"),
+                EvidenceView._step(EvidenceStatus.CANCELLED, request.cancelled_at, "current"),
+            ]
+        if request.status in {EvidenceStatus.FAILED, EvidenceStatus.CLOSED}:
+            passed = [
+                EvidenceView._step(label, stamps[label], "done")
+                for label in EvidenceStatus.FLOW
+                if label != EvidenceStatus.COMPLETED and stamps[label] is not None
+            ]
+            passed.append(EvidenceView._step(EvidenceStatus.FAILED, request.failed_at, "done"))
+            if request.status == EvidenceStatus.CLOSED:
+                passed.append(
+                    EvidenceView._step(EvidenceStatus.CLOSED, request.closed_at, "current")
+                )
+            else:
+                passed[-1]["state"] = "current"
+            return passed
+        index = EvidenceStatus.FLOW.index(request.status)
+        rows = []
+        for position, label in enumerate(EvidenceStatus.FLOW):
+            if position < index:
+                state = "done"
+            elif position == index:
+                state = "current"
+            else:
+                state = "wait"
+            rows.append(EvidenceView._step(label, stamps[label], state))
+        return rows
+
+    @staticmethod
+    def _step(label: str, when: datetime | None, state: str) -> dict:
+        return {"label": label, "at": EvidenceView._iso(when), "state": state}
 
     @staticmethod
     def _iso(value: datetime | None) -> str | None:
@@ -204,7 +271,7 @@ class EvidenceWorkflow:
             application_number=number,
             user_id=user.id,
             request_type=kind,
-            status=EvidenceStatus.PENDING,
+            status=EvidenceStatus.SUBMITTED,
             created_at=now,
         )
         self.session.add(row)
@@ -221,7 +288,7 @@ class EvidenceWorkflow:
 
     def accept(self, request_id: str, now: datetime) -> EvidenceRequest:
         row = self._require(request_id)
-        self._expect(row, EvidenceStatus.PENDING, "only a pending request can be accepted")
+        self._expect(row, EvidenceStatus.SUBMITTED, "only a submitted request can be accepted")
         before = EvidenceSnapshot.of(row)
         row.status = EvidenceStatus.ACCEPTED
         row.accepted_at = now
@@ -231,20 +298,26 @@ class EvidenceWorkflow:
         )
         return row
 
-    def set_quote(self, request_id: str, amount: int) -> EvidenceRequest:
+    def set_quote(self, request_id: str, amount: int, now: datetime) -> EvidenceRequest:
         row = self._require(request_id)
-        self._expect(row, EvidenceStatus.ACCEPTED, "quote is only for an accepted unpaid request")
+        self._expect(row, EvidenceStatus.ACCEPTED, "quote is only for an accepted request")
         if amount <= 0:
             raise WorkbenchError(400, "amount must be positive")
         before = EvidenceSnapshot.of(row)
         row.quote_amount = amount
+        row.quoted_at = now
+        row.status = EvidenceStatus.AWAITING_PAYMENT
         self.session.flush()
         self.audit.write("evidence_request", row.id, "set_quote", before, EvidenceSnapshot.of(row))
         return row
 
     def confirm_payment(self, request_id: str, amount: int, now: datetime) -> EvidenceRequest:
         row = self._require(request_id)
-        self._expect(row, EvidenceStatus.ACCEPTED, "payment is only for an accepted unpaid request")
+        self._expect(
+            row,
+            EvidenceStatus.AWAITING_PAYMENT,
+            "payment is only for a request awaiting offline payment",
+        )
         if amount <= 0:
             raise WorkbenchError(400, "amount must be positive")
         before = EvidenceSnapshot.of(row)
@@ -295,16 +368,14 @@ class EvidenceWorkflow:
         if len(text) > 500:
             raise WorkbenchError(400, "failure reason is too long")
         method = (refund_method or "").strip()
-        if row.status == EvidenceStatus.ACCEPTED:
+        if row.status in EvidenceStatus.UNPAID:
             if method or refund_amount is not None:
                 raise WorkbenchError(400, "unpaid request does not accept refund fields")
             stored_method = None
             stored_amount = None
         elif row.status == EvidenceStatus.IN_PROGRESS:
-            if not method:
+            if method not in RefundMethod.CHOICES:
                 raise WorkbenchError(400, "refund method is required")
-            if len(method) > 32:
-                raise WorkbenchError(400, "refund method is too long")
             amount = row.payment_amount if refund_amount is None else refund_amount
             if amount is None or amount < 0:
                 raise WorkbenchError(400, "refund amount is required")
@@ -321,6 +392,42 @@ class EvidenceWorkflow:
         self.session.flush()
         self.audit.write(
             "evidence_request", row.id, "fail_evidence", before, EvidenceSnapshot.of(row)
+        )
+        return row
+
+    def complete(self, request_id: str, now: datetime) -> EvidenceRequest:
+        row = self._require(request_id)
+        self._expect(row, EvidenceStatus.DELIVERED, "only a delivered request can be completed")
+        before = EvidenceSnapshot.of(row)
+        row.status = EvidenceStatus.COMPLETED
+        row.completed_at = now
+        self.session.flush()
+        self.audit.write(
+            "evidence_request", row.id, "complete_evidence", before, EvidenceSnapshot.of(row)
+        )
+        return row
+
+    def close(self, request_id: str, now: datetime) -> EvidenceRequest:
+        row = self._require(request_id)
+        self._expect(row, EvidenceStatus.FAILED, "only a failed request can be closed")
+        before = EvidenceSnapshot.of(row)
+        row.status = EvidenceStatus.CLOSED
+        row.closed_at = now
+        self.session.flush()
+        self.audit.write(
+            "evidence_request", row.id, "close_evidence", before, EvidenceSnapshot.of(row)
+        )
+        return row
+
+    def cancel(self, request_id: str, now: datetime) -> EvidenceRequest:
+        row = self._require(request_id)
+        self._expect(row, EvidenceStatus.SUBMITTED, "only a submitted request can be cancelled")
+        before = EvidenceSnapshot.of(row)
+        row.status = EvidenceStatus.CANCELLED
+        row.cancelled_at = now
+        self.session.flush()
+        self.audit.write(
+            "evidence_request", row.id, "cancel_evidence", before, EvidenceSnapshot.of(row)
         )
         return row
 

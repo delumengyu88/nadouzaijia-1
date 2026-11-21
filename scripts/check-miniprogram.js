@@ -148,6 +148,15 @@ function checkWxml(file, text) {
     ;['wx:if', 'wx:elif', 'wx:for'].forEach(function (key) {
       if (attrs[key] !== undefined && attrs[key].indexOf('{{') === -1) fail(rel + ': ' + key + ' needs {{ }}')
     })
+    if (attrs['wx:for'] !== undefined && attrs['wx:key'] === undefined) {
+      fail(rel + ': wx:for without wx:key')
+    }
+    if (name === 'image' && attrs.src && attrs.src.indexOf('{{') === -1) {
+      var img = attrs.src.charAt(0) === '/'
+        ? path.join(root, attrs.src)
+        : path.resolve(path.dirname(file), attrs.src)
+      if (!fs.existsSync(img)) fail(rel + ': missing image ' + attrs.src)
+    }
     ;['bindtap', 'catchtap', 'bindinput', 'bindsubmit'].forEach(function (key) {
       if (attrs[key] !== undefined && !/^[A-Za-z_][\w$]*$/.test(attrs[key])) fail(rel + ': bad ' + key + '=' + attrs[key])
     })
@@ -170,6 +179,9 @@ function checkWxss(file, text) {
   var rel = path.relative(root, file)
   var css = text.replace(/\/\*[\s\S]*?\*\//g, '')
   if (/(^|[,{}\n])\s*\*(?=\s|[,.{:#\[]|$)/.test(css)) fail(rel + ': universal selector is not valid in wxss')
+  if (/:nth-|::placeholder|::selection/.test(css)) {
+    fail(rel + ': unsupported wxss selector')
+  }
   var re = /@import\s+(?:url\(\s*)?['"]([^'"]+)['"]\s*\)?\s*;/g
   var m
   while ((m = re.exec(css))) {

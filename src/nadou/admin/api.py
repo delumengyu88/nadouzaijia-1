@@ -333,7 +333,7 @@ class AdminApi:
                 now = clock()
                 row = EvidenceWorkflow(
                     session, notifier, writer(session, account, request)
-                ).set_quote(request_id, payload.amount)
+                ).set_quote(request_id, payload.amount, now)
                 return AdminApi._evidence_detail(session, row, account, now)
 
             return Endpoint.invoke(action)
@@ -388,6 +388,51 @@ class AdminApi:
                     payload.refund_method,
                     payload.refund_amount,
                 )
+                return AdminApi._evidence_detail(session, row, account, now)
+
+            return Endpoint.invoke(action)
+
+        @app.post("/api/v1/admin/evidence-requests/{request_id}/complete")
+        def complete_evidence(
+            request_id: str,
+            request: Request,
+            account: StaffAccount = Depends(current_staff),
+            session: Session = Depends(get_session),
+        ):
+            def action():
+                now = clock()
+                flow = EvidenceWorkflow(session, notifier, writer(session, account, request))
+                row = flow.complete(request_id, now)
+                return AdminApi._evidence_detail(session, row, account, now)
+
+            return Endpoint.invoke(action)
+
+        @app.post("/api/v1/admin/evidence-requests/{request_id}/close")
+        def close_evidence(
+            request_id: str,
+            request: Request,
+            account: StaffAccount = Depends(current_staff),
+            session: Session = Depends(get_session),
+        ):
+            def action():
+                now = clock()
+                flow = EvidenceWorkflow(session, notifier, writer(session, account, request))
+                row = flow.close(request_id, now)
+                return AdminApi._evidence_detail(session, row, account, now)
+
+            return Endpoint.invoke(action)
+
+        @app.post("/api/v1/admin/evidence-requests/{request_id}/cancel")
+        def cancel_evidence(
+            request_id: str,
+            request: Request,
+            account: StaffAccount = Depends(current_staff),
+            session: Session = Depends(get_session),
+        ):
+            def action():
+                now = clock()
+                flow = EvidenceWorkflow(session, notifier, writer(session, account, request))
+                row = flow.cancel(request_id, now)
                 return AdminApi._evidence_detail(session, row, account, now)
 
             return Endpoint.invoke(action)

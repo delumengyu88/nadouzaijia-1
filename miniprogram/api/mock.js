@@ -591,6 +591,7 @@ function evidenceSteps(status) {
   if (status === 'closed') {
     return [
       { name: '已提交', cls: 'done' },
+      { name: '取证失败', cls: 'done' },
       { name: '已关闭', cls: 'bad' }
     ]
   }

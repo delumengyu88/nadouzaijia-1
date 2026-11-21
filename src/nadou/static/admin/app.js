@@ -1,4 +1,3 @@
-const SAMPLE_PHONE = "13800002610";
 const app = document.querySelector("#app");
 const state = {
   me: null,
@@ -237,11 +236,18 @@ function denied() {
 }
 
 function evidenceLabel(row) {
-  if (row.overdue) return '<span class="tag tag-red tag-dot">待受理 · 超时未受理</span>';
-  if (row.status === "已受理" && row.quote_amount && !row.payment_amount) {
-    return '<span class="tag tag-orange tag-dot">待付款（线下）</span>';
-  }
-  const tone = { 待受理: "tag-orange", 已受理: "tag-blue", 取证中: "tag-blue", 已交付: "tag-green", 已失败: "tag-gray" };
+  if (row.overdue) return '<span class="tag tag-red tag-dot">已提交 · 超时未受理</span>';
+  const tone = {
+    已提交: "tag-orange",
+    已受理: "tag-blue",
+    "待付款（线下）": "tag-orange",
+    取证中: "tag-blue",
+    已交付: "tag-green",
+    已完成: "tag-green",
+    取证失败: "tag-red",
+    已关闭: "tag-gray",
+    已取消: "tag-gray",
+  };
   return `<span class="tag ${tone[row.status] || "tag-gray"} tag-dot">${escapeHtml(row.status)}</span>`;
 }
 
@@ -259,9 +265,18 @@ async function renderEvidence() {
     state.detail = detail.ok ? detail.data : null;
   }
   const statusFilter = state.evidenceStatus || "全部";
+  const typeFilter = state.evidenceType || "全部";
   const evidenceQuery = (state.evidenceQuery || "").trim();
+  const fromDay = state.evidenceFrom || "";
+  const toDay = state.evidenceTo || "";
+  const vipOnly = Boolean(state.evidenceVip);
   const visible = state.evidence.filter((row) => {
     if (statusFilter !== "全部" && row.status !== statusFilter) return false;
+    if (typeFilter !== "全部" && row.request_type !== typeFilter) return false;
+    if (vipOnly && !row.vip) return false;
+    const day = String(row.created_at || "").slice(0, 10);
+    if (fromDay && day < fromDay) return false;
+    if (toDay && day > toDay) return false;
     if (!evidenceQuery) return true;
     return `${row.application_number} ${row.program_name || ""} ${row.phone || ""}`.includes(evidenceQuery);
   });
@@ -284,17 +299,17 @@ async function renderEvidence() {
     })
     .join("");
   const overdue = state.evidence.filter((row) => row.overdue).length;
-  const pending = state.evidence.filter((row) => row.status === "待受理").length;
+  const pending = state.evidence.filter((row) => row.status === "已提交").length;
   const working = state.evidence.filter((row) => row.status === "取证中").length;
-  const delivered = state.evidence.filter((row) => row.status === "已交付").length;
-  const vip = state.evidence.filter((row) => row.vip && row.status !== "已交付" && row.status !== "已失败").length;
+  const delivered = state.evidence.filter((row) => row.status === "已交付" || row.status === "已完成").length;
+  const vip = state.evidence.filter((row) => row.vip && !["已交付", "已完成", "已关闭", "已取消", "取证失败"].includes(row.status)).length;
   const drawer = state.detail ? evidenceDrawer(state.detail) : '<aside class="drawer"><div class="drawer-bd">选择一条申请。</div></aside>';
   shell(
     "取证申请",
     `<div class="workspace-row"><div class="workspace-col">
       <div class="stats cols-5 compact">
         <div class="stat"><div class="k">超时未受理</div><div class="v danger">${overdue}</div></div>
-        <div class="stat"><div class="k">待受理</div><div class="v">${pending}</div></div>
+        <div class="stat"><div class="k">已提交</div><div class="v">${pending}</div></div>
         <div class="stat"><div class="k">取证中</div><div class="v">${working}</div></div>
         <div class="stat"><div class="k">已交付</div><div class="v">${delivered}</div></div>
         <div class="stat"><div class="k">VIP 待处理</div><div class="v">${vip}</div></div>
@@ -303,8 +318,14 @@ async function renderEvidence() {
         <div style="display:flex;gap:8px;font-weight:400">
           <input class="input w-md" id="evidence-query" value="${escapeHtml(evidenceQuery)}" placeholder="申请号或节目">
           <select class="select w-sm" id="evidence-status">
-            ${["全部", "待受理", "已受理", "取证中", "已交付", "已失败"].map((item) => `<option${item === statusFilter ? " selected" : ""}>${item}</option>`).join("")}
+            ${["全部", "已提交", "已受理", "待付款（线下）", "取证中", "已交付", "已完成", "取证失败", "已关闭", "已取消"].map((item) => `<option${item === statusFilter ? " selected" : ""}>${item}</option>`).join("")}
           </select>
+          <select class="select w-sm" id="evidence-type">
+            ${["全部", "常规", "近期"].map((item) => `<option${item === typeFilter ? " selected" : ""}>${item}</option>`).join("")}
+          </select>
+          <input class="input w-sm" id="evidence-from" type="date" value="${escapeHtml(fromDay)}">
+          <input class="input w-sm" id="evidence-to" type="date" value="${escapeHtml(toDay)}">
+          <label class="help" style="margin:0"><input id="evidence-vip" type="checkbox"${vipOnly ? " checked" : ""}> VIP 优先</label>
           <button class="btn btn-primary btn-sm" type="button" data-act="evidence-filter">查询</button>
         </div>
       </div>
@@ -316,6 +337,16 @@ async function renderEvidence() {
   );
 }
 
+function timelineHtml(row) {
+  return (row.timeline || [])
+    .map((step) => {
+      const klass = step.state === "done" ? "done" : step.state === "wait" ? "wait" : step.label === "取证失败" ? "bad" : "";
+      const when = step.at ? fmt(step.at) : step.state === "wait" ? "待进行" : "";
+      return `<div class="tl-item ${klass}"><strong>${escapeHtml(step.label)}</strong><span class="t">${escapeHtml(when)}</span></div>`;
+    })
+    .join("");
+}
+
 function evidenceDrawer(row) {
   const notes = (row.notes || [])
     .map(
@@ -324,18 +355,27 @@ function evidenceDrawer(row) {
     )
     .join("");
   let actions = "";
-  if (row.status === "待受理") {
-    actions = `<button class="btn btn-primary" type="button" data-act="accept" data-id="${escapeHtml(row.id)}">接单</button>`;
+  if (row.status === "已提交") {
+    actions = `<button class="btn btn-primary" type="button" data-act="accept" data-id="${escapeHtml(row.id)}">接单</button>
+      <button class="btn btn-default" type="button" data-act="cancel" data-id="${escapeHtml(row.id)}">取消申请</button>`;
   } else if (row.status === "已受理") {
     actions = `
       <input class="input w-xs" id="quote-amount" inputmode="numeric" value="${escapeHtml(row.quote_amount || "")}" placeholder="金额">
-      <button class="btn btn-default" type="button" data-act="quote" data-id="${escapeHtml(row.id)}">填写报价</button>
+      <button class="btn btn-primary" type="button" data-act="quote" data-id="${escapeHtml(row.id)}">填写报价</button>
+      <button class="btn btn-danger" type="button" data-act="fail-open" data-id="${escapeHtml(row.id)}">标记失败</button>`;
+  } else if (row.status === "待付款（线下）") {
+    actions = `
+      <input class="input w-xs" id="quote-amount" inputmode="numeric" value="${escapeHtml(row.quote_amount || "")}" placeholder="金额">
       <button class="btn btn-primary" type="button" data-act="pay" data-id="${escapeHtml(row.id)}">确认收款</button>
       <button class="btn btn-danger" type="button" data-act="fail-open" data-id="${escapeHtml(row.id)}">标记失败</button>`;
   } else if (row.status === "取证中") {
     actions = `
       <button class="btn btn-primary" type="button" data-act="deliver" data-id="${escapeHtml(row.id)}">标记已交付</button>
       <button class="btn btn-danger" type="button" data-act="fail-open" data-id="${escapeHtml(row.id)}">标记失败</button>`;
+  } else if (row.status === "已交付") {
+    actions = `<button class="btn btn-primary" type="button" data-act="complete" data-id="${escapeHtml(row.id)}">确认完成</button>`;
+  } else if (row.status === "取证失败") {
+    actions = `<button class="btn btn-default" type="button" data-act="close" data-id="${escapeHtml(row.id)}">关闭</button>`;
   }
   const deliver =
     row.status === "取证中"
@@ -355,13 +395,16 @@ function evidenceDrawer(row) {
         <div class="k">类型</div><div class="v">${escapeHtml(row.request_type)}</div>
         <div class="k">节目</div><div class="v">${escapeHtml(row.program_name || "—")}</div>
         <div class="k">平台</div><div class="v">${platformHtml(row.platform_label)}</div>
-        <div class="k">会员</div><div class="v">${row.vip ? "VIP" : "非 VIP"}</div>
+        <div class="k">会员</div><div class="v">${row.vip ? "VIP" : "免费"}</div>
         <div class="k">联系人</div><div class="v">${escapeHtml(row.contact_name || "—")} ${escapeHtml(row.phone || "")}</div>
         <div class="k">单位</div><div class="v">${escapeHtml(row.organization || "—")}</div>
         <div class="k">报价</div><div class="v money">${money(row.quote_amount)}</div>
         <div class="k">收款</div><div class="v money">${money(row.payment_amount)}</div>
         <div class="k">说明</div><div class="v">${escapeHtml(row.requirement || "—")}</div>
       </div>
+      <div class="hr"></div>
+      <div class="section-title">状态时间线</div>
+      <div class="timeline">${timelineHtml(row)}</div>
       <div class="hr"></div>
       <div class="section-title">沟通备注</div>
       <div class="note-list">${notes || '<div class="muted">暂无备注</div>'}</div>
@@ -456,13 +499,6 @@ async function renderUsers() {
     const locks = await api("/api/v1/admin/staff/locks");
     state.locks = locks.ok ? locks.data : [];
   }
-  if (!state.user) {
-    const found = await api(`/api/v1/admin/users?q=${encodeURIComponent(SAMPLE_PHONE)}`);
-    if (found.ok && found.data[0]) {
-      const detail = await api(`/api/v1/admin/users/${found.data[0].id}`);
-      state.user = detail.ok ? detail.data : null;
-    }
-  }
   const user = state.user;
   const activeGrants = user ? (user.entitlements || []).filter((row) => row.active) : [];
   const vipGrant = activeGrants.find((row) => row.kind === "vip");
@@ -500,7 +536,7 @@ async function renderUsers() {
       <tbody>${grants || '<tr><td colspan="4">暂无权益</td></tr>'}</tbody></table>
       ${user.ban_type && admin ? `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="unban" data-id="${escapeHtml(user.id)}">解禁</button></div>` : ""}
       </div></div>`
-    : '<div class="card"><div class="card-bd">没有找到这个用户。</div></div>';
+    : '<div class="card"><div class="card-bd">输入手机号后查询。</div></div>';
   const grantCard = admin
     ? `<div class="card" style="margin:0 0 16px"><div class="card-hd">手动开通 / 延长会员</div><div class="card-bd">
         <div class="field"><label>档位</label><select class="select" id="grant-tier" style="width:100%"><option value="vip">VIP</option><option value="regular">普通会员</option></select></div>
@@ -534,7 +570,7 @@ async function renderUsers() {
     "用户与会员",
     `${admin ? "" : '<p class="help">当前为客服视角：只读，手机号仅显示后 4 位，不提供手动开通或封禁。</p>'}
     <div class="card"><div class="card-hd">查找用户</div><div class="card-bd"><div class="filters">
-      <div class="field"><label>账号标识 / 手机号</label><input class="input w-xl" id="user-query" value="${escapeHtml(SAMPLE_PHONE)}"></div>
+      <div class="field"><label>手机号</label><input class="input w-xl" id="user-query" value="" placeholder="输入手机号"></div>
       <button class="btn btn-primary" type="button" data-act="user-search">查询</button>
     </div><p class="help">客服看到的手机号只保留后 4 位。</p></div></div>
     <div class="grid-2-1">${profile}<div>${grantCard}${locks}</div></div>`,
@@ -743,6 +779,9 @@ const ACTION_LABELS = {
   confirm_payment: "确认线下收款",
   record_delivery: "记录线下交付",
   accept_evidence: "接单",
+  complete_evidence: "确认完成",
+  close_evidence: "关闭申请",
+  cancel_evidence: "取消申请",
   set_quote: "填写报价",
   fail_evidence: "标记失败",
   create_evidence_request: "新取证申请",
@@ -825,7 +864,7 @@ async function renderLogs() {
         <td class="nowrap">${escapeHtml(fmt(row.created_at))}</td>
         <td class="nowrap">${escapeHtml(row.actor_username || "—")}</td>
         <td class="nowrap">${escapeHtml(ACTION_LABELS[row.action] || "操作")}</td>
-        <td>${escapeHtml(row.object_id)}</td>
+        <td>${escapeHtml(row.object_label || "记录")}</td>
         <td>${auditText(row.before)}</td>
         <td>${auditText(row.after)}</td>
       </tr>`,
@@ -948,7 +987,10 @@ async function draw() {
   else if (route === "#/w06") await renderContent();
   else if (route === "#/w08") await renderLogs();
   else if (route === "#/w09") await renderIndex();
-  else await renderEvidence();
+  else if (route === "#/w02") await renderEvidence();
+  else {
+    shell("页面不存在", '<div class="card"><div class="card-bd">没有这个页面。</div></div>', false);
+  }
   state.message = "";
 }
 
@@ -978,13 +1020,18 @@ async function onClick(event) {
   if (act === "logout") {
     await api("/api/v1/admin/auth/logout", { method: "POST" });
     sessionStorage.removeItem("nadou-token");
-    state.me = null;
-    location.hash = "#/login";
+    location.replace("/admin/#/login");
+    location.reload();
     return;
   }
   if (act === "evidence-filter") {
     state.evidenceQuery = value("#evidence-query");
     state.evidenceStatus = value("#evidence-status");
+    state.evidenceType = value("#evidence-type");
+    state.evidenceFrom = value("#evidence-from");
+    state.evidenceTo = value("#evidence-to");
+    const vipBox = document.querySelector("#evidence-vip");
+    state.evidenceVip = Boolean(vipBox && vipBox.checked);
     await draw();
     return;
   }
@@ -996,6 +1043,11 @@ async function onClick(event) {
   if (act === "open-order") {
     state.orderId = id;
     await draw();
+    return;
+  }
+  if (act === "cancel" || act === "complete" || act === "close") {
+    const result = await api(`/api/v1/admin/evidence-requests/${id}/${act}`, { method: "POST" });
+    await afterChange(result.ok, result.status, result.data);
     return;
   }
   if (act === "accept") {
@@ -1065,6 +1117,11 @@ async function onClick(event) {
   }
   if (act === "fail") {
     const reason = value("#fail-reason");
+    if (!reason) {
+      state.message = "请填写失败原因。";
+      await draw();
+      return;
+    }
     const paid = state.detail && state.detail.status === "取证中";
     const payload = { reason };
     if (paid) {
