@@ -732,7 +732,7 @@ class AdminApi:
                     AwareInstant.parse(payload.expires_at),
                     account,
                 )
-                return [InviteView.render(row, now, None) for row in rows]
+                return [InviteView.render(row, now, None, account.username) for row in rows]
 
             return Endpoint.invoke(action)
 
@@ -752,7 +752,9 @@ class AdminApi:
                 if row.redeemed_by:
                     user = session.get(User, row.redeemed_by)
                     phone = None if user is None else user.phone
-                return InviteView.render(row, now, phone)
+                staff = session.get(StaffAccount, row.created_by)
+                creator = "" if staff is None else staff.username
+                return InviteView.render(row, now, phone, creator)
 
             return Endpoint.invoke(action)
 

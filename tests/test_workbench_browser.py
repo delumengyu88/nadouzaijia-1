@@ -268,7 +268,7 @@ def test_support_does_not_inherit_admin_user_details():
 
 
 def _hit_is(page, selector: str) -> bool:
-    box = page.locator(selector).bounding_box()
+    box = page.locator(selector).first.bounding_box()
     assert box, selector
     return page.evaluate(
         """([selector, x, y]) => {
@@ -345,14 +345,16 @@ def test_w02_filters_stay_clickable_beside_the_drawer():
                 page.locator("aside.drawer").wait_for(state="detached")
             page.locator("button", has_text="查看").first.click()
             page.locator("aside.drawer").wait_for()
-            page.locator("button.btn-sm[data-act=pay]").first.scroll_into_view_if_needed()
             for selector in (
                 "#evidence-search",
                 "#evidence-vip-label",
                 "#evidence-from",
                 "#evidence-to",
+                "button.btn-sm[data-act=accept]",
+                "button.btn-sm[data-act=open-evidence]",
                 "button.btn-sm[data-act=pay]",
             ):
+                page.locator(selector).first.scroll_into_view_if_needed()
                 assert _hit_is(page, selector), selector
             pay = page.locator("button.btn-sm[data-act=pay]").first.bounding_box()
             card = page.locator(".card.grow .card-bd.flush").bounding_box()

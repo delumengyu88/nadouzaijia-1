@@ -49,13 +49,14 @@ class InviteStatus:
 
 class InviteView:
     @staticmethod
-    def render(row: InviteCode, now: datetime, phone: str | None) -> dict:
+    def render(row: InviteCode, now: datetime, phone: str | None, creator: str = "") -> dict:
         return {
             "id": row.id,
             "code": row.code,
             "channel": row.channel,
             "status": InviteStatus.of(row, now),
             "created_by": row.created_by,
+            "creator": creator,
             "created_at": row.created_at.isoformat(),
             "expires_at": row.expires_at.isoformat(),
             "redeemed_phone": PhoneMask.apply(phone),
@@ -255,6 +256,7 @@ class InviteBook:
         channel_filter = (channel or "").strip()
         shown = []
         phones = self._phones(rows)
+        creators = self._creators(rows)
         for row in rows:
             current = InviteStatus.of(row, self.now)
             if status and current != status:
@@ -264,8 +266,22 @@ class InviteBook:
             haystack = f"{row.code} {row.channel}".casefold()
             if needle and needle not in haystack:
                 continue
-            shown.append(InviteView.render(row, self.now, phones.get(row.redeemed_by or "")))
+            shown.append(
+                InviteView.render(
+                    row,
+                    self.now,
+                    phones.get(row.redeemed_by or ""),
+                    creators.get(row.created_by, ""),
+                )
+            )
         return shown
+
+    def _creators(self, rows: list[InviteCode]) -> dict[str, str]:
+        ids = {row.created_by for row in rows if row.created_by}
+        if not ids:
+            return {}
+        staff = self.session.scalars(select(StaffAccount).where(StaffAccount.id.in_(ids))).all()
+        return {item.id: item.username for item in staff}
 
     def _phones(self, rows: list[InviteCode]) -> dict[str, str | None]:
         ids = {row.redeemed_by for row in rows if row.redeemed_by}

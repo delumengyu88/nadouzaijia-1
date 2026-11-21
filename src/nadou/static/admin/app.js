@@ -346,7 +346,7 @@ async function renderEvidence() {
         <td>${who}</td>
         <td class="nowrap">${evidenceLabel(row)}</td>
         <td class="nowrap">${escapeHtml(shortWhen(row.created_at))}</td>
-        <td class="nowrap">${quick}<button class="btn btn-default btn-sm" type="button" data-act="open-evidence" data-id="${escapeHtml(row.id)}">查看</button></td>
+        <td class="col-actions">${quick}<button class="btn btn-default btn-sm" type="button" data-act="open-evidence" data-id="${escapeHtml(row.id)}">查看</button></td>
       </tr>`;
     })
     .join("");
@@ -368,12 +368,12 @@ async function renderEvidence() {
         <div class="stat"><div class="k">VIP 待处理</div><div class="v">${vip}</div></div>
       </div>
       <div class="card grow"><div class="card-hd">申请列表<span class="sub">共 ${visible.length} 条 · 超时未受理置顶</span></div>
-        <div class="filter-bar">
-          <input class="input w-md" id="evidence-query" value="${escapeHtml(evidenceQuery)}" placeholder="申请号或节目">
-          <select class="select w-sm" id="evidence-status">
+        <div class="filter-bar dense">
+          <input class="input query" id="evidence-query" value="${escapeHtml(evidenceQuery)}" placeholder="申请号或节目">
+          <select class="select status" id="evidence-status">
             ${["全部", "已提交", "已受理", "待付款（线下）", "取证中", "已交付", "已完成", "取证失败", "已关闭", "已取消"].map((item) => `<option${item === statusFilter ? " selected" : ""}>${item}</option>`).join("")}
           </select>
-          <select class="select w-sm" id="evidence-type">
+          <select class="select kind" id="evidence-type">
             ${["全部", "常规", "近期"].map((item) => `<option${item === typeFilter ? " selected" : ""}>${item}</option>`).join("")}
           </select>
           <input class="input w-date" id="evidence-from" inputmode="numeric" placeholder="YYYY-MM-DD" value="${escapeHtml(fromDay)}">
@@ -381,8 +381,8 @@ async function renderEvidence() {
           <label class="help vip-filter" id="evidence-vip-label" style="margin:0"><input id="evidence-vip" type="checkbox"${vipOnly ? " checked" : ""}> VIP 优先</label>
           <button class="btn btn-primary btn-sm" id="evidence-search" type="button" data-act="evidence-filter">查询</button>
         </div>
-        <div class="card-bd flush"><table class="data tight"><thead><tr>
-          <th>申请号</th><th>类型</th><th>节目</th><th>会员</th><th>联系人 / 手机</th><th>状态</th><th>提交时间</th><th></th>
+        <div class="card-bd flush"><table class="data tight fit"><thead><tr>
+          <th>申请号</th><th>类型</th><th>节目</th><th>会员</th><th>联系人 / 手机</th><th>状态</th><th>提交时间</th><th class="col-actions"></th>
         </tr></thead><tbody>${rows || '<tr><td colspan="8">暂无申请</td></tr>'}</tbody></table></div></div>
     </div>${drawer}</div>`,
     true,
@@ -502,6 +502,7 @@ async function renderInvites() {
       return `<tr>
         <td class="mono">${escapeHtml(row.code)}</td>
         <td>${escapeHtml(row.channel)}</td>
+        <td>${escapeHtml(row.creator || "—")}</td>
         <td><span class="tag ${tone[row.status] || "tag-gray"} tag-dot">${escapeHtml(row.status)}</span></td>
         <td class="nowrap">${escapeHtml(fmt(row.created_at))}</td>
         <td class="nowrap">${escapeHtml(ymd(row.expires_at))}</td>
@@ -534,8 +535,8 @@ async function renderInvites() {
     <div class="card" style="margin-top:16px"><div class="card-hd">邀请码列表
       <button class="btn btn-default btn-sm" type="button" data-act="invite-export">导出</button>
     </div><div class="card-bd flush"><table class="data"><thead><tr>
-      <th>邀请码</th><th>渠道</th><th>状态</th><th>生成时间</th><th>有效期至</th><th>兑换人</th><th>兑换时间</th><th>操作</th>
-    </tr></thead><tbody>${list || '<tr><td colspan="8">暂无邀请码</td></tr>'}</tbody></table></div></div>`,
+      <th>邀请码</th><th>渠道</th><th>生成人</th><th>状态</th><th>生成时间</th><th>有效期至</th><th>兑换人</th><th>兑换时间</th><th>操作</th>
+    </tr></thead><tbody>${list || '<tr><td colspan="9">暂无邀请码</td></tr>'}</tbody></table></div></div>`,
     false,
     "邀请码 8 位，一码一次。兑换后发放普通会员 30 天，与已有会员同时计时。有效期按北京时间填写，格式 YYYY-MM-DD。",
   );
@@ -952,25 +953,27 @@ async function renderLogs() {
       `<option value="${value}"${value === (state.logType || "") ? " selected" : ""}>${label}</option>`,
   ).join("");
   const lastPage = Math.max(0, Math.ceil(state.logTotal / 20) - 1);
+  const pages = [];
+  for (let index = 0; index <= lastPage; index += 1) {
+    const current = index === page ? " btn-primary" : " btn-default";
+    pages.push(
+      `<button class="btn btn-sm${current}" type="button" data-act="log-page" data-page="${index}">${index + 1}</button>`,
+    );
+  }
   shell(
     "操作日志",
-    `<div class="card"><div class="card-hd">筛选</div><div class="card-bd"><div class="filters">
-      <input class="input w-sm" id="log-actor" placeholder="操作人" value="${escapeHtml(state.logActor || "")}">
-      <select class="select w-sm" id="log-type">${typeOptions}</select>
-      <input class="input w-date" id="log-from" inputmode="numeric" placeholder="YYYY-MM-DD" value="${escapeHtml(state.logFrom || "")}">
-      <input class="input w-date" id="log-to" inputmode="numeric" placeholder="YYYY-MM-DD" value="${escapeHtml(state.logTo || "")}">
-      <input class="input w-md" id="log-query" placeholder="关键词" value="${escapeHtml(state.logQuery || "")}">
+    `<div class="card"><div class="card-hd">筛选</div><div class="card-bd"><div class="filter-bar labeled">
+      <div class="field"><label for="log-actor">操作人</label><input class="input w-sm" id="log-actor" value="${escapeHtml(state.logActor || "")}"></div>
+      <div class="field"><label for="log-type">对象</label><select class="select w-sm" id="log-type">${typeOptions}</select></div>
+      <div class="field"><label>时间</label><span class="range"><input class="input w-date" id="log-from" inputmode="numeric" placeholder="YYYY-MM-DD" value="${escapeHtml(state.logFrom || "")}"><span class="tilde">~</span><input class="input w-date" id="log-to" inputmode="numeric" placeholder="YYYY-MM-DD" value="${escapeHtml(state.logTo || "")}"></span></div>
+      <div class="field"><label for="log-query">关键词</label><input class="input w-md" id="log-query" value="${escapeHtml(state.logQuery || "")}"></div>
       <button class="btn btn-primary" type="button" data-act="log-search">查询</button>
     </div></div></div>
     <div class="card"><div class="card-hd">操作记录<span class="sub">共 ${state.logTotal} 条 · 只读，不可删除</span></div>
       <div class="card-bd flush"><table class="data"><thead><tr>
         <th>时间</th><th>操作人</th><th>操作</th><th>对象</th><th>前值</th><th>后值</th>
       </tr></thead><tbody>${rows || '<tr><td colspan="6">暂无记录</td></tr>'}</tbody></table></div>
-      <div class="card-bd" style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-default btn-sm" type="button" data-act="log-page" data-dir="prev"${page === 0 ? " disabled" : ""}>上一页</button>
-        <span class="help" style="margin:0">第 ${page + 1} 页</span>
-        <button class="btn btn-default btn-sm" type="button" data-act="log-page" data-dir="next"${page >= lastPage ? " disabled" : ""}>下一页</button>
-      </div>
+      <div class="card-bd pager">${pages.join("") || '<span class="help" style="margin:0">1</span>'}</div>
     </div>`,
     false,
     "全部写操作留痕，不可删除。对象显示申请号、订单号或用户姓名加手机号后四位。日期按北京时间的自然日。",
@@ -1510,8 +1513,8 @@ async function onClick(event) {
     state.logTo = toDay;
     if (act === "log-page") {
       const last = Math.max(0, Math.ceil((state.logTotal || 0) / 20) - 1);
-      const next = (state.logPage || 0) + (node.dataset.dir === "next" ? 1 : -1);
-      state.logPage = Math.min(last, Math.max(0, next));
+      const picked = Number(node.dataset.page);
+      state.logPage = Number.isInteger(picked) ? Math.min(last, Math.max(0, picked)) : 0;
     } else {
       state.logPage = 0;
     }

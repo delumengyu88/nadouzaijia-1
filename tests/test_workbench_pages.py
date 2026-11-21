@@ -239,6 +239,7 @@ def test_invite_codes_follow_the_alphabet_and_support_cannot_manage_them(workben
     ).json()
     assert len(created) == 5
     assert all(InviteAlphabet.valid(row["code"]) for row in created)
+    assert all(row["creator"] == "wb-admin" for row in created)
     call(
         workbench,
         "POST",
