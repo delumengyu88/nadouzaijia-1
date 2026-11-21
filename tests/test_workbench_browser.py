@@ -92,7 +92,7 @@ def test_each_workbench_page_loads_without_console_errors():
             page.fill("input[name=username]", DemoAccounts.ADMIN)
             page.fill("input[name=password]", DemoAccounts.ADMIN_PASSWORD)
             page.click("button[type=submit]")
-            page.wait_for_selector("text=取证申请")
+            page.locator("h1", has_text="取证申请").wait_for()
             for route in PAGES:
                 if route == "#/w01":
                     continue
