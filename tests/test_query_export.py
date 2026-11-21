@@ -26,7 +26,6 @@ from nadou.models import (
 )
 from nadou.platform_names import PlatformNames
 from nadou.query_export import HitColumns, PartNames, RestStatus
-from nadou.search import ProgramSearch
 from nadou.signed_url import FakeSignedUrlProvider
 from nadou.text import RecordAge
 
@@ -337,6 +336,7 @@ def test_rejects_callers_who_cannot_export(session, clock, client):
 
 def test_header_columns_and_exact_strings(session, clock):
     add_user(session, "user-vip", clock, "vip")
+    session.add(ProgramAlias(alias="海边故事别名", canonical_name="别名故事"))
     add_record(
         session,
         task_id="task-hit",
@@ -905,7 +905,7 @@ def test_unrecognized_platform_is_still_a_hit(session, clock):
     workbook.close()
 
 
-def test_ambiguous_same_name_is_not_a_hit(session, clock):
+def test_several_alias_targets_stay_one_title(session, clock):
     add_user(session, "user-vip", clock, "vip")
     session.add(ProgramAlias(alias="abc剧", canonical_name="节目1986"))
     session.add(ProgramAlias(alias="ａｂｃ剧", canonical_name="节目2010"))
@@ -927,30 +927,24 @@ def test_ambiguous_same_name_is_not_a_hit(session, clock):
     )
     add_record(
         session,
-        task_id="task-clear",
-        record_id="rec-clear",
-        program="唯一节目",
+        task_id="amb-title",
+        record_id="amb-rec-title",
+        program="abc剧",
         when=at_age(clock, 100),
+        platform="示例视频",
     )
     add_query(
         session,
         clock,
         "q-same-name",
-        [
-            {"uploaded": "ABC剧", "matched": "节目1986", "resolution": "exact"},
-            {"uploaded": "唯一节目", "matched": "唯一节目", "resolution": "exact"},
-        ],
+        [{"uploaded": "ABC剧", "matched": "节目1986", "resolution": "exact"}],
     )
     session.commit()
     response = export(make_client(session, clock), "q-same-name", "user-vip")
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
-    assert [row[2] for row in records] == ["唯一节目"]
-    assert "节目1986" not in {row[3] for row in records}
-    assert "节目2010" not in {row[3] for row in records}
-    assert rest_table(workbook["未命中与待处理"]) == [
-        ("ABC剧", RestStatus.SAME_NAME, ProgramSearch.AMBIGUOUS_MESSAGE)
-    ]
+    assert [row[3] for row in records] == ["abc剧"]
+    assert rest_table(workbook["未命中与待处理"]) == []
     workbook.close()
 
 

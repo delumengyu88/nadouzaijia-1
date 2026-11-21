@@ -107,7 +107,6 @@ class RestStatus:
     MISS = "未命中"
     PENDING = "待确认"
     FAILED = "失败"
-    SAME_NAME = "同名节目"
 
 
 class ShotPlaceholder:
@@ -496,24 +495,13 @@ class QueryExport:
         for item in items:
             if item.resolution not in RecordWindow.HIT_RESOLUTIONS:
                 continue
-            if len(programs.candidates(item.uploaded_name)) != 1:
-                continue
-            canonical = programs.canonical(item.matched_name or item.uploaded_name)
+            canonical = self._title(programs, item)
             if canonical:
                 names.add(canonical)
         by_program, tasks = self._load(names)
         hits: list[HitRow] = []
         rest: list[RestRow] = []
         for item in items:
-            if len(programs.candidates(item.uploaded_name)) > 1:
-                rest.append(
-                    RestRow(
-                        item.uploaded_name,
-                        RestStatus.SAME_NAME,
-                        ProgramSearch.AMBIGUOUS_MESSAGE,
-                    )
-                )
-                continue
             if item.resolution == "pending":
                 rest.append(RestRow(item.uploaded_name, RestStatus.PENDING, item.detail or ""))
                 continue
@@ -523,7 +511,7 @@ class QueryExport:
             if item.resolution == "miss":
                 rest.append(RestRow(item.uploaded_name, RestStatus.MISS, item.detail or ""))
                 continue
-            canonical = programs.canonical(item.matched_name or item.uploaded_name)
+            canonical = self._title(programs, item)
             visible = self._visible(by_program.get(canonical, []), tasks, grants)
             if not visible:
                 rest.append(RestRow(item.uploaded_name, RestStatus.MISS, item.detail or ""))
@@ -549,6 +537,13 @@ class QueryExport:
             for task in self.session.scalars(select(Task).where(Task.task_id.in_(task_ids))).all():
                 tasks[task.task_id] = task
         return grouped, tasks
+
+    @staticmethod
+    def _title(programs: ProgramNormalizer, item: QueryProgram) -> str:
+        """Same title search uses. Several alias targets stay the folded upload."""
+        if item.resolution == "manual" and item.matched_name:
+            return programs.canonical(item.matched_name)
+        return programs.canonical(item.uploaded_name)
 
     def _visible(
         self,

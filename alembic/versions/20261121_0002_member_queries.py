@@ -1,7 +1,7 @@
 """member query tables for workbook export
 
 Revision ID: 20261121_0002
-Revises: 20261121_0001
+Revises: 20261122_0002
 Create Date: 2026-11-21
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261121_0002"
-down_revision: str | None = "20261121_0001"
+down_revision: str | None = "20261122_0002"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
