@@ -95,3 +95,43 @@ class ProgramAlias(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     alias: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     canonical_name: Mapped[str] = mapped_column(String(200), nullable=False)
+
+
+class MemberQuery(Base):
+    """One member lookup. The id is the 查询编号 on the exported workbook."""
+
+    __tablename__ = "member_queries"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+    programs: Mapped[list["QueryProgram"]] = relationship(
+        back_populates="query",
+        order_by="QueryProgram.position",
+    )
+
+
+class QueryProgram(Base):
+    """One uploaded name inside a member query."""
+
+    __tablename__ = "query_programs"
+    __table_args__ = (
+        UniqueConstraint("query_id", "position", name="uq_query_program_position"),
+        CheckConstraint(
+            "resolution IN ('exact', 'alias', 'manual', 'miss', 'pending', 'failed')",
+            name="ck_query_program_resolution",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    query_id: Mapped[str] = mapped_column(
+        ForeignKey("member_queries.id"),
+        nullable=False,
+        index=True,
+    )
+    query: Mapped[MemberQuery] = relationship(back_populates="programs")
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    program_type: Mapped[str | None] = mapped_column(String(64))
+    matched_name: Mapped[str | None] = mapped_column(String(200))
+    resolution: Mapped[str] = mapped_column(String(16), nullable=False)
+    detail: Mapped[str | None] = mapped_column(String(1000))

@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from nadou.db import create_engine_for
 from nadou.importer import TaskExportImporter
-from nadou.models import IndexRecord, Task
+from nadou.models import IndexRecord, MemberQuery, QueryProgram, Task
 from nadou.records import IndexRecordStore
 from nadou.search import ProgramSearch
 from nadou.signed_url import FakeSignedUrlProvider
@@ -106,6 +106,26 @@ def test_check_constraints_reject_bad_values(pg_session):
             hit_type="maybe",
             frame_count=1,
             timestamps=["00:00:01"],
+        )
+    )
+    with pytest.raises(IntegrityError):
+        pg_session.flush()
+
+
+def test_query_program_resolution_constraint(pg_session):
+    pg_session.add(
+        MemberQuery(
+            id="q-bad",
+            created_at=datetime(2026, 11, 21, 12, 0, tzinfo=RecordAge.TZ),
+        )
+    )
+    pg_session.flush()
+    pg_session.add(
+        QueryProgram(
+            query_id="q-bad",
+            position=0,
+            uploaded_name="节目",
+            resolution="nope",
         )
     )
     with pytest.raises(IntegrityError):
