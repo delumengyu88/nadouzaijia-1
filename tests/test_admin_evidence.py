@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import select, text
@@ -412,3 +413,147 @@ def test_overdue_is_sorted_first_and_notified_once(workbench):
     workbench.session.expire_all()
     actions = set(workbench.session.scalars(select(AuditLog.action)).all())
     assert "create_evidence_request" in actions
+
+
+def test_detail_uses_the_same_three_membership_tiers(workbench):
+    user = add_user(workbench.session, workbench.clock.now, "90000002111")
+    call(
+        workbench,
+        "POST",
+        f"/api/v1/admin/users/{user.id}/membership",
+        workbench.admin_token,
+        json={"tier": "regular", "days": 30, "reason": "普通会员"},
+        expected=201,
+    )
+    created = call(
+        workbench,
+        "POST",
+        "/api/v1/admin/evidence-requests",
+        workbench.admin_token,
+        json={"user_id": user.id, "request_type": "常规", "application_number": "QZ-TIER-REG"},
+        expected=201,
+    ).json()
+    detail = call(
+        workbench,
+        "GET",
+        f"/api/v1/admin/evidence-requests/{created['id']}",
+        workbench.admin_token,
+    ).json()
+    listed = call(workbench, "GET", "/api/v1/admin/evidence-requests", workbench.admin_token).json()
+    row = next(item for item in listed if item["id"] == created["id"])
+    assert detail["membership"] == "regular"
+    assert row["membership"] == "regular"
+    assert detail["vip"] is False
+
+
+def test_day_filter_uses_shanghai_boundaries_for_early_morning(workbench):
+    user = add_user(workbench.session, workbench.clock.now, "90000002112")
+    created = call(
+        workbench,
+        "POST",
+        "/api/v1/admin/evidence-requests",
+        workbench.admin_token,
+        json={
+            "user_id": user.id,
+            "request_type": "常规",
+            "application_number": "QZ20261120041",
+        },
+        expected=201,
+    ).json()
+    row = workbench.session.get(EvidenceRequest, created["id"])
+    row.created_at = datetime(2026, 11, 21, 4, 15, tzinfo=ZoneInfo("Asia/Shanghai"))
+    workbench.session.commit()
+    included = call(
+        workbench,
+        "GET",
+        "/api/v1/admin/evidence-requests?day_from=2026-11-21&day_to=2026-11-21",
+        workbench.admin_token,
+    ).json()
+    excluded = call(
+        workbench,
+        "GET",
+        "/api/v1/admin/evidence-requests?day_from=2026-11-20&day_to=2026-11-20",
+        workbench.admin_token,
+    ).json()
+    assert any(item["application_number"] == "QZ20261120041" for item in included)
+    assert all(item["application_number"] != "QZ20261120041" for item in excluded)
+    row.created_at = datetime(2026, 11, 22, 0, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    workbench.session.commit()
+    at_next_midnight = call(
+        workbench,
+        "GET",
+        "/api/v1/admin/evidence-requests?day_from=2026-11-21&day_to=2026-11-21",
+        workbench.admin_token,
+    ).json()
+    assert all(item["application_number"] != "QZ20261120041" for item in at_next_midnight)
+
+
+def test_confirm_failure_also_closes_and_audits_both_steps(workbench):
+    user = add_user(workbench.session, workbench.clock.now, "90000002113")
+    token = workbench.admin_token
+
+    def make(number: str) -> str:
+        return call(
+            workbench,
+            "POST",
+            "/api/v1/admin/evidence-requests",
+            token,
+            json={"user_id": user.id, "request_type": "常规", "application_number": number},
+            expected=201,
+        ).json()["id"]
+
+    unpaid = make("QZ-CLOSE-UNPAID")
+    call(workbench, "POST", f"/api/v1/admin/evidence-requests/{unpaid}/accept", token)
+    closed = call(
+        workbench,
+        "POST",
+        f"/api/v1/admin/evidence-requests/{unpaid}/fail",
+        token,
+        json={"reason": "用户取消", "and_close": True},
+    ).json()
+    assert closed["status"] == "已关闭"
+    labels = [step["label"] for step in closed["timeline"]]
+    assert "取证失败" in labels
+    assert labels[-1] == "已关闭"
+    assert closed["refund_method"] is None
+
+    paid = make("QZ-CLOSE-PAID")
+    call(workbench, "POST", f"/api/v1/admin/evidence-requests/{paid}/accept", token)
+    call(
+        workbench,
+        "POST",
+        f"/api/v1/admin/evidence-requests/{paid}/quote",
+        token,
+        json={"amount": 80},
+    )
+    call(
+        workbench,
+        "POST",
+        f"/api/v1/admin/evidence-requests/{paid}/confirm-payment",
+        token,
+        json={"amount": 80},
+    )
+    failed = call(
+        workbench,
+        "POST",
+        f"/api/v1/admin/evidence-requests/{paid}/fail",
+        token,
+        json={
+            "reason": "片源无法核验",
+            "refund_method": "原路退回",
+            "refund_note": "线下原路退回",
+            "and_close": True,
+        },
+    ).json()
+    assert failed["status"] == "已关闭"
+    assert failed["refund_amount"] == 80
+    assert failed["failure_reason"] == "片源无法核验"
+    workbench.session.expire_all()
+    logs = call(workbench, "GET", "/api/v1/admin/audit-logs?limit=50", token).json()
+    steps = [row for row in logs if row["object_label"] == "QZ-CLOSE-PAID"]
+    actions = {row["action"] for row in steps}
+    assert {"fail_evidence", "close_evidence"} <= actions
+    failure = next(row for row in steps if row["action"] == "fail_evidence")
+    assert "片源无法核验" in failure["after_text"]
+    assert "原路退回" in failure["after_text"]
+    assert "80" in failure["after_text"]

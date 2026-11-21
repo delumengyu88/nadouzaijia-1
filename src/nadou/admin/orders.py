@@ -204,7 +204,7 @@ class EntitlementIssuer:
 class OrderRefund:
     """A refund expires the entitlement this order issued. Tier and days are not editable."""
 
-    REFUNDABLE = frozenset({"已支付", "已发放", "发放异常"})
+    REFUNDABLE = frozenset({"已发放"})
 
     def __init__(self, session: Session, audit: AuditWriter, now: datetime) -> None:
         self.session = session

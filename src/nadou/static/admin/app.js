@@ -62,11 +62,11 @@ async function api(path, options = {}) {
   return { ok: response.ok, status: response.status, data };
 }
 
-function fmt(value) {
-  if (!value) return "—";
+function clockParts(value) {
+  if (!value) return null;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  const parts = new Intl.DateTimeFormat("zh-CN", {
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Shanghai",
     year: "numeric",
     month: "2-digit",
@@ -79,7 +79,22 @@ function fmt(value) {
     const found = parts.find((part) => part.type === type);
     return found ? found.value : "";
   };
-  return `${pick("year")}-${pick("month")}-${pick("day")} ${pick("hour")}:${pick("minute")}`;
+  const hour = pick("hour") === "24" ? "00" : pick("hour");
+  return { year: pick("year"), month: pick("month"), day: pick("day"), hour, minute: pick("minute") };
+}
+
+function fmt(value) {
+  const parts = clockParts(value);
+  if (!parts) return "—";
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+function ymd(value) {
+  if (!value) return "—";
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const parts = clockParts(text);
+  return parts ? `${parts.year}-${parts.month}-${parts.day}` : "—";
 }
 
 function shortWhen(value) {
@@ -132,7 +147,16 @@ function icon(name) {
   return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none">${paths[name] || ""}</svg>`;
 }
 
-function shell(title, body, screen) {
+function noteBanner(text) {
+  const open = Boolean(state.noteOpen);
+  return `<button class="banner info page-note${open ? "" : " collapsed"}" type="button" data-act="toggle-note">
+    <span class="chev">${open ? "⌄" : "›"}</span><strong>说明</strong>
+    <span class="fold-hint">${open ? "收起" : "展开"}</span>
+    <span class="banner-body">${escapeHtml(text)}</span>
+  </button>`;
+}
+
+function shell(title, body, screen, note) {
   document.body.classList.toggle("screen", Boolean(screen));
   const admin = state.me && state.me.role === "admin";
   const items = [
@@ -181,6 +205,7 @@ function shell(title, body, screen) {
         </div>
       </header>
       <div class="content${screen ? " workspace" : ""}">
+        ${note ? noteBanner(note) : ""}
         ${state.message ? `<div class="banner warn">${escapeHtml(state.message)}</div>` : ""}
         ${body}
       </div>
@@ -237,20 +262,8 @@ function denied() {
 }
 
 function shanghaiDay(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const pick = (type) => {
-    const found = parts.find((part) => part.type === type);
-    return found ? found.value : "";
-  };
-  return `${pick("year")}-${pick("month")}-${pick("day")}`;
+  const text = ymd(value);
+  return text === "—" ? "" : text;
 }
 
 function dayText(value) {
@@ -307,7 +320,7 @@ async function renderEvidence() {
     if (statusFilter !== "全部" && row.status !== statusFilter) return false;
     if (typeFilter !== "全部" && row.request_type !== typeFilter) return false;
     if (vipOnly && !row.vip) return false;
-    const day = String(row.created_at || "").slice(0, 10);
+    const day = shanghaiDay(row.created_at);
     if (fromDay && day < fromDay) return false;
     if (toDay && day > toDay) return false;
     if (!evidenceQuery) return true;
@@ -373,6 +386,7 @@ async function renderEvidence() {
         </tr></thead><tbody>${rows || '<tr><td colspan="8">暂无申请</td></tr>'}</tbody></table></div></div>
     </div>${drawer}</div>`,
     true,
+    "超时未受理的申请置顶。日期按北京时间的自然日筛选，含当天 0 点，不含次日 0 点。标记失败会记下原因；取证中还要记下退款方式和金额，并同时关闭申请。",
   );
 }
 
@@ -434,7 +448,7 @@ function evidenceDrawer(row) {
         <div class="k">类型</div><div class="v">${escapeHtml(row.request_type)}</div>
         <div class="k">节目</div><div class="v">${escapeHtml(row.program_name || "—")}</div>
         <div class="k">平台</div><div class="v">${platformHtml(row.platform_label)}</div>
-        <div class="k">会员</div><div class="v">${row.vip ? "VIP" : "免费"}</div>
+        <div class="k">会员</div><div class="v">${memberTag(row)}</div>
         <div class="k">联系人</div><div class="v">${escapeHtml(row.contact_name || "—")} ${escapeHtml(row.phone || "")}</div>
         <div class="k">单位</div><div class="v">${escapeHtml(row.organization || "—")}</div>
         <div class="k">报价</div><div class="v money">${money(row.quote_amount)}</div>
@@ -490,7 +504,7 @@ async function renderInvites() {
         <td>${escapeHtml(row.channel)}</td>
         <td><span class="tag ${tone[row.status] || "tag-gray"} tag-dot">${escapeHtml(row.status)}</span></td>
         <td class="nowrap">${escapeHtml(fmt(row.created_at))}</td>
-        <td class="nowrap">${escapeHtml(fmt(row.expires_at))}</td>
+        <td class="nowrap">${escapeHtml(ymd(row.expires_at))}</td>
         <td>${escapeHtml(row.redeemed_phone || "—")}</td>
         <td class="nowrap">${escapeHtml(row.redeemed_at ? fmt(row.redeemed_at) : "—")}</td>
         <td>${action}</td>
@@ -506,7 +520,7 @@ async function renderInvites() {
       <div class="filters">
         <div class="field"><label>数量</label><input class="input w-xs" id="invite-count" value="10"></div>
         <div class="field"><label>渠道标签</label><input class="input w-md" id="invite-channel" value="临江示例律所"></div>
-        <div class="field"><label>码有效期</label><input class="input w-md" id="invite-until" type="date"></div>
+        <div class="field"><label>码有效期</label><input class="input w-md w-date" id="invite-until" inputmode="numeric" placeholder="YYYY-MM-DD"></div>
       </div>
       <p class="help">邀请码为 8 位大写字母数字，已去掉易混字符。普通会员 30 天，与已有会员同时计时。付费转化只统计小程序订单。</p>
       <button class="btn btn-primary" type="button" data-act="invite-create" style="margin-top:12px">生成邀请码</button>
@@ -523,12 +537,11 @@ async function renderInvites() {
       <th>邀请码</th><th>渠道</th><th>状态</th><th>生成时间</th><th>有效期至</th><th>兑换人</th><th>兑换时间</th><th>操作</th>
     </tr></thead><tbody>${list || '<tr><td colspan="8">暂无邀请码</td></tr>'}</tbody></table></div></div>`,
     false,
+    "邀请码 8 位，一码一次。兑换后发放普通会员 30 天，与已有会员同时计时。有效期按北京时间填写，格式 YYYY-MM-DD。",
   );
   const until = document.querySelector("#invite-until");
   if (until && !until.value) {
-    const day = new Date();
-    day.setDate(day.getDate() + 30);
-    until.value = day.toISOString().slice(0, 10);
+    until.value = shanghaiDay(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
   }
 }
 
@@ -544,17 +557,17 @@ async function renderUsers() {
   const inviteGrant = activeGrants.find((row) => row.kind === "regular" && row.source === "invite");
   let tierLine = "无会员";
   if (user && vipGrant && inviteGrant) {
-    tierLine = `普通会员 至 ${fmt(inviteGrant.expires_at).slice(0, 10)}（与 VIP 同时计时）`;
+    tierLine = `普通会员 至 ${ymd(inviteGrant.expires_at)}（与 VIP 同时计时）`;
   } else if (user && vipGrant) {
-    tierLine = `VIP 至 ${fmt(vipGrant.expires_at).slice(0, 10)}`;
+    tierLine = `VIP 至 ${ymd(vipGrant.expires_at)}`;
   } else if (user && inviteGrant) {
-    tierLine = `普通会员 至 ${fmt(inviteGrant.expires_at).slice(0, 10)}`;
+    tierLine = `普通会员 至 ${ymd(inviteGrant.expires_at)}`;
   }
   const grants = user
     ? (user.entitlements || [])
         .map((row) => {
           const label = row.source_label ? ` <span class="tag tag-gray">${escapeHtml(row.source_label)}</span>` : "";
-          return `<tr><td>${tierName(row.kind)}</td><td>${escapeHtml(row.program_name || "—")}</td><td>${escapeHtml(fmt(row.expires_at))}</td><td>${row.active ? "有效" : "已结束"}${label}</td></tr>`;
+          return `<tr><td>${tierName(row.kind)}</td><td>${escapeHtml(row.program_name || "—")}</td><td>${escapeHtml(ymd(row.expires_at))}</td><td>${row.active ? "有效" : "已结束"}${label}</td></tr>`;
         })
         .join("")
     : "";
@@ -614,6 +627,7 @@ async function renderUsers() {
     </div><p class="help">客服看到的手机号只保留后 4 位。</p></div></div>
     <div class="grid-2-1">${profile}<div>${grantCard}${locks}</div></div>`,
     false,
+    "先查询用户再开通或封禁。开通、封禁和解禁后仍停留在该用户。客服只能看到手机号后四位。",
   );
 }
 
@@ -692,13 +706,14 @@ async function renderOrders() {
       </tr></thead><tbody>${rows || '<tr><td colspan="9">暂无订单</td></tr>'}</tbody></table></div></div>
     </div>${drawer}</div>`,
     true,
+    "发放异常只提供补发，档位和天数取自订单。退款并回收权益仅管理员对已发放的订单可用。",
   );
 }
 
 function orderDrawer(row, admin) {
   const reissue = row.status === "发放异常" ? `<button class="btn btn-primary" type="button" data-act="reissue-open" data-id="${escapeHtml(row.id)}">补发</button>` : "";
   const refund =
-    admin && ["已支付", "已发放", "发放异常"].includes(row.status)
+    admin && row.status === "已发放"
       ? `<button class="btn btn-danger" type="button" data-act="refund-open" data-id="${escapeHtml(row.id)}">退款并回收权益</button>`
       : "";
   return `<aside class="drawer">
@@ -741,13 +756,13 @@ async function renderContent() {
         : `<button class="link" type="button" data-act="note-online" data-id="${escapeHtml(row.id)}">上线</button>`;
       return `<tr><td><div class="ann-title">${escapeHtml(row.title)}</div><div class="ann-body">${escapeHtml(row.body)}</div></td>
         <td>${escapeHtml(row.button_text)}<br><span class="muted">${escapeHtml(row.jump_label || "无跳转")}</span></td>
-        <td class="dates">${escapeHtml(fmt(row.starts_at))}<br>至 ${escapeHtml(fmt(row.ends_at))}</td>
+        <td class="dates">${escapeHtml(ymd(row.starts_at))}<br>至 ${escapeHtml(ymd(row.ends_at))}</td>
         <td>${freq}</td><td><span class="tag ${tone}">${escapeHtml(row.state)}</span></td><td>${toggle}</td></tr>`;
     })
     .join("");
   const exampleCards = state.examples
     .map((row, index) => {
-      const detected = row.detected_on ? fmt(row.detected_on).slice(0, 10) : "—";
+      const detected = row.detected_on ? ymd(row.detected_on) : "—";
       return `<div class="example-card"><div class="order">${index + 1}</div><div class="thumb"><span>示例</span></div><div style="flex:1">
         <h4>${escapeHtml(row.program_name)}</h4>
         <div class="muted">命中 ${row.platform_hits} 个平台 · 检测日期 ${escapeHtml(detected)}</div>
@@ -800,6 +815,7 @@ async function renderContent() {
       </div>
     </div></div>`,
     false,
+    "开屏停留 5 秒。口号不能写「永久免费」或「全平台」。首页示例固定 3 到 5 条。",
   );
 }
 
@@ -885,18 +901,40 @@ function auditText(value) {
   return escapeHtml(parts.join("；") || "—");
 }
 
+const LOG_TYPES = [
+  ["", "全部对象"],
+  ["evidence_request", "取证申请"],
+  ["evidence_note", "沟通备注"],
+  ["order", "订单"],
+  ["user", "用户"],
+  ["entitlement", "会员权益"],
+  ["invite_code", "邀请码"],
+  ["staff_account", "账号"],
+  ["announcement", "公告"],
+  ["splash", "开屏"],
+  ["homepage_example", "首页示例"],
+];
+
 async function renderLogs() {
   if (state.me.role !== "admin") return denied();
-  if (!state.keepLogs) {
-    const listed = await api("/api/v1/admin/audit-logs?limit=200");
-    if (!listed.ok) {
-      state.message = explain(listed.data, listed.status);
-      shell("操作日志", "", false);
-      return;
-    }
-    state.logs = listed.data;
+  const page = state.logPage || 0;
+  const params = new URLSearchParams();
+  params.set("limit", "20");
+  params.set("offset", String(page * 20));
+  params.set("paged", "1");
+  if (state.logActor) params.set("actor", state.logActor);
+  if (state.logQuery) params.set("q", state.logQuery);
+  if (state.logType) params.set("object_type", state.logType);
+  if (state.logFrom) params.set("day_from", state.logFrom);
+  if (state.logTo) params.set("day_to", state.logTo);
+  const listed = await api(`/api/v1/admin/audit-logs?${params.toString()}`);
+  if (!listed.ok) {
+    state.message = explain(listed.data, listed.status);
+    shell("操作日志", "", false);
+    return;
   }
-  state.keepLogs = false;
+  state.logs = listed.data.items || [];
+  state.logTotal = listed.data.total || 0;
   const rows = state.logs
     .map(
       (row) => `<tr>
@@ -909,18 +947,33 @@ async function renderLogs() {
       </tr>`,
     )
     .join("");
+  const typeOptions = LOG_TYPES.map(
+    ([value, label]) =>
+      `<option value="${value}"${value === (state.logType || "") ? " selected" : ""}>${label}</option>`,
+  ).join("");
+  const lastPage = Math.max(0, Math.ceil(state.logTotal / 20) - 1);
   shell(
     "操作日志",
     `<div class="card"><div class="card-hd">筛选</div><div class="card-bd"><div class="filters">
-      <input class="input w-sm" id="log-actor" placeholder="操作人">
-      <input class="input w-lg" id="log-query" placeholder="关键词">
+      <input class="input w-sm" id="log-actor" placeholder="操作人" value="${escapeHtml(state.logActor || "")}">
+      <select class="select w-sm" id="log-type">${typeOptions}</select>
+      <input class="input w-date" id="log-from" inputmode="numeric" placeholder="YYYY-MM-DD" value="${escapeHtml(state.logFrom || "")}">
+      <input class="input w-date" id="log-to" inputmode="numeric" placeholder="YYYY-MM-DD" value="${escapeHtml(state.logTo || "")}">
+      <input class="input w-md" id="log-query" placeholder="关键词" value="${escapeHtml(state.logQuery || "")}">
       <button class="btn btn-primary" type="button" data-act="log-search">查询</button>
     </div></div></div>
-    <div class="card"><div class="card-hd">操作记录<span class="sub">共 ${state.logs.length} 条 · 只读，不可删除</span></div>
+    <div class="card"><div class="card-hd">操作记录<span class="sub">共 ${state.logTotal} 条 · 只读，不可删除</span></div>
       <div class="card-bd flush"><table class="data"><thead><tr>
         <th>时间</th><th>操作人</th><th>操作</th><th>对象</th><th>前值</th><th>后值</th>
-      </tr></thead><tbody>${rows || '<tr><td colspan="6">暂无记录</td></tr>'}</tbody></table></div></div>`,
+      </tr></thead><tbody>${rows || '<tr><td colspan="6">暂无记录</td></tr>'}</tbody></table></div>
+      <div class="card-bd" style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-default btn-sm" type="button" data-act="log-page" data-dir="prev"${page === 0 ? " disabled" : ""}>上一页</button>
+        <span class="help" style="margin:0">第 ${page + 1} 页</span>
+        <button class="btn btn-default btn-sm" type="button" data-act="log-page" data-dir="next"${page >= lastPage ? " disabled" : ""}>下一页</button>
+      </div>
+    </div>`,
     false,
+    "全部写操作留痕，不可删除。对象显示申请号、订单号或用户姓名加手机号后四位。日期按北京时间的自然日。",
   );
 }
 
@@ -988,6 +1041,7 @@ async function renderIndex() {
       <tbody>${runs || '<tr><td colspan="4">暂无运行</td></tr>'}</tbody></table>
     </div></div>`,
     false,
+    "索引超过 2 天没有成功运行时，顶栏会出现告警。导入使用与定时任务相同的任务导出表。",
   );
 }
 
@@ -1044,6 +1098,18 @@ async function afterChange(ok, status, data) {
   state.message = "";
   state.index = null;
   await draw();
+}
+
+function shanghaiStamp(text) {
+  const match = /^(\d{4}-\d{2}-\d{2}) (\d{2}):(\d{2})$/.exec(text);
+  if (!match) return "";
+  return `${match[1]}T${match[2]}:${match[3]}:00+08:00`;
+}
+
+async function reloadUser() {
+  if (!state.user) return;
+  const detail = await api(`/api/v1/admin/users/${state.user.id}`);
+  if (detail.ok) state.user = detail.data;
 }
 
 function value(id) {
@@ -1159,8 +1225,8 @@ async function onClick(event) {
     const row = state.detail;
     const paid = row && row.status === "取证中";
     const help = paid
-      ? "该申请已确认线下收款（取证中）。无法交付时须记录退款。取证不走小程序订单，按线下收款退回。关闭是单独的下一步。"
-      : "该申请尚未确认收款。无需退款。「已受理」和「待付款（线下）」都不出现退款字段。失败原因必填。";
+      ? "该申请已确认线下收款（取证中）。无法交付时须记录退款方式和金额，金额默认等于已确认的线下收款。确认后记为取证失败并关闭。"
+      : "该申请尚未确认收款，不需要退款。「已受理」和「待付款（线下）」都不出现退款字段。失败原因必填。确认后记为取证失败并关闭。";
     const refund = paid
       ? `<div class="field" style="margin-top:12px"><label>退款方式<span class="req">*</span></label><select class="select" id="refund-method" style="width:100%"><option>原路退回</option><option>银行转账</option><option>微信转账</option><option>其他</option></select></div>
          <div class="field" style="margin-top:12px"><label>退款金额<span class="req">*</span></label><input class="input" id="refund-amount" value="${escapeHtml(row.payment_amount || "")}"></div>
@@ -1168,32 +1234,35 @@ async function onClick(event) {
       : "";
     await showModal(`<div class="modal"><div class="modal-hd">标记失败</div><div class="modal-bd">
       <p class="help" style="margin-top:0">${help}</p>
+      <p class="help fail-error" id="fail-error" hidden>请补全标红的必填项。</p>
       <div class="field"><label>失败原因<span class="req">*</span></label><textarea class="textarea" id="fail-reason" rows="3" placeholder="请填写失败原因，此项必填"></textarea></div>
       ${refund}
     </div><div class="modal-ft">
       <button class="btn btn-default" type="button" data-act="modal-close">取消</button>
-      <button class="btn btn-danger-solid" type="button" data-act="fail" data-id="${escapeHtml(id)}">确认失败</button>
+      <button class="btn btn-danger-solid" type="button" data-act="fail" data-id="${escapeHtml(id)}">确认失败并关闭</button>
     </div></div>`);
     return;
   }
   if (act === "fail") {
-    const reason = value("#fail-reason");
-    if (!reason) {
-      state.message = "请填写失败原因。";
-      await draw();
-      return;
-    }
     const paid = state.detail && state.detail.status === "取证中";
-    const payload = { reason };
+    const missing = ["#fail-reason"];
+    if (paid) missing.push("#refund-method", "#refund-amount", "#refund-note");
+    let blocked = false;
+    for (const selector of missing) {
+      const field = document.querySelector(selector);
+      if (!field) continue;
+      const empty = !field.value.trim();
+      field.classList.toggle("invalid", empty);
+      blocked = blocked || empty;
+    }
+    const error = document.querySelector("#fail-error");
+    if (error) error.hidden = !blocked;
+    if (blocked) return;
+    const payload = { reason: value("#fail-reason"), and_close: true };
     if (paid) {
       payload.refund_method = value("#refund-method");
       payload.refund_amount = Number(value("#refund-amount"));
       payload.refund_note = value("#refund-note");
-      if (!payload.refund_note) {
-        state.message = "请填写退款记录。";
-        await draw();
-        return;
-      }
     }
     const result = await api(`/api/v1/admin/evidence-requests/${id}/fail`, { method: "POST", json: payload });
     await afterChange(result.ok, result.status, result.data);
@@ -1208,8 +1277,8 @@ async function onClick(event) {
     const count = Number(value("#invite-count"));
     const channel = value("#invite-channel");
     const day = value("#invite-until");
-    if (!count || !channel || !day) {
-      state.message = "请填写数量、渠道和有效期。";
+    if (!count || !channel || !dayText(day)) {
+      state.message = "请填写数量、渠道，有效期用 YYYY-MM-DD。";
       await draw();
       return;
     }
@@ -1260,7 +1329,7 @@ async function onClick(event) {
       method: "POST",
       json: { tier: value("#grant-tier"), days: Number(value("#grant-days")), reason: value("#grant-reason") },
     });
-    state.user = null;
+    if (result.ok) await reloadUser();
     await afterChange(result.ok, result.status, result.data);
     return;
   }
@@ -1268,7 +1337,7 @@ async function onClick(event) {
     if (!state.user) return;
     await showModal(`<div class="modal"><div class="modal-hd">封禁账号</div><div class="modal-bd">
       <div class="field"><label>封禁类型</label><select class="select" id="ban-type" style="width:100%"><option value="temporary">临时封禁</option><option value="permanent">永久封禁</option></select></div>
-      <div class="field" style="margin-top:12px"><label>结束时间</label><input class="input" id="ban-until" type="datetime-local"></div>
+      <div class="field" style="margin-top:12px"><label>结束时间</label><input class="input" id="ban-until" placeholder="YYYY-MM-DD HH:mm"></div>
       <div class="field" style="margin-top:12px"><label>封禁原因</label><textarea class="textarea" id="ban-reason" rows="3"></textarea></div>
     </div><div class="modal-ft">
       <button class="btn btn-default" type="button" data-act="modal-close">取消</button>
@@ -1280,26 +1349,22 @@ async function onClick(event) {
     const kind = value("#ban-type");
     const payload = { type: kind, reason: value("#ban-reason") };
     if (kind === "temporary") {
-      const until = value("#ban-until");
+      const until = shanghaiStamp(value("#ban-until"));
       if (!until) {
-        state.message = "临时封禁必须填写结束时间。";
-        state.modal = null;
-        await draw();
+        const field = document.querySelector("#ban-until");
+        if (field) field.classList.add("invalid");
         return;
       }
-      payload.until = `${until}:00+08:00`;
+      payload.until = until;
     }
     const result = await api(`/api/v1/admin/users/${id}/ban`, { method: "POST", json: payload });
-    if (result.ok) {
-      const detail = await api(`/api/v1/admin/users/${id}`);
-      state.user = detail.ok ? detail.data : null;
-    }
+    if (result.ok) await reloadUser();
     await afterChange(result.ok, result.status, result.data);
     return;
   }
   if (act === "unban") {
     const result = await api(`/api/v1/admin/users/${id}/unban`, { method: "POST" });
-    state.user = null;
+    if (result.ok) await reloadUser();
     await afterChange(result.ok, result.status, result.data);
     return;
   }
@@ -1425,20 +1490,31 @@ async function onClick(event) {
     await afterChange(result.ok, result.status, result.data);
     return;
   }
-  if (act === "log-search") {
-    const params = new URLSearchParams();
-    params.set("limit", "200");
-    const actor = value("#log-actor");
-    const query = value("#log-query");
-    if (actor) params.set("actor", actor);
-    if (query) params.set("q", query);
-    const listed = await api(`/api/v1/admin/audit-logs?${params.toString()}`);
-    if (!listed.ok) {
-      state.message = explain(listed.data, listed.status);
-    } else {
-      state.logs = listed.data;
+  if (act === "toggle-note") {
+    state.noteOpen = !state.noteOpen;
+    await draw();
+    return;
+  }
+  if (act === "log-search" || act === "log-page") {
+    const fromDay = value("#log-from");
+    const toDay = value("#log-to");
+    if ((fromDay && !dayText(fromDay)) || (toDay && !dayText(toDay))) {
+      state.message = "日期请按 YYYY-MM-DD 填写。";
+      await draw();
+      return;
     }
-    state.keepLogs = true;
+    state.logActor = value("#log-actor");
+    state.logQuery = value("#log-query");
+    state.logType = value("#log-type");
+    state.logFrom = fromDay;
+    state.logTo = toDay;
+    if (act === "log-page") {
+      const last = Math.max(0, Math.ceil((state.logTotal || 0) / 20) - 1);
+      const next = (state.logPage || 0) + (node.dataset.dir === "next" ? 1 : -1);
+      state.logPage = Math.min(last, Math.max(0, next));
+    } else {
+      state.logPage = 0;
+    }
     await renderLogs();
     return;
   }

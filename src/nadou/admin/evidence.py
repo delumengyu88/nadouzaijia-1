@@ -13,6 +13,14 @@ from nadou.models import Entitlement, EvidenceNote, EvidenceRequest, User
 from nadou.text import RecordAge
 
 
+def membership_kind(kinds: set[str]) -> str:
+    if "vip" in kinds:
+        return "vip"
+    if "regular" in kinds:
+        return "regular"
+    return "free"
+
+
 class EvidenceStatus:
     SUBMITTED = "已提交"
     ACCEPTED = "已受理"
@@ -511,6 +519,7 @@ class EvidenceList:
         created_to: datetime | None,
         vip_first: bool,
         reveal_phone: bool = True,
+        created_before: datetime | None = None,
     ) -> list[dict]:
         stmt = select(EvidenceRequest)
         if status:
@@ -521,6 +530,8 @@ class EvidenceList:
             stmt = stmt.where(EvidenceRequest.created_at >= created_from)
         if created_to is not None:
             stmt = stmt.where(EvidenceRequest.created_at <= created_to)
+        if created_before is not None:
+            stmt = stmt.where(EvidenceRequest.created_at < created_before)
         rows = list(self.session.scalars(stmt).all())
         vip_ids = self._vip_ids({row.user_id for row in rows})
         rows.sort(
@@ -535,12 +546,12 @@ class EvidenceList:
         regular_ids = self._regular_ids({row.user_id for row in rows})
         listed = []
         for row in rows:
+            kinds = set()
             if row.user_id in vip_ids:
-                membership = "vip"
-            elif row.user_id in regular_ids:
-                membership = "regular"
-            else:
-                membership = "free"
+                kinds.add("vip")
+            if row.user_id in regular_ids:
+                kinds.add("regular")
+            membership = membership_kind(kinds)
             body = EvidenceView.summary(
                 row,
                 overdue=EvidenceOverdue.is_overdue(row, self.now),

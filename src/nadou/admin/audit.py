@@ -240,7 +240,9 @@ class AuditQuery:
         query: str | None = None,
         created_from: datetime | None = None,
         created_to: datetime | None = None,
-    ) -> list[dict]:
+        created_before: datetime | None = None,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
         statement = select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
         if actor:
             statement = statement.where(AuditLog.actor_username == actor)
@@ -250,16 +252,18 @@ class AuditQuery:
             statement = statement.where(AuditLog.created_at >= created_from)
         if created_to is not None:
             statement = statement.where(AuditLog.created_at <= created_to)
+        if created_before is not None:
+            statement = statement.where(AuditLog.created_at < created_before)
         rows = list(session.scalars(statement.limit(500)).all())
         needle = (query or "").strip().casefold()
         if needle:
             rows = [row for row in rows if needle in AuditQuery._blob(row)]
         shown = []
-        for row in rows[:limit]:
+        for row in rows[offset : offset + limit]:
             body = AuditView.render(row)
             body["object_label"] = AuditView.business_label(session, row)
             shown.append(body)
-        return shown
+        return shown, len(rows)
 
     @staticmethod
     def _blob(row: AuditLog) -> str:

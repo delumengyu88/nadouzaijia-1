@@ -31,6 +31,7 @@ from nadou.admin.evidence import (
     EvidenceOverdueScanner,
     EvidenceView,
     EvidenceWorkflow,
+    membership_kind,
 )
 from nadou.admin.indexing import CsvTaskExportSource, IndexJob, IndexRunBusy, IndexStatus
 from nadou.admin.invites import InviteBook, InviteStats, InviteView
@@ -65,6 +66,7 @@ from nadou.admin.schemas import (
     SplashIn,
     StaffCreateIn,
 )
+from nadou.admin.shanghai import ShanghaiDay
 from nadou.config import get_settings
 from nadou.models import Entitlement, EvidenceRequest, StaffAccount, User
 
@@ -92,6 +94,13 @@ class AdminApi:
     """All workbench routes. Permission checks happen here, not in a client."""
 
     COOKIE_PATH = "/api/v1/admin"
+
+    @staticmethod
+    def _days(day_from: str | None, day_to: str | None):
+        try:
+            return ShanghaiDay.bounds(day_from, day_to)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
 
     @staticmethod
     def register(app: FastAPI, get_session, clock, notifier, grant_writer) -> None:
@@ -230,18 +239,28 @@ class AdminApi:
             q: str | None = None,
             created_from: datetime | None = None,
             created_to: datetime | None = None,
+            day_from: str | None = None,
+            day_to: str | None = None,
+            offset: int = Query(default=0, ge=0),
+            paged: bool = False,
             _account: StaffAccount = Depends(require_admin),
             session: Session = Depends(get_session),
         ):
-            return AuditQuery.latest(
+            opened, closed = AdminApi._days(day_from, day_to)
+            rows, total = AuditQuery.latest(
                 session,
                 limit,
                 actor=actor,
                 object_type=object_type,
                 query=q,
-                created_from=AwareInstant.parse(created_from),
-                created_to=AwareInstant.parse(created_to),
+                created_from=opened or AwareInstant.parse(created_from),
+                created_before=closed,
+                created_to=None if closed is not None else AwareInstant.parse(created_to),
+                offset=offset,
             )
+            if paged:
+                return {"items": rows, "total": total}
+            return rows
 
         @app.get("/api/v1/admin/evidence-requests")
         def list_evidence(
@@ -249,17 +268,21 @@ class AdminApi:
             request_type: str | None = Query(default=None, alias="type"),
             created_from: datetime | None = None,
             created_to: datetime | None = None,
+            day_from: str | None = None,
+            day_to: str | None = None,
             vip_first: bool = True,
             _account: StaffAccount = Depends(current_staff),
             session: Session = Depends(get_session),
         ):
             now = clock()
+            opened, closed = AdminApi._days(day_from, day_to)
             EvidenceOverdueScanner(session, notifier, lambda: now).scan()
             return EvidenceList(session, now).query(
                 status=status,
                 request_type=request_type,
-                created_from=AwareInstant.parse(created_from),
-                created_to=AwareInstant.parse(created_to),
+                created_from=opened or AwareInstant.parse(created_from),
+                created_to=None if closed is not None else AwareInstant.parse(created_to),
+                created_before=closed,
                 vip_first=vip_first,
                 reveal_phone=_account.role == "admin",
             )
@@ -389,6 +412,8 @@ class AdminApi:
                     payload.refund_amount,
                     payload.refund_note,
                 )
+                if payload.and_close:
+                    row = flow.close(row.id, now)
                 return AdminApi._evidence_detail(session, row, account, now)
 
             return Endpoint.invoke(action)
@@ -911,24 +936,26 @@ class AdminApi:
         user = session.get(User, row.user_id)
         phone = None if user is None else user.phone
         notes = EvidenceWorkflow.notes_for(session, row.id)
-        vip = (
-            session.scalar(
-                select(Entitlement.id).where(
+        kinds = set(
+            session.scalars(
+                select(Entitlement.kind).where(
                     Entitlement.user_id == row.user_id,
-                    Entitlement.kind == "vip",
+                    Entitlement.kind.in_(("vip", "regular")),
                     Entitlement.expires_at > now,
                 )
-            )
-            is not None
+            ).all()
         )
-        return EvidenceView.detail(
+        tier = membership_kind(kinds)
+        body = EvidenceView.detail(
             row,
             notes,
             overdue=EvidenceOverdue.is_overdue(row, now),
-            vip=vip,
+            vip=tier == "vip",
             phone=phone,
             reveal_phone=account.role == "admin",
         )
+        body["membership"] = tier
+        return body
 
     @staticmethod
     def _invite_csv(rows: list[dict]) -> str:

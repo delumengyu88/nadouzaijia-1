@@ -648,6 +648,18 @@ table.data .tag { max-width: 100%; }
 }
 .banner.collapsed .banner-body { display: none; }
 .banner.collapsed .fold-hint { margin-left: auto; color: var(--text-3); font-size: 12px; }
+button.page-note {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+button.page-note:not(.collapsed) { flex-wrap: wrap; }
+button.page-note:not(.collapsed) .banner-body { flex-basis: 100%; display: block; }
+.input.invalid, .textarea.invalid, .select.invalid {
+  border-color: var(--danger);
+  background: #FDECEC;
+}
 
 body.screen {
   width: 100%;

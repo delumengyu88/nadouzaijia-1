@@ -1,5 +1,6 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -429,10 +430,10 @@ class DemoData:
             "故人归途",
             "北京移动 · 公网",
             "许南",
-            now - timedelta(days=1),
+            datetime(2026, 11, 21, 4, 15, tzinfo=ZoneInfo("Asia/Shanghai")),
             quote_amount=420,
-            quoted_at=now - timedelta(hours=20),
-            accepted_at=now - timedelta(days=1),
+            quoted_at=datetime(2026, 11, 21, 6, 15, tzinfo=ZoneInfo("Asia/Shanghai")),
+            accepted_at=datetime(2026, 11, 21, 5, 15, tzinfo=ZoneInfo("Asia/Shanghai")),
         )
         parked(
             "QZ20261120055",

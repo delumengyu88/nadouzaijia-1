@@ -211,6 +211,15 @@ def test_refund_revokes_the_issued_entitlement_and_is_audited(workbench):
     assert grant.expires_at <= workbench.clock.now
     actions = set(workbench.session.scalars(select(AuditLog.action)).all())
     assert "refund_order" in actions
+    broken = add_order(workbench.session, user, workbench.clock.now, "DD-AUDIT-BROKEN")
+    call(
+        workbench,
+        "POST",
+        f"/api/v1/admin/orders/{broken.id}/refund",
+        workbench.admin_token,
+        json={"reason": "发放异常不能退款"},
+        expected=409,
+    )
     assert "reissue_entitlement" in actions
 
 

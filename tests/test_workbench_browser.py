@@ -376,3 +376,125 @@ def test_w02_filters_stay_clickable_beside_the_drawer():
             server.wait(timeout=10)
         except subprocess.TimeoutExpired:
             server.kill()
+
+
+def test_round3_tier_dates_profile_failure_and_refund():
+    if os.environ.get("NADOU_RUN_BROWSER") != "1":
+        pytest.skip("set NADOU_RUN_BROWSER=1 to load the workbench in Chromium")
+    database = os.environ.get("DATABASE_URL", "")
+    if not database.startswith("postgresql"):
+        pytest.skip("browser check uses the Postgres started for CI")
+    playwright_sync = pytest.importorskip("playwright.sync_api")
+    from nadou.__main__ import DemoCommand
+
+    assert DemoCommand.run() == 0
+    port = _free_port()
+    server = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "nadou.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+        env=os.environ.copy(),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    base = f"http://127.0.0.1:{port}"
+    try:
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+                    break
+            except OSError:
+                if server.poll() is not None:
+                    raise AssertionError("server exited")
+                time.sleep(0.2)
+        else:
+            raise AssertionError("workbench did not start")
+        with playwright_sync.sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.goto(f"{base}/admin/#/login", wait_until="networkidle")
+            page.fill("input[name=username]", DemoAccounts.ADMIN)
+            page.fill("input[name=password]", DemoAccounts.ADMIN_PASSWORD)
+            page.locator("button[type=submit]").click()
+            page.locator("h1", has_text="取证申请").wait_for()
+            page.locator("button.page-note", has_text="说明").wait_for()
+            page.locator("tr", has_text="雾港来信").locator("button", has_text="查看").click()
+            page.locator("aside.drawer").wait_for()
+            assert page.locator("aside.drawer").get_by_text("普通会员", exact=True).count() == 1
+            page.locator("button[data-act=close-drawer]").click()
+            page.locator("aside.drawer").wait_for(state="detached")
+            page.fill("#evidence-from", "2026-11-21")
+            page.fill("#evidence-to", "2026-11-21")
+            page.locator("#evidence-search").click()
+            page.locator("td", has_text="星河旧梦").wait_for(state="detached")
+            assert page.locator("td", has_text="QZ20261120041").count() == 1
+            page.fill("#evidence-from", "2026-11-20")
+            page.fill("#evidence-to", "2026-11-20")
+            page.locator("#evidence-search").click()
+            page.locator("td", has_text="QZ20261120041").wait_for(state="detached")
+            page.fill("#evidence-from", "")
+            page.fill("#evidence-to", "")
+            page.locator("#evidence-search").click()
+            page.locator("tr", has_text="雾港来信").locator("button", has_text="查看").click()
+            page.locator("button[data-act=fail-open]").click()
+            page.locator("button", has_text="确认失败并关闭").click()
+            assert "invalid" in (page.locator("#fail-reason").get_attribute("class") or "")
+            page.fill("#fail-reason", "用户取消")
+            page.locator("button", has_text="确认失败并关闭").click()
+            page.locator("tr", has_text="雾港来信").get_by_text("已关闭", exact=True).wait_for()
+            working = page.locator("tr").filter(has=page.get_by_text("取证中", exact=True))
+            working.first.locator("button", has_text="查看").click()
+            page.locator("button[data-act=fail-open]").click()
+            page.fill("#fail-reason", "片源无法核验")
+            page.locator("button", has_text="确认失败并关闭").click()
+            assert page.locator("#fail-reason").input_value() == "片源无法核验"
+            assert "invalid" in (page.locator("#refund-note").get_attribute("class") or "")
+            page.locator("button", has_text="取消").click()
+            page.goto(f"{base}/admin/#/w04", wait_until="networkidle")
+            page.fill("#user-query", "18600004419")
+            page.locator("button[data-act=user-search]").click()
+            page.locator("text=周安").wait_for()
+            page.fill("#grant-reason", "验收开通")
+            page.locator("button[data-act=grant]").click()
+            page.locator(".tag", has_text="手动发放").wait_for()
+            assert "输入手机号后查询" not in page.locator("body").inner_text()
+            assert "周安" in page.locator("body").inner_text()
+            page.goto(f"{base}/admin/#/w03", wait_until="networkidle")
+            until = page.locator("#invite-until")
+            assert until.get_attribute("type") != "date"
+            assert until.input_value()
+            assert len(until.input_value()) == 10 and until.input_value()[4] == "-"
+            page.goto(f"{base}/admin/#/w05", wait_until="networkidle")
+            drawer = page.locator("aside.drawer")
+            drawer.get_by_text("发放异常", exact=True).wait_for()
+            assert drawer.get_by_role("button", name="补发").count() == 1
+            assert drawer.get_by_role("button", name="退款并回收权益").count() == 0
+            issued = page.locator("tr").filter(has=page.get_by_text("已发放", exact=True))
+            issued.first.locator("button", has_text="查看").click()
+            drawer.get_by_role("button", name="退款并回收权益").wait_for()
+            page.goto(f"{base}/admin/#/w08", wait_until="networkidle")
+            page.locator("#log-type").select_option("evidence_request")
+
+            def evidence_logs(response):
+                return "object_type=evidence_request" in response.url
+
+            with page.expect_response(evidence_logs):
+                page.locator("button[data-act=log-search]").click()
+            assert page.locator("td", has_text="登录").count() == 0
+            assert page.locator("td", has_text="接单").count() >= 1
+            browser.close()
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
