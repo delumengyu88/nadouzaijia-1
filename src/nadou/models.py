@@ -170,7 +170,6 @@ class ProgramAlias(Base):
     canonical_name: Mapped[str] = mapped_column(String(200), nullable=False)
 
 
-
 class StaffAccount(Base):
     __tablename__ = "staff_accounts"
     __table_args__ = (CheckConstraint("role IN ('support', 'admin')", name="ck_staff_role"),)

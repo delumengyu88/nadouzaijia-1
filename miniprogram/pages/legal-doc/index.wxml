@@ -1,0 +1,10 @@
+<view class="nav" style="padding-top: {{statusBarHeight}}px;">
+  <view class="nav-bar">
+    <view class="nav-back" bindtap="back">‹</view>
+    <view class="nav-title">{{title}}</view>
+  </view>
+</view>
+<view style="height: {{navHeight}}px;"></view>
+<view class="body">
+  <view class="note" wx:for="{{paragraphs}}" wx:key="*this" style="color:#1c2430;font-size:28rpx;">{{item}}</view>
+</view>

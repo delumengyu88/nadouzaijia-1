@@ -1,0 +1,36 @@
+<view class="nav" style="padding-top: {{statusBarHeight}}px;">
+  <view class="nav-bar">
+    <view class="nav-back" bindtap="back">‹</view>
+    <view class="nav-title">{{title}}</view>
+  </view>
+</view>
+<view style="height: {{navHeight}}px;"></view>
+<view class="body" wx:if="{{phase == 'edit'}}">
+  <textarea class="area" style="margin:24rpx 32rpx 0;width:auto;display:block;min-height:280rpx;" placeholder="粘贴或输入节目名，一行一个" value="{{raw}}" bindinput="onInput" />
+  <view class="hint">也可上传 Excel（.xlsx，首行「节目名」，≤500 行）</view>
+  <view class="btn block {{raw ? '' : 'off'}}" bindtap="start">开始查询</view>
+</view>
+<view class="body" wx:elif="{{phase == 'recognizing'}}">
+  <view class="card"><view class="dialog-body">{{box}}</view></view>
+  <view class="note" style="color:#1f4ed8;">{{hint}}</view>
+</view>
+<view class="body" wx:elif="{{phase == 'preview'}}">
+  <view class="pad">
+    <view class="card-title">识别结果预览</view>
+    <view class="sub">{{summary}}</view>
+  </view>
+  <view class="card" style="padding:0 28rpx;">
+    <view class="row" wx:for="{{items}}" wx:key="name" style="padding-left:0;padding-right:0;">
+      <view class="row-main"><view class="row-title">{{item.name}}</view></view>
+      <text class="sub">第 {{index + 1}} 行</text>
+      <text class="link" style="margin:0 0 0 16rpx;" data-index="{{index}}" bindtap="remove">删除</text>
+    </view>
+  </view>
+  <view class="btn block" bindtap="confirm">确认查询</view>
+</view>
+<view class="body" wx:else>
+  <view class="err-box">{{failText}}</view>
+  <view class="card"><view class="dialog-body">{{box}}</view></view>
+  <view class="btn block" bindtap="reset">重新选择</view>
+  <view class="btn block ghost" bindtap="upload">重新上传</view>
+</view>

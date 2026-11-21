@@ -1,0 +1,8 @@
+<view class="stage">
+  <view class="stage-mid">
+    <view class="stage-title">那豆在架</view>
+    <view class="stage-sub">已收录平台片单检索</view>
+    <view class="stage-line"></view>
+  </view>
+  <view class="stage-skip" bindtap="skip">跳过 {{seconds}}</view>
+</view>

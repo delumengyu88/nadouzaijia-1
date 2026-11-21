@@ -1,0 +1,21 @@
+<view class="nav" style="padding-top: {{statusBarHeight}}px;">
+  <view class="nav-bar">
+    <view class="nav-back" bindtap="back">‹</view>
+    <view class="nav-title">查询记录</view>
+  </view>
+</view>
+<view style="height: {{navHeight}}px;"></view>
+<view class="body">
+  <view class="center-box" wx:if="{{empty}}">
+    <view class="center-title">暂无查询记录</view>
+    <view class="center-sub">在首页输入片单后，结果会保存在这里。</view>
+  </view>
+  <view class="row" wx:for="{{rows}}" wx:key="name" data-id="{{item.id}}" bindtap="open">
+    <view class="row-main">
+      <view class="row-title">{{item.name}}</view>
+      <view class="row-sub">{{item.line}}</view>
+    </view>
+    <text class="tag {{item.badgeCls}}">{{item.badge}}</text>
+    <text class="chev">›</text>
+  </view>
+</view>

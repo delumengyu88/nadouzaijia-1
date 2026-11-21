@@ -1,0 +1,28 @@
+<view class="tab-page">
+<view class="nav" style="padding-top: {{statusBarHeight}}px;">
+  <view class="nav-bar"><view class="nav-title">{{title}}</view></view>
+</view>
+<view style="height: {{navHeight}}px;"></view>
+<view class="member-status" wx:if="{{statusLine}}">{{statusLine}}</view>
+<view class="member-status" wx:else></view>
+<view class="choice {{selected == 'membership_vip' ? 'on' : ''}}" data-id="membership_vip" bindtap="pick">
+  <view class="choice-top">
+    <text class="choice-name">VIP 会员</text>
+    <view class="price-row"><text class="price">¥599/30天</text><view class="radio {{selected == 'membership_vip' ? 'on' : ''}}"></view></view>
+  </view>
+  <view class="perk ok">✓ 能看 30 天前的记录</view>
+  <view class="perk ok">✓ 能看 90 天前的记录</view>
+  <view class="perk ok">✓ 高清截图与下载</view>
+</view>
+<view class="choice {{selected == 'membership_regular' ? 'on' : ''}}" data-id="membership_regular" bindtap="pick">
+  <view class="choice-top">
+    <text class="choice-name">普通会员</text>
+    <view class="price-row"><text class="price">¥299/30天</text><view class="radio {{selected == 'membership_regular' ? 'on' : ''}}"></view></view>
+  </view>
+  <view class="perk dim">— 能看 30 天前的记录</view>
+  <view class="perk">能看 90 天前的记录</view>
+  <view class="perk ok">✓ 高清截图与下载</view>
+</view>
+<view class="note">单节目解锁在报告页按条购买。含 30 天以上 ¥199，含 90 天以上 ¥99，在线看 7 天。单张截图 ¥29，仅适用于不少于 90 天记录。</view>
+<view class="btn block" bindtap="go">{{payLabel}}</view>
+</view>

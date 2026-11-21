@@ -1,0 +1,86 @@
+<view class="nav" style="padding-top: {{statusBarHeight}}px;">
+  <view class="nav-bar">
+    <view class="nav-back" bindtap="back">‹</view>
+    <view class="nav-title">{{title}}</view>
+  </view>
+</view>
+<view style="height: {{navHeight}}px;"></view>
+<view class="body" wx:if="{{phase == 'loading'}}">
+  <view class="center-box"><view class="center-title">正在加载</view></view>
+</view>
+<view class="body" wx:elif="{{phase == 'fail'}}">
+  <view class="center-box">
+    <view class="center-title">加载失败</view>
+    <view class="center-sub">请检查网络后重试。</view>
+    <view class="btn slim" bindtap="retry">重试</view>
+  </view>
+</view>
+<view class="body" wx:elif="{{phase == 'empty'}}">
+  <view class="center-box">
+    <view class="center-title">暂无记录</view>
+    <view class="center-sub">当前索引未收录该节目名。</view>
+  </view>
+</view>
+<view class="body" wx:else>
+  <view class="warn-box" wx:if="{{expired}}">权益已到期。下次进入将按锁定记录展示，续费后可继续查看。</view>
+  <view class="pad" style="margin-top:12rpx;">
+    <view class="choice-top">
+      <text class="h1" style="font-size:40rpx;">{{name}}</text>
+      <text class="tag ok">{{badge}}</text>
+    </view>
+    <view class="sub">{{header}}</view>
+    <view class="choice-top" wx:if="{{showLocked}}" style="margin-top:16rpx;">
+      <text>{{recordLine}}</text>
+      <text>{{lockedRange}}</text>
+    </view>
+    <view class="ex-tag" wx:if="{{example}}" style="margin-top:12rpx;">示例</view>
+  </view>
+  <view class="note" wx:if="{{note}}">{{note}}</view>
+  <view class="card" wx:if="{{showOpen}}" style="padding-top:8rpx;">
+    <block wx:for="{{groups}}" wx:for-item="group" wx:key="platform">
+      <view class="rec" wx:for="{{group.rows}}" wx:for-item="row" wx:key="id" data-id="{{row.id}}" bindtap="openShot">
+        <view class="thumb">
+          <view class="moon"></view>
+          <view class="hill"></view>
+          <text class="thumb-badge">{{row.badge}}</text>
+          <text class="thumb-wm">那豆在架</text>
+          <text class="thumb-time">{{row.time}}</text>
+        </view>
+        <view class="rec-main">
+          <view class="rec-title">{{row.title}}</view>
+          <view class="rec-platform {{row.unknown ? 'unknown' : ''}}">
+            {{row.platform}}
+            <text class="qmark" wx:if="{{row.unknown}}" catchtap="ask">?</text>
+          </view>
+          <view class="rec-sub" wx:if="{{row.sub}}">{{row.sub}}</view>
+          <view class="rec-date">{{row.date}}</view>
+        </view>
+      </view>
+    </block>
+  </view>
+  <view class="lock-box" wx:if="{{showLocked}}">
+    <view class="fake-rows">
+      <view class="fake-row" wx:for="{{fakeRows}}" wx:key="id">
+        <view class="fake-thumb"></view>
+        <view class="fake-lines">
+          <view class="fake-line long"></view>
+          <view class="fake-line mid"></view>
+          <view class="fake-line short"></view>
+        </view>
+      </view>
+    </view>
+    <view class="lock-mask">
+      <view class="lock-icon"><view><view class="lock-shackle"></view><view class="lock-body"></view></view></view>
+      <view class="lock-text">{{unlockText}}</view>
+      <view class="btn slim" style="width:360rpx;" bindtap="buyMember">{{memberText}}</view>
+    </view>
+  </view>
+  <view class="note" wx:if="{{showHint}}">也可单节目解锁，在线查看 7 天。</view>
+  <view class="btn block plain" wx:if="{{showLocked}}" bindtap="buySingle">{{singleText}}</view>
+  <view class="card" wx:if="{{showEvidence}}">
+    <view class="row-title">有最新记录，可委托取证</view>
+    <view class="btn" bindtap="evidence">委托取证</view>
+  </view>
+  <view class="btn block plain" wx:if="{{showDownload}}" bindtap="download">下载本页有权限的报告</view>
+  <view class="foot-gap"></view>
+</view>

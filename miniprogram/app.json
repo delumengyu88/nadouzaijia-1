@@ -1,0 +1,57 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/splash/index",
+    "pages/member/index",
+    "pages/profile/index",
+    "pages/input/index",
+    "pages/query/index",
+    "pages/report/index",
+    "pages/viewer/index",
+    "pages/pay/index",
+    "pages/evidence/index",
+    "pages/evidence-detail/index",
+    "pages/evidence-list/index",
+    "pages/records/index",
+    "pages/orders/index",
+    "pages/invite/index",
+    "pages/legal/index",
+    "pages/legal-doc/index"
+  ],
+  "window": {
+    "navigationStyle": "custom",
+    "navigationBarTextStyle": "black",
+    "navigationBarBackgroundColor": "#F4F6F8",
+    "backgroundColor": "#F4F6F8",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#8A93A3",
+    "selectedColor": "#1F4ED8",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页",
+        "iconPath": "assets/tab-home.png",
+        "selectedIconPath": "assets/tab-home-on.png"
+      },
+      {
+        "pagePath": "pages/member/index",
+        "text": "会员中心",
+        "iconPath": "assets/tab-member.png",
+        "selectedIconPath": "assets/tab-member-on.png"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "个人中心",
+        "iconPath": "assets/tab-profile.png",
+        "selectedIconPath": "assets/tab-profile-on.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}
