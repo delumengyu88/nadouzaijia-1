@@ -22,11 +22,12 @@ from nadou.models import (
     IndexRecord,
     MemberQuery,
     PlatformAlias,
+    ProgramAlias,
     QueryProgram,
     Task,
     User,
 )
-from nadou.query_export import HitLabel, MatchLabel, PartNames, RestStatus
+from nadou.query_export import HitColumns, PartNames, RestStatus
 from nadou.signed_url import FakeSignedUrlProvider
 from nadou.text import RecordAge
 
@@ -35,11 +36,30 @@ COLUMNS = (
     "节目类型",
     "上传节目名",
     "匹配节目名",
-    "匹配方式",
-    "命中类型",
     "检测日期",
     "命中画面截图",
 )
+
+
+def assert_no_match_labels(sheet):
+    banned = {
+        "匹配方式",
+        "命中类型",
+        "名称相近，请核对",
+        "疑似命中·待核实",
+        "精确",
+        "别名",
+        "人工确认",
+    }
+    for row in sheet.iter_rows():
+        for cell in row:
+            assert cell.value not in banned
+            if isinstance(cell.value, str):
+                assert "名称相近" not in cell.value
+                assert "疑似命中" not in cell.value
+            assert cell.fill.fill_type is None
+
+
 SCHEMA_HOSTS = (
     "http://schemas.openxmlformats.org",
     "http://schemas.microsoft.com",
@@ -330,10 +350,20 @@ def test_header_columns_and_exact_strings(session, clock):
     )
     add_record(
         session,
+        task_id="task-alias",
+        record_id="rec-alias",
+        program="别名故事",
+        when=at_age(clock, 120),
+        platform="样例视频",
+        network="公网",
+        hit_type="consensus",
+    )
+    add_record(
+        session,
         task_id="task-dispute",
         record_id="rec-dispute",
         program="别名故事",
-        when=at_age(clock, 120),
+        when=at_age(clock, 110),
         platform="样例视频",
         network="公网",
         hit_type="dispute",
@@ -386,23 +416,22 @@ def test_header_columns_and_exact_strings(session, clock):
     assert "部分" not in block
     headers, records, _styled = hit_table(sheet)
     assert headers == COLUMNS
+    assert HitColumns.TYPE not in headers
     assert [row[1] for row in records] == ["电视剧", None, "电影"]
-    assert records[0][5] == HitLabel.CONSENSUS
-    assert records[1][5] == HitLabel.DISPUTE
-    assert "，" not in records[1][5]
-    assert "·" in records[1][5]
+    assert [row[2] for row in records] == ["海边故事", "海边故事别名", "手工剧"]
+    assert records[1][3] == "别名故事"
     joined = " ".join("" if value is None else str(value) for row in records for value in row)
     assert "客户" not in joined
     assert "%" not in joined
     assert "相似度" not in joined
-    for row in sheet.iter_rows():
-        for cell in row:
-            assert cell.value != "客户"
+    assert_no_match_labels(sheet)
+    assert rest_table(workbook["未命中与待处理"]) == []
     workbook.close()
 
 
-def test_alias_row_is_highlighted(session, clock):
+def test_alias_match_is_a_confirmed_hit_without_a_label(session, clock):
     add_user(session, "user-regular", clock, "regular")
+    session.add(ProgramAlias(alias="标准故事的别名", canonical_name="标准故事"))
     add_record(
         session,
         task_id="task-alias",
@@ -426,7 +455,7 @@ def test_alias_row_is_highlighted(session, clock):
         [
             {
                 "uploaded": "标准故事的别名",
-                "matched": "标准故事",
+                "matched": "标准故事的别名",
                 "resolution": "alias",
             },
             {
@@ -434,39 +463,29 @@ def test_alias_row_is_highlighted(session, clock):
                 "matched": "另一故事",
                 "resolution": "exact",
             },
-            {
-                "uploaded": "人工故事",
-                "matched": "人工故事",
-                "resolution": "manual",
-            },
         ],
-    )
-    add_record(
-        session,
-        task_id="task-manual",
-        record_id="rec-manual",
-        program="人工故事",
-        when=at_age(clock, 130),
     )
     session.commit()
     response = export(make_client(session, clock), "q-alias", "user-regular")
     workbook = load_workbook(BytesIO(response.content))
-    _headers, records, styled = hit_table(workbook["命中结果"])
-    assert records[0][4] == f"{MatchLabel.ALIAS}（{MatchLabel.NOTE}）"
-    assert MatchLabel.NOTE in records[0][4]
-    rgb = styled[0][4].fill.fgColor.rgb
-    assert rgb is not None and SheetYellow.HEX in rgb
-    assert styled[0][0].fill.fgColor.rgb is not None
-    assert SheetYellow.HEX in styled[0][0].fill.fgColor.rgb
-    assert records[1][4] == MatchLabel.EXACT
-    assert records[2][4] == MatchLabel.MANUAL
-    assert styled[1][4].fill.fill_type is None
-    assert styled[2][4].fill.fill_type is None
+    headers, records, _styled = hit_table(workbook["命中结果"])
+    assert headers == COLUMNS
+    assert [(row[2], row[3]) for row in records] == [
+        ("标准故事的别名", "标准故事"),
+        ("另一故事", "另一故事"),
+    ]
+    assert_no_match_labels(workbook["命中结果"])
     workbook.close()
 
 
-class SheetYellow:
-    HEX = "FFFF99"
+def test_uniform_confirmed_label_drops_the_hit_type_column():
+    confirmed = HitColumns.for_labels([HitColumns.CONFIRMED, HitColumns.CONFIRMED])
+    assert confirmed == COLUMNS
+    assert HitColumns.for_labels([]) == COLUMNS
+    mixed = HitColumns.for_labels([HitColumns.CONFIRMED, "其他"])
+    assert mixed[4] == HitColumns.TYPE
+    assert mixed[:4] == COLUMNS[:4]
+    assert mixed[-2:] == COLUMNS[-2:]
 
 
 def test_two_records_of_the_same_platform_and_program(session, clock):
@@ -489,7 +508,7 @@ def test_two_records_of_the_same_platform_and_program(session, clock):
         when=at_age(clock, 80, hour=15),
         platform="样例平台",
         network="专网",
-        hit_type="dispute",
+        hit_type="consensus",
     )
     add_query(
         session,
@@ -505,9 +524,7 @@ def test_two_records_of_the_same_platform_and_program(session, clock):
     assert records[0][0] == records[1][0] == "专网 · 样例平台"
     assert records[0][2] == records[1][2] == "重复节目"
     assert records[0][3] == records[1][3] == "重复节目"
-    assert records[0][6] != records[1][6]
-    assert records[0][5] == HitLabel.DISPUTE
-    assert records[1][5] == HitLabel.CONSENSUS
+    assert records[0][4] != records[1][4]
     images = embedded_images(response.content)
     assert len(images) == 2
     assert images[0] != images[1]
@@ -635,8 +652,8 @@ def test_detection_date_is_beijing_calendar_day(session, clock):
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
     assert len(records) == 1
-    assert records[0][6] == "2026-08-21"
-    assert records[0][6] != "2026-08-20"
+    assert records[0][4] == "2026-08-21"
+    assert records[0][4] != "2026-08-20"
     workbook.close()
 
 
@@ -656,6 +673,14 @@ def test_screenshot_is_embedded_watermarked_and_has_no_hyperlink(session, clock)
         record_id="rec-green",
         program="画面节目",
         when=at_age(clock, 110),
+        hit_type="consensus",
+    )
+    add_record(
+        session,
+        task_id="task-open",
+        record_id="rec-open",
+        program="画面节目",
+        when=at_age(clock, 130),
         hit_type="dispute",
     )
     add_record(
@@ -701,7 +726,9 @@ def test_screenshot_is_embedded_watermarked_and_has_no_hyperlink(session, clock)
     assert images[0] != images[1]
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
-    assert records[2][7] == "暂无截图"
+    assert len(records) == 3
+    assert records[2][5] == "暂无截图"
+    assert all(call[1] != "rec-open" for call in signer.calls)
     assert signer.calls
     assert {call[0] for call in signer.calls} == {"card"}
     assert all(call[2] == "user-vip" for call in signer.calls)
@@ -784,7 +811,7 @@ def test_membership_age_floor_changes_rows_and_scope(session, clock):
         record_id="rec-100",
         program="跨档节目",
         when=at_age(clock, 100),
-        hit_type="dispute",
+        hit_type="consensus",
     )
     add_record(
         session,
@@ -816,7 +843,6 @@ def test_membership_age_floor_changes_rows_and_scope(session, clock):
         _headers, regular_rows, _styled = hit_table(regular["命中结果"])
         assert len(vip_rows) == 3
         assert [row[2] for row in regular_rows] == ["跨档节目"]
-        assert regular_rows[0][5] == HitLabel.DISPUTE
         assert rest_table(regular["未命中与待处理"]) == [("仅四十天", RestStatus.MISS, None)]
         assert rest_table(vip["未命中与待处理"]) == []
     finally:

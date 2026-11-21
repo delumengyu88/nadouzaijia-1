@@ -152,15 +152,15 @@ Header block, then the columns. There is no 客户 field.
 | 查询范围 | `{n} 个节目 · 已收录平台 · ≥30 天记录` for VIP, `≥90 天记录` for 普通. `n` is the number of programs on the query. |
 | 生成日期 | Beijing calendar date `YYYY-MM-DD` of the export clock |
 
-Columns, in order: 平台, 节目类型, 上传节目名, 匹配节目名, 匹配方式, 命中类型, 检测日期, 命中画面截图.
+Columns, in order: 平台, 节目类型, 上传节目名, 匹配节目名, 检测日期, 命中画面截图.
+
+There is no 匹配方式 column, no yellow alias fill, and no 「名称相近，请核对」 note. An `alias` resolution is a confirmed hit through the admin alias table, and it uses the same columns as `exact` or `manual`. The only hit label is `确认命中`. Every exported row would show that same value, so the 命中类型 column is omitted.
 
 平台 is the task network plus the platform name after `PlatformNormalizer`, so a later alias still applies. Import already stored the filename-parser fallback when the CSV cells were empty. Display is `专网 · 样例平台` when both parts are known, the platform alone when the network is missing, and `来源待核实` when the platform does not resolve.
 
-节目类型 is the query program's type, or blank. 上传节目名 is the uploaded text. 匹配节目名 is the canonical name.
+节目类型 is the query program's type, or blank. 上传节目名 is the uploaded text. 匹配节目名 is the canonical name. 检测日期 is the Beijing calendar date of the same timestamp search uses (`tasks.created_at`, else `tasks.file_uploaded_at`, else `index_records.uploaded_at`). Date only, not a time.
 
-匹配方式 is `精确`, `别名`, or `人工确认`. An alias row is filled yellow and the cell text is `别名（名称相近，请核对）`. There is no similarity percentage column.
-
-命中类型 is `确认命中` for `consensus` and `疑似命中·待核实` for `dispute` (middle dot). 检测日期 is the Beijing calendar date of the same timestamp search uses (`tasks.created_at`, else `tasks.file_uploaded_at`, else `index_records.uploaded_at`). Date only, not a time.
+A `dispute` record is unconfirmed and is not a hit row. A `pending` program is not a hit row either. If a confirmed program has no remaining visible consensus record, it is 未命中 on the second sheet.
 
 ### Screenshots
 
@@ -178,7 +178,7 @@ Columns: 上传节目名, 状态, 说明. Row order follows the query. This shee
 | `pending` | 待确认 | candidate names |
 | `failed` | 失败 | failure reason |
 
-A program with at least one visible hit is not repeated here. Pending and failed programs do not contribute hit rows.
+A program with at least one visible confirmed hit is not repeated here. Pending programs, failed programs, and unconfirmed `dispute` records do not contribute hit rows.
 
 ### Size split
 

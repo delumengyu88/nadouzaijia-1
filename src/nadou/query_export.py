@@ -6,7 +6,7 @@ from urllib.parse import quote
 
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as SheetImage
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -86,38 +86,19 @@ class PlatformLabel:
         return platform
 
 
-class MatchLabel:
-    EXACT = "精确"
-    ALIAS = "别名"
-    MANUAL = "人工确认"
-    NOTE = "名称相近，请核对"
+class HitColumns:
+    """Hit-sheet columns. 命中类型 is only 确认命中, so it is omitted when uniform."""
+
+    LEAD = ("平台", "节目类型", "上传节目名", "匹配节目名")
+    TYPE = "命中类型"
+    TAIL = ("检测日期", "命中画面截图")
+    CONFIRMED = "确认命中"
 
     @staticmethod
-    def text(method: str) -> str:
-        if method == "alias":
-            return f"{MatchLabel.ALIAS}（{MatchLabel.NOTE}）"
-        if method == "manual":
-            return MatchLabel.MANUAL
-        if method == "exact":
-            return MatchLabel.EXACT
-        raise ValueError(f"unknown match method {method!r}")
-
-    @staticmethod
-    def highlighted(method: str) -> bool:
-        return method == "alias"
-
-
-class HitLabel:
-    CONSENSUS = "确认命中"
-    DISPUTE = "疑似命中·待核实"
-
-    @staticmethod
-    def from_hit_type(hit_type: str) -> str:
-        if hit_type == "consensus":
-            return HitLabel.CONSENSUS
-        if hit_type == "dispute":
-            return HitLabel.DISPUTE
-        raise ValueError(f"unknown hit_type {hit_type!r}")
+    def for_labels(labels: list[str]) -> tuple[str, ...]:
+        if len(set(labels)) <= 1:
+            return HitColumns.LEAD + HitColumns.TAIL
+        return HitColumns.LEAD + (HitColumns.TYPE,) + HitColumns.TAIL
 
 
 class RestStatus:
@@ -170,8 +151,6 @@ class HitRow:
     program_type: str
     uploaded_name: str
     matched_name: str
-    match_method: str
-    hit_label: str
     checked_on: str
     image: bytes | None
     image_width: int
@@ -212,7 +191,6 @@ class WorkbookArchive:
 
 class SheetStyle:
     FONT = "Droid Sans Fallback"
-    YELLOW = "FFFF99"
 
     @staticmethod
     def title() -> Font:
@@ -225,14 +203,6 @@ class SheetStyle:
     @staticmethod
     def body() -> Font:
         return Font(name=SheetStyle.FONT, size=11)
-
-    @staticmethod
-    def alias_fill() -> PatternFill:
-        return PatternFill(
-            fill_type="solid",
-            start_color=SheetStyle.YELLOW,
-            end_color=SheetStyle.YELLOW,
-        )
 
 
 class HitWorkbook:
@@ -247,16 +217,6 @@ class HitWorkbook:
     HITS = "命中结果"
     REST = "未命中与待处理"
     TITLE = "那豆在架 命中结果"
-    COLUMNS = (
-        "平台",
-        "节目类型",
-        "上传节目名",
-        "匹配节目名",
-        "匹配方式",
-        "命中类型",
-        "检测日期",
-        "命中画面截图",
-    )
     REST_COLUMNS = ("上传节目名", "状态", "说明")
 
     def __init__(self, max_bytes: int = ExportLimits.MAX_BYTES) -> None:
@@ -347,7 +307,8 @@ class HitWorkbook:
         workbook.properties.title = self.TITLE
         sheet = workbook.active
         sheet.title = self.HITS
-        self._write_hits(sheet, header, hits, part_label)
+        columns = HitColumns.for_labels([HitColumns.CONFIRMED] * len(hits))
+        self._write_hits(sheet, header, hits, part_label, columns)
         if rest is not None:
             self._write_rest(workbook.create_sheet(self.REST), rest)
         buffer = BytesIO()
@@ -361,10 +322,11 @@ class HitWorkbook:
         header: ExportHeader,
         hits: list[HitRow],
         part_label: str | None,
+        columns: tuple[str, ...],
     ) -> None:
         sheet["A1"] = self.TITLE
         sheet["A1"].font = SheetStyle.title()
-        sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(self.COLUMNS))
+        sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(columns))
         sheet.row_dimensions[1].height = 24
         meta = [
             ("查询编号", header.query_id),
@@ -377,45 +339,54 @@ class HitWorkbook:
             sheet.cell(offset, 1, label).font = SheetStyle.header()
             sheet.cell(offset, 2, value).font = SheetStyle.body()
         header_row = 3 + len(meta)
-        for column, name in enumerate(self.COLUMNS, start=1):
+        for column, name in enumerate(columns, start=1):
             cell = sheet.cell(header_row, column, name)
             cell.font = SheetStyle.header()
             cell.alignment = Alignment(vertical="center", wrap_text=True)
-        fill = SheetStyle.alias_fill()
         for index, hit in enumerate(hits):
             row = header_row + 1 + index
-            values: list[str | None] = [
-                hit.platform,
-                hit.program_type,
-                hit.uploaded_name,
-                hit.matched_name,
-                MatchLabel.text(hit.match_method),
-                hit.hit_label,
-                hit.checked_on,
-                None if hit.image else ShotPlaceholder.TEXT,
-            ]
+            values = self._values(hit, columns)
             for column, value in enumerate(values, start=1):
                 cell = sheet.cell(row, column, value)
                 cell.font = SheetStyle.body()
                 cell.alignment = Alignment(vertical="center", wrap_text=True)
-                if MatchLabel.highlighted(hit.match_method) and column < len(self.COLUMNS):
-                    cell.fill = fill
             if hit.image:
-                self._embed(sheet, hit, row)
-        widths = (24, 12, 18, 18, 28, 22, 14, 28)
-        for column, width in enumerate(widths, start=1):
-            sheet.column_dimensions[get_column_letter(column)].width = width
+                self._embed(sheet, hit, row, len(columns))
+        widths = {
+            "平台": 24,
+            "节目类型": 12,
+            "上传节目名": 18,
+            "匹配节目名": 18,
+            "命中类型": 22,
+            "检测日期": 14,
+            "命中画面截图": 28,
+        }
+        for column, name in enumerate(columns, start=1):
+            sheet.column_dimensions[get_column_letter(column)].width = widths[name]
         sheet.freeze_panes = f"A{header_row + 1}"
         self._page(sheet)
 
     @staticmethod
-    def _embed(sheet, hit: HitRow, row: int) -> None:
+    def _values(hit: HitRow, columns: tuple[str, ...]) -> list[str | None]:
+        fields = {
+            "平台": hit.platform,
+            "节目类型": hit.program_type,
+            "上传节目名": hit.uploaded_name,
+            "匹配节目名": hit.matched_name,
+            "命中类型": HitColumns.CONFIRMED,
+            "检测日期": hit.checked_on,
+            "命中画面截图": None if hit.image else ShotPlaceholder.TEXT,
+        }
+        return [fields[name] for name in columns]
+
+    @staticmethod
+    def _embed(sheet, hit: HitRow, row: int, column_count: int) -> None:
         picture = SheetImage(BytesIO(hit.image))
         display_width = 220
         display_height = max(1, round(hit.image_height * display_width / hit.image_width))
         picture.width = display_width
         picture.height = display_height
-        column = get_column_letter(len(HitWorkbook.COLUMNS))
+        column = get_column_letter(column_count)
         sheet.add_image(picture, f"{column}{row}")
         sheet.row_dimensions[row].height = display_height * 0.75 + 8
 
@@ -465,6 +436,8 @@ class RecordWindow:
         platform_raw = task.platform_name if task is not None else ""
         normalized = normalizer.normalize(platform_raw or None)
         if TestTaskFilter.excluded(filename, platform_raw, normalized.name):
+            return False
+        if record.hit_type != "consensus":
             return False
         when = ProgramSearch.record_time(task, record)
         if when is None:
@@ -610,8 +583,6 @@ class QueryExport:
             program_type=item.program_type or "",
             uploaded_name=item.uploaded_name,
             matched_name=canonical,
-            match_method=item.resolution,
-            hit_label=HitLabel.from_hit_type(record.hit_type),
             checked_on=BeijingDate.format(when),
             image=None if prepared is None else prepared.jpeg,
             image_width=0 if prepared is None else prepared.width,
