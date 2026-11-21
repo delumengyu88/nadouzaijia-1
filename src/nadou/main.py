@@ -16,8 +16,6 @@ from nadou.admin.notify import NotifierFactory
 from nadou.admin.schemas import InviteRedeemIn
 from nadou.config import get_settings
 from nadou.db import Database
-from nadou.frames import DerivedFrameSource, GeneratedFrameReader, SignedDerivedFrameSource
-from nadou.query_export import ExportForbidden, ExportLimits, QueryExport, UnknownQuery
 from nadou.schemas import SearchOut
 from nadou.search import EmptyQuery, ProgramSearch, UnknownUser
 from nadou.signed_url import FakeSignedUrlProvider, SignedUrlProvider
@@ -31,15 +29,13 @@ def create_app(
     now: Callable[[], datetime] | None = None,
     notifier=None,
     grant_writer=None,
-    frames: DerivedFrameSource | None = None,
+    frames=None,
     export_max_bytes: int | None = None,
 ) -> FastAPI:
     database = database or Database(get_settings().database_url)
     urls = urls or FakeSignedUrlProvider()
     clock = now or (lambda: datetime.now(_BEIJING))
     alerts = notifier if notifier is not None else NotifierFactory.from_settings(get_settings())
-    frame_source = frames or SignedDerivedFrameSource(urls, GeneratedFrameReader())
-    max_bytes = ExportLimits.MAX_BYTES if export_max_bytes is None else export_max_bytes
     app = FastAPI(title="那豆在架")
 
     def get_session():
@@ -101,7 +97,6 @@ def create_app(
         }
 
     AdminApi.register(app, get_session, clock, alerts, grant_writer)
-    AdminUi.mount(app)
 
     @app.get("/api/v1/queries/{query_id}/export")
     def export_query(
@@ -109,9 +104,15 @@ def create_app(
         session: Session = Depends(get_session),
         x_user_id: str | None = Header(default=None),
     ):
+        # Imported here so the workbench process does not load the image stack at startup.
+        from nadou.frames import GeneratedFrameReader, SignedDerivedFrameSource
+        from nadou.query_export import ExportForbidden, ExportLimits, QueryExport, UnknownQuery
+
         caller = x_user_id.strip() if x_user_id else None
         if not caller:
             caller = None
+        frame_source = frames or SignedDerivedFrameSource(urls, GeneratedFrameReader())
+        max_bytes = ExportLimits.MAX_BYTES if export_max_bytes is None else export_max_bytes
         try:
             exported = QueryExport(session, frame_source, clock(), max_bytes).export(
                 query_id, caller
@@ -131,6 +132,7 @@ def create_app(
             headers={"Content-Disposition": exported.disposition()},
         )
 
+    AdminUi.mount(app)
     return app
 
 

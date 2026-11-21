@@ -41,6 +41,7 @@ class DemoCommand:
             raise
         finally:
             session.close()
+            database.engine.dispose()
         print("demo admin ready")
         return 0
 

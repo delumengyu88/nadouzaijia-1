@@ -2,6 +2,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -63,6 +64,15 @@ def test_each_workbench_page_loads_without_console_errors():
         text=True,
     )
     base = f"http://127.0.0.1:{port}"
+    server_log: list[str] = []
+
+    def _drain() -> None:
+        if server.stdout is None:
+            return
+        for line in server.stdout:
+            server_log.append(line)
+
+    threading.Thread(target=_drain, daemon=True).start()
     try:
         deadline = time.time() + 30
         while time.time() < deadline:
@@ -71,11 +81,12 @@ def test_each_workbench_page_loads_without_console_errors():
                     break
             except OSError:
                 if server.poll() is not None:
-                    raise AssertionError(server.stdout.read() if server.stdout else "server exited")
+                    raise AssertionError("".join(server_log) or "server exited")
                 time.sleep(0.2)
         else:
-            raise AssertionError("workbench did not start")
+            raise AssertionError("workbench did not start\n" + "".join(server_log))
         errors: list[str] = []
+        http_failures: list[str] = []
         with playwright_sync.sync_playwright() as playwright:
             browser = playwright.chromium.launch()
             page = browser.new_page(viewport={"width": 1440, "height": 900})
@@ -83,6 +94,16 @@ def test_each_workbench_page_loads_without_console_errors():
             page.on(
                 "console",
                 lambda msg: errors.append(msg.text) if msg.type == "error" else None,
+            )
+            page.on(
+                "response",
+                lambda res: (
+                    http_failures.append(f"{res.status} {res.url}") if res.status >= 400 else None
+                ),
+            )
+            page.on(
+                "requestfailed",
+                lambda req: http_failures.append(f"FAILED {req.url} {req.failure}"),
             )
             page.goto(f"{base}/admin/#/login", wait_until="networkidle")
             login_text = page.locator("body").inner_text()
@@ -92,7 +113,18 @@ def test_each_workbench_page_loads_without_console_errors():
             page.fill("input[name=username]", DemoAccounts.ADMIN)
             page.fill("input[name=password]", DemoAccounts.ADMIN_PASSWORD)
             page.click("button[type=submit]")
-            page.locator("h1", has_text="取证申请").wait_for()
+            try:
+                page.locator("h1", has_text="取证申请").wait_for()
+            except Exception as exc:
+                body = page.locator("body").inner_text()
+                raise AssertionError(
+                    "取证申请 heading did not appear after login\n"
+                    f"url={page.url}\n"
+                    f"console={errors}\n"
+                    f"http={http_failures}\n"
+                    f"body={body[:2000]}\n"
+                    f"server={''.join(server_log)[-4000:]}"
+                ) from exc
             for route in PAGES:
                 if route == "#/w01":
                     continue
