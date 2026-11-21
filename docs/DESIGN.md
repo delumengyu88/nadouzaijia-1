@@ -81,6 +81,20 @@ Record age buckets, Beijing calendar days: `<30`, `30–89`, `90–179`, `≥180
 
 `<30` is never unlocked. Locked placeholders are only `record_id`, `age_bucket`, `locked`, `lock_reason`. They omit platform, check time, timestamps, and every URL.
 
+`locked_summary` is computed on the server for the caller, so the client does not derive ages. Rows locked only because the check time is missing (`检测时间待核实`) are left out of it.
+
+| Field | Meaning |
+|---|---|
+| `locked_total` | Locked records with a known age |
+| `by_required_tier.member` | Locked records at 90–179 days (普通会员, 单节目 90 天档, or 单张截图) |
+| `by_required_tier.vip` | Locked records at 30–89 days (VIP or 单节目 30 天档) |
+| `by_required_tier.evidence_only` | Locked records under 30 days (委托取证 only) |
+| `unlockable_total` | `member + vip`. `evidence_only` is never included |
+| `cheapest_full_unlock` | `single_program_30d` if any vip-bucket record is locked, else `single_program_90d` if any member-bucket record is locked, else `null` |
+| `unlocks_by_product` | How many of this program's locked records each product opens. Omitted when the caller already has that access, or when the count is 0 |
+
+Product ids: `screenshot` (one purchase opens one ≥90-day locked record; the count is how many such records are locked), `single_program_90d`, `single_program_30d`, `membership_regular`, `membership_vip`. `single_program_30d` and `membership_vip` open both the vip and member buckets. The other three open only the member bucket. Nothing opens `evidence_only`.
+
 `platform_count` is distinct normalized platforms on counted records with a known age `≥30`. `unverified_source_count` is the number of those records marked `来源待核实`. Rows with no check time are in neither count. Outcome is `hit` when any dated record is `≥30`, `recent_only` when the only dated records are `<30`, otherwise `miss` (an unknown-age placeholder can still be listed). Cancelled, duplicate, and `test_` rows are omitted entirely.
 
 `IndexRecordStore.upsert` stores the program name only after `ProgramNormalizer` (the same fold and alias map search uses), so a later importer can pass a raw or full-width name and still match a search.

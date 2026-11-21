@@ -530,6 +530,99 @@ def test_upsert_canonicalizes_program_alias(session, client, clock):
     assert by_standard["records"][0]["hit_type"] == "dispute"
 
 
+def test_locked_summary_by_entitlement(session, client, clock):
+    program = "汇总节目"
+    ages = (10, 40, 50, 100, 120, 200)
+    for age in ages:
+        add_hit(
+            session,
+            task_id=f"sum-{age}",
+            record_id=f"sum-rec-{age}",
+            program=program,
+            when=at_age(clock, age),
+            platform=f"plat{age}",
+        )
+    add_hit(
+        session,
+        task_id="sum-unknown",
+        record_id="sum-rec-unknown",
+        program=program,
+        when=at_age(clock, 15),
+        created_at=False,
+        platform="plat-unknown",
+    )
+    add_user(session, "sum-regular", clock, "regular")
+    add_user(session, "sum-vip", clock, "vip")
+    add_user(session, "sum-p90", clock, "program_90", program=program)
+    add_user(session, "sum-p30", clock, "program_30", program=program)
+    session.commit()
+
+    def fetch(user_id=None):
+        headers = {"X-User-Id": user_id} if user_id else {}
+        response = client.get("/api/v1/programs/search", params={"name": program}, headers=headers)
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    expected = {
+        None: {
+            "locked_total": 5,
+            "by_required_tier": {"member": 2, "vip": 2, "evidence_only": 1},
+            "unlockable_total": 4,
+            "cheapest_full_unlock": "single_program_30d",
+            "unlocks_by_product": {
+                "screenshot": 2,
+                "single_program_90d": 2,
+                "single_program_30d": 4,
+                "membership_regular": 2,
+                "membership_vip": 4,
+            },
+        },
+        "sum-regular": {
+            "locked_total": 3,
+            "by_required_tier": {"member": 0, "vip": 2, "evidence_only": 1},
+            "unlockable_total": 2,
+            "cheapest_full_unlock": "single_program_30d",
+            "unlocks_by_product": {"single_program_30d": 2, "membership_vip": 2},
+        },
+        "sum-vip": {
+            "locked_total": 1,
+            "by_required_tier": {"member": 0, "vip": 0, "evidence_only": 1},
+            "unlockable_total": 0,
+            "cheapest_full_unlock": None,
+            "unlocks_by_product": {},
+        },
+        "sum-p90": {
+            "locked_total": 3,
+            "by_required_tier": {"member": 0, "vip": 2, "evidence_only": 1},
+            "unlockable_total": 2,
+            "cheapest_full_unlock": "single_program_30d",
+            "unlocks_by_product": {"single_program_30d": 2, "membership_vip": 2},
+        },
+        "sum-p30": {
+            "locked_total": 1,
+            "by_required_tier": {"member": 0, "vip": 0, "evidence_only": 1},
+            "unlockable_total": 0,
+            "cheapest_full_unlock": None,
+            "unlocks_by_product": {},
+        },
+    }
+    for user_id, summary in expected.items():
+        body = fetch(user_id)
+        assert body["locked_summary"] == summary
+        tiers = summary["by_required_tier"]
+        assert summary["unlockable_total"] == tiers["member"] + tiers["vip"]
+        raw = json.dumps(body["records"])
+        for age in (10, 40, 50, 100, 120):
+            row = by_id(body)[f"sum-rec-{age}"]
+            if row["locked"]:
+                assert set(row) == LOCKED_KEYS
+                assert f"plat{age}" not in json.dumps(row)
+        assert "plat-unknown" not in raw
+        unknown = by_id(body)["sum-rec-unknown"]
+        assert unknown["lock_reason"] == "检测时间待核实"
+        assert unknown["age_bucket"] == "unknown"
+
+
 def test_no_zip_or_download_route(client):
     paths = [getattr(route, "path", "") for route in client.app.routes]
     assert "/api/v1/programs/search" in paths

@@ -13,6 +13,19 @@ class AccessGrants:
 
 
 @dataclass(frozen=True)
+class LockedSummary:
+    """Counts of records still locked for one caller, and what would open them."""
+
+    locked_total: int
+    member: int
+    vip: int
+    evidence_only: int
+    unlockable_total: int
+    cheapest_full_unlock: str | None
+    unlocks_by_product: dict[str, int]
+
+
+@dataclass(frozen=True)
 class AccessDecision:
     age_bucket: str
     locked: bool
@@ -36,6 +49,16 @@ class EntitlementPolicy:
     REASON_FORENSIC = "有最新记录，可委托取证"
     REASON_VIP = "此记录需 VIP 或单节目 30 天档查看"
     REASON_MEMBER = "此记录需普通会员或单节目解锁查看"
+
+    TIER_MEMBER = "member"
+    TIER_VIP = "vip"
+    TIER_EVIDENCE = "evidence_only"
+
+    PRODUCT_SCREENSHOT = "screenshot"
+    PRODUCT_PROGRAM_90 = "single_program_90d"
+    PRODUCT_PROGRAM_30 = "single_program_30d"
+    PRODUCT_MEMBER_REGULAR = "membership_regular"
+    PRODUCT_MEMBER_VIP = "membership_vip"
 
     @staticmethod
     def age_bucket(age_days: int) -> str:
@@ -102,6 +125,64 @@ class EntitlementPolicy:
             EntitlementPolicy.REASON_VIP if bucket == "d30_89" else EntitlementPolicy.REASON_MEMBER
         )
         return EntitlementPolicy._locked(bucket, reason)
+
+    @staticmethod
+    def summarize_locked(locked_ages: list[int], grants: AccessGrants) -> LockedSummary:
+        """Summarize locked rows with a known age. Missing check times are not included."""
+        member = vip = evidence = 0
+        for age in locked_ages:
+            tier = EntitlementPolicy.required_tier(age)
+            if tier == EntitlementPolicy.TIER_MEMBER:
+                member += 1
+            elif tier == EntitlementPolicy.TIER_VIP:
+                vip += 1
+            elif tier == EntitlementPolicy.TIER_EVIDENCE:
+                evidence += 1
+        unlockable = member + vip
+        if vip:
+            cheapest: str | None = EntitlementPolicy.PRODUCT_PROGRAM_30
+        elif member:
+            cheapest = EntitlementPolicy.PRODUCT_PROGRAM_90
+        else:
+            cheapest = None
+        return LockedSummary(
+            locked_total=member + vip + evidence,
+            member=member,
+            vip=vip,
+            evidence_only=evidence,
+            unlockable_total=unlockable,
+            cheapest_full_unlock=cheapest,
+            unlocks_by_product=EntitlementPolicy._offers(member, vip, grants),
+        )
+
+    @staticmethod
+    def required_tier(age_days: int) -> str | None:
+        """Which purchase tier opens a record of this age. None means everyone can see it."""
+        if age_days < 30:
+            return EntitlementPolicy.TIER_EVIDENCE
+        if age_days < 90:
+            return EntitlementPolicy.TIER_VIP
+        if age_days < 180:
+            return EntitlementPolicy.TIER_MEMBER
+        return None
+
+    @staticmethod
+    def _offers(member: int, vip: int, grants: AccessGrants) -> dict[str, int]:
+        sees_90 = grants.vip or grants.regular or grants.program_30 or grants.program_90
+        sees_30 = grants.vip or grants.program_30
+        catalog = (
+            (EntitlementPolicy.PRODUCT_SCREENSHOT, member, sees_90),
+            (EntitlementPolicy.PRODUCT_PROGRAM_90, member, sees_90),
+            (EntitlementPolicy.PRODUCT_PROGRAM_30, member + vip, sees_30),
+            (EntitlementPolicy.PRODUCT_MEMBER_REGULAR, member, grants.regular or grants.vip),
+            (EntitlementPolicy.PRODUCT_MEMBER_VIP, member + vip, grants.vip),
+        )
+        offers: dict[str, int] = {}
+        for product, count, covered in catalog:
+            if covered or count == 0:
+                continue
+            offers[product] = count
+        return offers
 
     @staticmethod
     def _locked(bucket: str, reason: str) -> AccessDecision:

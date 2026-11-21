@@ -115,6 +115,42 @@ def test_regular_plus_program_30_download_follows_membership_only():
     assert EntitlementPolicy.decide(29, grants).lock_reason == EntitlementPolicy.REASON_FORENSIC
 
 
+def test_locked_summary_ignores_evidence_in_unlockable_total():
+    summary = EntitlementPolicy.summarize_locked([5, 10, 29], AccessGrants())
+    assert summary.locked_total == 3
+    assert summary.evidence_only == 3
+    assert summary.member == 0
+    assert summary.vip == 0
+    assert summary.unlockable_total == 0
+    assert summary.evidence_only not in (summary.unlockable_total,)
+    assert summary.unlockable_total == summary.member + summary.vip
+    assert summary.cheapest_full_unlock is None
+    assert summary.unlocks_by_product == {}
+
+
+def test_locked_summary_offers_follow_the_matrix():
+    free = EntitlementPolicy.summarize_locked([10, 40, 50, 100, 120, 200], AccessGrants())
+    assert (free.member, free.vip, free.evidence_only) == (2, 2, 1)
+    assert free.unlockable_total == 4
+    assert free.cheapest_full_unlock == "single_program_30d"
+    assert free.unlocks_by_product == {
+        "screenshot": 2,
+        "single_program_90d": 2,
+        "single_program_30d": 4,
+        "membership_regular": 2,
+        "membership_vip": 4,
+    }
+    regular = EntitlementPolicy.summarize_locked([10, 40], AccessGrants(regular=True))
+    assert regular.member == 0
+    assert regular.vip == 1
+    assert regular.cheapest_full_unlock == "single_program_30d"
+    assert "membership_regular" not in regular.unlocks_by_product
+    assert "single_program_90d" not in regular.unlocks_by_product
+    assert regular.unlocks_by_product["single_program_30d"] == 1
+    only_member = EntitlementPolicy.summarize_locked([100, 179], AccessGrants())
+    assert only_member.cheapest_full_unlock == "single_program_90d"
+
+
 def test_age_rolls_at_beijing_midnight():
     created = datetime(2026, 10, 22, 23, 59, tzinfo=RecordAge.TZ)
     now = datetime(2026, 11, 21, 0, 1, tzinfo=RecordAge.TZ)

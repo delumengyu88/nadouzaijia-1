@@ -3,10 +3,10 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nadou.entitlements import AccessDecision, AccessGrants, EntitlementPolicy
+from nadou.entitlements import AccessDecision, AccessGrants, EntitlementPolicy, LockedSummary
 from nadou.models import Entitlement, IndexRecord, Task, User
 from nadou.normalize import ProgramNormalizer
-from nadou.schemas import LockedRecordOut, OpenRecordOut, SearchOut
+from nadou.schemas import LockedRecordOut, LockedSummaryOut, OpenRecordOut, SearchOut, TierCounts
 from nadou.signed_url import SignedUrlProvider
 from nadou.text import RecordAge
 
@@ -71,6 +71,7 @@ class ProgramSearch:
             )
         )
         records: list[LockedRecordOut | OpenRecordOut] = []
+        locked_ages: list[int] = []
         any_old = False
         any_recent = False
         for age, record, task in kept:
@@ -82,6 +83,8 @@ class ProgramSearch:
             else:
                 any_recent = True
             decision = EntitlementPolicy.decide(age, self._grants_for(grants, canonical, record.id))
+            if decision.locked:
+                locked_ages.append(age)
             records.append(self._present(record, task, decision, user_id))
 
         if any_old:
@@ -90,11 +93,16 @@ class ProgramSearch:
             outcome = "recent_only"
         else:
             outcome = "miss"
+        summary = EntitlementPolicy.summarize_locked(
+            locked_ages,
+            self._grants_for(grants, canonical, ""),
+        )
         return SearchOut(
             program_name=canonical,
             outcome=outcome,
             platform_count=len(platforms),
             unverified_source_count=unverified,
+            locked_summary=self._summary_out(summary),
             records=records,
         )
 
@@ -148,6 +156,20 @@ class ProgramSearch:
     @staticmethod
     def _unverified(task: Task | None) -> bool:
         return task is None or task.source_unverified or not task.platform_name
+
+    @staticmethod
+    def _summary_out(summary: LockedSummary) -> LockedSummaryOut:
+        return LockedSummaryOut(
+            locked_total=summary.locked_total,
+            by_required_tier=TierCounts(
+                member=summary.member,
+                vip=summary.vip,
+                evidence_only=summary.evidence_only,
+            ),
+            unlockable_total=summary.unlockable_total,
+            cheapest_full_unlock=summary.cheapest_full_unlock,
+            unlocks_by_product=summary.unlocks_by_product,
+        )
 
     @staticmethod
     def _unknown_age(record: IndexRecord) -> LockedRecordOut:
