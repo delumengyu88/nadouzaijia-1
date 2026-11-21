@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 
 from sqlalchemy import select
@@ -158,6 +159,13 @@ def test_evidence_membership_reissue_and_ban_are_audited(workbench):
         "reissue_entitlement",
     ):
         assert name in actions
+    logs = call(
+        workbench, "GET", "/api/v1/admin/audit-logs?limit=200", workbench.admin_token
+    ).json()
+    uuid = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+    for row in logs:
+        assert row["object_label"] not in {"", "记录"}
+        assert uuid.fullmatch(row["object_label"]) is None
 
 
 def test_refund_revokes_the_issued_entitlement_and_is_audited(workbench):

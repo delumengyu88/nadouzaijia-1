@@ -261,6 +261,7 @@ class EvidenceRequest(Base):
     failure_reason: Mapped[str | None] = mapped_column(String(500))
     refund_method: Mapped[str | None] = mapped_column(String(32))
     refund_amount: Mapped[int | None] = mapped_column(Integer)
+    refund_note: Mapped[str | None] = mapped_column(String(200))
     failed_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
     overdue_notified_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
     program_name: Mapped[str | None] = mapped_column(String(200))

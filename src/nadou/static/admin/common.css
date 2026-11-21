@@ -460,10 +460,17 @@ table.data .mono { font-variant-numeric: tabular-nums; font-family: "Noto Sans M
 .help { font-size: 12px; color: var(--text-3); margin-top: 6px; }
 .hr { height: 1px; background: var(--border); border: 0; margin: 16px 0; }
 
+.poster-frame {
+  width: 169px;
+  height: 365px;
+  overflow: hidden;
+  flex: none;
+  border-radius: 18px;
+}
 .poster {
-  width: 120px;
-  height: 213px;
-  border-radius: 4px;
+  width: 375px;
+  height: 812px;
+  border-radius: 28px;
   background: linear-gradient(180deg, #1D4E9E 0%, #0E2A5C 100%);
   color: #fff;
   display: flex;
@@ -471,13 +478,15 @@ table.data .mono { font-variant-numeric: tabular-nums; font-family: "Noto Sans M
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 16px 10px;
-  font-size: 12px;
-  line-height: 1.4;
+  padding: 48px 32px 96px;
+  font-size: 15px;
+  line-height: 1.5;
   position: relative;
   flex: none;
-  overflow: auto;
-  overflow-wrap: anywhere;
+  transform: scale(0.45);
+  transform-origin: top left;
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 .poster .brand { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
 .poster .skip {
@@ -690,6 +699,22 @@ table.data.tight th, table.data.tight td {
 }
 .drawer { width: 380px; }
 .card-hd { flex-wrap: wrap; }
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
+}
+.filter-bar .input,
+.filter-bar .select,
+.filter-bar .btn,
+.filter-bar .vip-filter { flex: none; }
+.input.w-date { width: 128px; }
 .workspace-col .card { margin-bottom: 0; }
 .workspace-col .card.grow {
   flex: 1;

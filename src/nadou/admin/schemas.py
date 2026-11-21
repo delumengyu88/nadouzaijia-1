@@ -46,6 +46,7 @@ class FailIn(BaseModel):
     reason: str
     refund_method: str | None = None
     refund_amount: int | None = None
+    refund_note: str | None = None
 
 
 class NoteIn(BaseModel):

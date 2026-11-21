@@ -4,7 +4,19 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nadou.models import AuditLog, StaffAccount
+from nadou.models import (
+    Announcement,
+    AuditLog,
+    Entitlement,
+    EvidenceNote,
+    EvidenceRequest,
+    HomepageExample,
+    InviteCode,
+    Order,
+    SplashConfig,
+    StaffAccount,
+    User,
+)
 
 
 class AuditWriter:
@@ -92,7 +104,70 @@ class AuditView:
             return f"{name} {phone[-4:]}"
         if name:
             return str(name)
+        title = merged.get("title") or merged.get("program_name") or merged.get("slogan")
+        if title:
+            return str(title)
+        return ""
+
+    @staticmethod
+    def business_label(session: Session, row: AuditLog) -> str:
+        found = AuditView.label(row)
+        if found:
+            return found
+        kind = row.object_type
+        ident = row.object_id
+        if kind == "evidence_request":
+            item = session.get(EvidenceRequest, ident)
+            if item is not None:
+                return item.application_number
+        elif kind == "evidence_note" and ident.isdigit():
+            note = session.get(EvidenceNote, int(ident))
+            if note is not None:
+                item = session.get(EvidenceRequest, note.request_id)
+                if item is not None:
+                    return item.application_number
+        elif kind == "order":
+            item = session.get(Order, ident)
+            if item is not None:
+                return item.order_number
+        elif kind == "entitlement" and ident.isdigit():
+            grant = session.get(Entitlement, int(ident))
+            if grant is not None:
+                return AuditView._person(session.get(User, grant.user_id))
+        elif kind == "user":
+            return AuditView._person(session.get(User, ident))
+        elif kind == "staff_account":
+            staff = session.get(StaffAccount, ident)
+            if staff is not None:
+                return staff.username
+        elif kind == "invite_code":
+            code = session.get(InviteCode, ident)
+            if code is not None:
+                return code.code
+        elif kind == "announcement":
+            note = session.get(Announcement, ident)
+            if note is not None:
+                return note.title
+        elif kind == "homepage_example":
+            example = session.get(HomepageExample, ident)
+            if example is not None:
+                return example.program_name
+        elif kind == "splash" and ident.isdigit():
+            splash = session.get(SplashConfig, int(ident))
+            if splash is not None and splash.slogan:
+                return splash.slogan
+            return "开屏"
         return "记录"
+
+    @staticmethod
+    def _person(user: User | None) -> str:
+        if user is None:
+            return "记录"
+        name = user.display_name or "用户"
+        phone = user.phone or ""
+        if len(phone) >= 4:
+            return f"{name} {phone[-4:]}"
+        return name
 
 
 class AuditQuery:
@@ -120,7 +195,12 @@ class AuditQuery:
         needle = (query or "").strip().casefold()
         if needle:
             rows = [row for row in rows if needle in AuditQuery._blob(row)]
-        return [AuditView.render(row) for row in rows[:limit]]
+        shown = []
+        for row in rows[:limit]:
+            body = AuditView.render(row)
+            body["object_label"] = AuditView.business_label(session, row)
+            shown.append(body)
+        return shown
 
     @staticmethod
     def _blob(row: AuditLog) -> str:

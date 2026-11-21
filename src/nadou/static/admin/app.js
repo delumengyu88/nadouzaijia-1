@@ -21,6 +21,7 @@ const state = {
   index: null,
   modal: null,
   message: "",
+  userQuery: "",
 };
 let generation = 0;
 
@@ -235,6 +236,39 @@ function denied() {
   shell("无法查看", '<div class="card"><div class="card-bd">当前账号不能查看此页。</div></div>', false);
 }
 
+function shanghaiDay(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const pick = (type) => {
+    const found = parts.find((part) => part.type === type);
+    return found ? found.value : "";
+  };
+  return `${pick("year")}-${pick("month")}-${pick("day")}`;
+}
+
+function dayText(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function memberTag(row) {
+  if (row.membership === "vip" || row.vip) return '<span class="tag tag-money">VIP</span>';
+  if (row.membership === "regular") return '<span class="tag tag-blue">普通会员</span>';
+  return '<span class="tag tag-gray">免费</span>';
+}
+
+function maskPhone(phone) {
+  const text = String(phone || "");
+  if (text.length <= 4) return text;
+  return `${"*".repeat(text.length - 4)}${text.slice(-4)}`;
+}
+
 function evidenceLabel(row) {
   if (row.overdue) return '<span class="tag tag-red tag-dot">已提交 · 超时未受理</span>';
   const tone = {
@@ -259,7 +293,6 @@ async function renderEvidence() {
     return;
   }
   state.evidence = listed.data;
-  if (!state.evidenceId && state.evidence[0]) state.evidenceId = state.evidence[0].id;
   if (state.evidenceId) {
     const detail = await api(`/api/v1/admin/evidence-requests/${state.evidenceId}`);
     state.detail = detail.ok ? detail.data : null;
@@ -286,24 +319,31 @@ async function renderEvidence() {
       const late = row.overdue ? "overdue" : "";
       const pin = row.overdue ? '<span class="pin">置顶</span> ' : "";
       const who = `${escapeHtml(row.contact_name || "—")} <span class="muted">${escapeHtml(row.phone || "—")}</span>`;
-      return `<tr class="${selected} ${late}" data-act="open-evidence" data-id="${escapeHtml(row.id)}">
+      const quick =
+        row.status === "已提交"
+          ? `<button class="btn btn-primary btn-sm" type="button" data-act="accept" data-id="${escapeHtml(row.id)}">接单</button>`
+          : row.status === "待付款（线下）"
+            ? `<button class="btn btn-primary btn-sm" type="button" data-act="pay" data-id="${escapeHtml(row.id)}" data-amount="${escapeHtml(row.quote_amount || "")}">确认收款</button>`
+            : "";
+      return `<tr class="${selected} ${late}">
         <td class="nowrap">${pin}<span class="mono">${escapeHtml(row.application_number)}</span></td>
         <td>${escapeHtml(row.request_type)}</td>
         <td class="cell-main">${escapeHtml(row.program_name || "—")}</td>
-        <td>${row.vip ? '<span class="tag tag-money">VIP</span>' : '<span class="tag tag-gray">免费</span>'}</td>
+        <td>${memberTag(row)}</td>
         <td>${who}</td>
         <td class="nowrap">${evidenceLabel(row)}</td>
         <td class="nowrap">${escapeHtml(shortWhen(row.created_at))}</td>
-        <td><button class="btn btn-default btn-sm" type="button" data-act="open-evidence" data-id="${escapeHtml(row.id)}">查看</button></td>
+        <td class="nowrap">${quick}<button class="btn btn-default btn-sm" type="button" data-act="open-evidence" data-id="${escapeHtml(row.id)}">查看</button></td>
       </tr>`;
     })
     .join("");
   const overdue = state.evidence.filter((row) => row.overdue).length;
   const pending = state.evidence.filter((row) => row.status === "已提交").length;
   const working = state.evidence.filter((row) => row.status === "取证中").length;
-  const delivered = state.evidence.filter((row) => row.status === "已交付" || row.status === "已完成").length;
+  const today = shanghaiDay(new Date().toISOString());
+  const delivered = state.evidence.filter((row) => shanghaiDay(row.delivered_at) === today).length;
   const vip = state.evidence.filter((row) => row.vip && !["已交付", "已完成", "已关闭", "已取消", "取证失败"].includes(row.status)).length;
-  const drawer = state.detail ? evidenceDrawer(state.detail) : '<aside class="drawer"><div class="drawer-bd">选择一条申请。</div></aside>';
+  const drawer = state.evidenceId && state.detail ? evidenceDrawer(state.detail) : "";
   shell(
     "取证申请",
     `<div class="workspace-row"><div class="workspace-col">
@@ -311,11 +351,11 @@ async function renderEvidence() {
         <div class="stat"><div class="k">超时未受理</div><div class="v danger">${overdue}</div></div>
         <div class="stat"><div class="k">已提交</div><div class="v">${pending}</div></div>
         <div class="stat"><div class="k">取证中</div><div class="v">${working}</div></div>
-        <div class="stat"><div class="k">已交付</div><div class="v">${delivered}</div></div>
+        <div class="stat"><div class="k">今日已交付</div><div class="v">${delivered}</div></div>
         <div class="stat"><div class="k">VIP 待处理</div><div class="v">${vip}</div></div>
       </div>
-      <div class="card grow"><div class="card-hd">申请列表<span class="sub">共 ${visible.length} 条 · 超时未受理置顶</span>
-        <div style="display:flex;gap:8px;font-weight:400">
+      <div class="card grow"><div class="card-hd">申请列表<span class="sub">共 ${visible.length} 条 · 超时未受理置顶</span></div>
+        <div class="filter-bar">
           <input class="input w-md" id="evidence-query" value="${escapeHtml(evidenceQuery)}" placeholder="申请号或节目">
           <select class="select w-sm" id="evidence-status">
             ${["全部", "已提交", "已受理", "待付款（线下）", "取证中", "已交付", "已完成", "取证失败", "已关闭", "已取消"].map((item) => `<option${item === statusFilter ? " selected" : ""}>${item}</option>`).join("")}
@@ -323,12 +363,11 @@ async function renderEvidence() {
           <select class="select w-sm" id="evidence-type">
             ${["全部", "常规", "近期"].map((item) => `<option${item === typeFilter ? " selected" : ""}>${item}</option>`).join("")}
           </select>
-          <input class="input w-sm" id="evidence-from" type="date" value="${escapeHtml(fromDay)}">
-          <input class="input w-sm" id="evidence-to" type="date" value="${escapeHtml(toDay)}">
-          <label class="help" style="margin:0"><input id="evidence-vip" type="checkbox"${vipOnly ? " checked" : ""}> VIP 优先</label>
-          <button class="btn btn-primary btn-sm" type="button" data-act="evidence-filter">查询</button>
+          <input class="input w-date" id="evidence-from" inputmode="numeric" placeholder="YYYY-MM-DD" value="${escapeHtml(fromDay)}">
+          <input class="input w-date" id="evidence-to" inputmode="numeric" placeholder="YYYY-MM-DD" value="${escapeHtml(toDay)}">
+          <label class="help vip-filter" id="evidence-vip-label" style="margin:0"><input id="evidence-vip" type="checkbox"${vipOnly ? " checked" : ""}> VIP 优先</label>
+          <button class="btn btn-primary btn-sm" id="evidence-search" type="button" data-act="evidence-filter">查询</button>
         </div>
-      </div>
         <div class="card-bd flush"><table class="data tight"><thead><tr>
           <th>申请号</th><th>类型</th><th>节目</th><th>会员</th><th>联系人 / 手机</th><th>状态</th><th>提交时间</th><th></th>
         </tr></thead><tbody>${rows || '<tr><td colspan="8">暂无申请</td></tr>'}</tbody></table></div></div>
@@ -388,7 +427,7 @@ function evidenceDrawer(row) {
         </div>`
       : "";
   return `<aside class="drawer">
-    <div class="drawer-hd">${escapeHtml(row.application_number)}<span class="sub">${escapeHtml(row.status)}</span></div>
+    <div class="drawer-hd">${escapeHtml(row.application_number)}<span class="sub">${escapeHtml(row.status)}</span><button class="btn btn-default btn-sm" type="button" data-act="close-drawer">关闭</button></div>
     <p class="cs-hint"><a href="https://mpkf.weixin.qq.com/" target="_blank" rel="noopener noreferrer">回复请到微信小程序客服 ↗</a></p>
     <div class="drawer-bd"><div class="drawer-scroll">
       <div class="kv">
@@ -537,7 +576,7 @@ async function renderUsers() {
       ${user.ban_type && admin ? `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="unban" data-id="${escapeHtml(user.id)}">解禁</button></div>` : ""}
       </div></div>`
     : '<div class="card"><div class="card-bd">输入手机号后查询。</div></div>';
-  const grantCard = admin
+  const grantCard = admin && user
     ? `<div class="card" style="margin:0 0 16px"><div class="card-hd">手动开通 / 延长会员</div><div class="card-bd">
         <div class="field"><label>档位</label><select class="select" id="grant-tier" style="width:100%"><option value="vip">VIP</option><option value="regular">普通会员</option></select></div>
         <div class="field" style="margin-top:10px"><label>天数</label><input class="input" id="grant-days" value="30"></div>
@@ -570,7 +609,7 @@ async function renderUsers() {
     "用户与会员",
     `${admin ? "" : '<p class="help">当前为客服视角：只读，手机号仅显示后 4 位，不提供手动开通或封禁。</p>'}
     <div class="card"><div class="card-hd">查找用户</div><div class="card-bd"><div class="filters">
-      <div class="field"><label>手机号</label><input class="input w-xl" id="user-query" value="" placeholder="输入手机号"></div>
+      <div class="field"><label>手机号</label><input class="input w-xl" id="user-query" value="${escapeHtml(admin ? state.userQuery || "" : state.userQuery ? maskPhone(state.userQuery) : "")}" placeholder="输入手机号"></div>
       <button class="btn btn-primary" type="button" data-act="user-search">查询</button>
     </div><p class="help">客服看到的手机号只保留后 4 位。</p></div></div>
     <div class="grid-2-1">${profile}<div>${grantCard}${locks}</div></div>`,
@@ -728,7 +767,7 @@ async function renderContent() {
     "内容配置",
     `<div class="card"><div class="card-hd">开屏海报 ${poster.enabled ? '<span class="tag tag-green">总开关：开</span>' : '<span class="tag tag-gray">总开关：关</span>'}</div>
       <div class="card-bd" style="display:flex;gap:24px">
-        <div class="poster"><div class="brand">那豆在架</div><div>${escapeHtml(poster.slogan || "未填写口号")}</div><div class="skip">跳过 5</div></div>
+        <div class="poster-frame"><div class="poster"><div class="brand">那豆在架</div><div>${escapeHtml(poster.slogan || "未填写口号")}</div><div class="skip">跳过 5</div></div></div>
         <div style="flex:1">
           <div class="field"><label>图片名称</label><input class="input" id="splash-image" value="${escapeHtml(poster.image_name || "")}"></div>
           <div class="field" style="margin-top:8px"><label>跳转说明</label><input class="input" id="splash-jump" value="${escapeHtml(poster.jump_label || "")}"></div>
@@ -1027,13 +1066,27 @@ async function onClick(event) {
     return;
   }
   if (act === "evidence-filter") {
+    const fromDay = value("#evidence-from");
+    const toDay = value("#evidence-to");
+    if ((fromDay && !dayText(fromDay)) || (toDay && !dayText(toDay))) {
+      state.message = "日期请按 YYYY-MM-DD 填写。";
+      await draw();
+      return;
+    }
     state.evidenceQuery = value("#evidence-query");
     state.evidenceStatus = value("#evidence-status");
     state.evidenceType = value("#evidence-type");
-    state.evidenceFrom = value("#evidence-from");
-    state.evidenceTo = value("#evidence-to");
+    state.evidenceFrom = fromDay;
+    state.evidenceTo = toDay;
     const vipBox = document.querySelector("#evidence-vip");
     state.evidenceVip = Boolean(vipBox && vipBox.checked);
+    await draw();
+    return;
+  }
+  if (act === "close-drawer") {
+    state.evidenceId = null;
+    state.orderId = null;
+    state.detail = null;
     await draw();
     return;
   }
@@ -1058,7 +1111,8 @@ async function onClick(event) {
     return;
   }
   if (act === "quote" || act === "pay") {
-    const amount = Number(value("#quote-amount"));
+    const typed = value("#quote-amount");
+    const amount = Number(typed || node.dataset.amount || "");
     if (!amount) {
       state.message = "请填写金额。";
       await draw();
@@ -1103,13 +1157,18 @@ async function onClick(event) {
   }
   if (act === "fail-open") {
     const row = state.detail;
-    const refund =
-      row && row.status === "取证中"
-        ? `<div class="field" style="margin-top:12px"><label>退款方式</label><select class="select" id="refund-method" style="width:100%"><option>原路退回</option><option>银行转账</option><option>微信转账</option><option>其他</option></select></div>
-           <div class="field" style="margin-top:12px"><label>退款金额</label><input class="input" id="refund-amount" value="${escapeHtml(row.payment_amount || "")}"></div>`
-        : "";
+    const paid = row && row.status === "取证中";
+    const help = paid
+      ? "该申请已确认线下收款（取证中）。无法交付时须记录退款。取证不走小程序订单，按线下收款退回。关闭是单独的下一步。"
+      : "该申请尚未确认收款。无需退款。「已受理」和「待付款（线下）」都不出现退款字段。失败原因必填。";
+    const refund = paid
+      ? `<div class="field" style="margin-top:12px"><label>退款方式<span class="req">*</span></label><select class="select" id="refund-method" style="width:100%"><option>原路退回</option><option>银行转账</option><option>微信转账</option><option>其他</option></select></div>
+         <div class="field" style="margin-top:12px"><label>退款金额<span class="req">*</span></label><input class="input" id="refund-amount" value="${escapeHtml(row.payment_amount || "")}"></div>
+         <div class="field" style="margin-top:12px"><label>退款记录<span class="req">*</span></label><input class="input" id="refund-note" placeholder="请填写退款凭证摘要，此项必填"></div>`
+      : "";
     await showModal(`<div class="modal"><div class="modal-hd">标记失败</div><div class="modal-bd">
-      <div class="field"><label>失败原因</label><textarea class="textarea" id="fail-reason" rows="3"></textarea></div>
+      <p class="help" style="margin-top:0">${help}</p>
+      <div class="field"><label>失败原因<span class="req">*</span></label><textarea class="textarea" id="fail-reason" rows="3" placeholder="请填写失败原因，此项必填"></textarea></div>
       ${refund}
     </div><div class="modal-ft">
       <button class="btn btn-default" type="button" data-act="modal-close">取消</button>
@@ -1129,6 +1188,12 @@ async function onClick(event) {
     if (paid) {
       payload.refund_method = value("#refund-method");
       payload.refund_amount = Number(value("#refund-amount"));
+      payload.refund_note = value("#refund-note");
+      if (!payload.refund_note) {
+        state.message = "请填写退款记录。";
+        await draw();
+        return;
+      }
     }
     const result = await api(`/api/v1/admin/evidence-requests/${id}/fail`, { method: "POST", json: payload });
     await afterChange(result.ok, result.status, result.data);
@@ -1171,7 +1236,11 @@ async function onClick(event) {
     return;
   }
   if (act === "user-search") {
-    const query = value("#user-query");
+    let query = value("#user-query");
+    if (state.me.role !== "admin" && state.userQuery && query === maskPhone(state.userQuery)) {
+      query = state.userQuery;
+    }
+    state.userQuery = query;
     const found = await api(`/api/v1/admin/users?q=${encodeURIComponent(query)}`);
     if (!found.ok || !found.data[0]) {
       state.user = null;
@@ -1402,6 +1471,21 @@ async function download(path, filename) {
   link.click();
   URL.revokeObjectURL(link.href);
 }
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (state.modal) {
+    state.modal = null;
+    draw();
+    return;
+  }
+  if (state.evidenceId || state.orderId) {
+    state.evidenceId = null;
+    state.orderId = null;
+    state.detail = null;
+    draw();
+  }
+});
 
 document.body.addEventListener("click", (event) => {
   onClick(event).catch(() => {

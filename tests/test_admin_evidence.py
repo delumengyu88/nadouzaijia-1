@@ -193,7 +193,7 @@ def test_refund_rules_and_delivery_methods(workbench):
         "POST",
         f"/api/v1/admin/evidence-requests/{paid}/fail",
         token,
-        json={"reason": "无法取证", "refund_method": "原路退回"},
+        json={"reason": "无法取证", "refund_method": "原路退回", "refund_note": "线下原路退回"},
     ).json()
     assert defaulted["refund_amount"] == 80
     assert defaulted["refund_method"] == "原路退回"
@@ -219,7 +219,12 @@ def test_refund_rules_and_delivery_methods(workbench):
         "POST",
         f"/api/v1/admin/evidence-requests/{custom}/fail",
         token,
-        json={"reason": "部分退回", "refund_method": "原路退回", "refund_amount": 30},
+        json={
+            "reason": "部分退回",
+            "refund_method": "原路退回",
+            "refund_amount": 30,
+            "refund_note": "部分退回",
+        },
     ).json()
     assert adjusted["refund_amount"] == 30
 

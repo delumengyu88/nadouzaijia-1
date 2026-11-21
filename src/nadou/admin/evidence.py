@@ -124,6 +124,8 @@ class EvidenceView:
             "platform_label": request.platform_label,
             "contact_name": request.contact_name,
             "phone": None,
+            "membership": "free",
+            "delivered_at": EvidenceView._iso(request.delivered_at),
         }
 
     @staticmethod
@@ -150,6 +152,7 @@ class EvidenceView:
                 "failure_reason": request.failure_reason,
                 "refund_method": request.refund_method,
                 "refund_amount": request.refund_amount,
+                "refund_note": request.refund_note,
                 "failed_at": EvidenceView._iso(request.failed_at),
                 "quoted_at": EvidenceView._iso(request.quoted_at),
                 "completed_at": EvidenceView._iso(request.completed_at),
@@ -237,6 +240,8 @@ class EvidenceSnapshot:
             "failure_reason": request.failure_reason,
             "refund_method": request.refund_method,
             "refund_amount": request.refund_amount,
+            "refund_note": request.refund_note,
+            "application_number": request.application_number,
         }
 
 
@@ -360,6 +365,7 @@ class EvidenceWorkflow:
         now: datetime,
         refund_method: str | None = None,
         refund_amount: int | None = None,
+        refund_note: str | None = None,
     ) -> EvidenceRequest:
         row = self._require(request_id)
         text = reason.strip()
@@ -373,14 +379,21 @@ class EvidenceWorkflow:
                 raise WorkbenchError(400, "unpaid request does not accept refund fields")
             stored_method = None
             stored_amount = None
+            stored_note = None
         elif row.status == EvidenceStatus.IN_PROGRESS:
+            note = (refund_note or "").strip()
             if method not in RefundMethod.CHOICES:
                 raise WorkbenchError(400, "refund method is required")
             amount = row.payment_amount if refund_amount is None else refund_amount
             if amount is None or amount < 0:
                 raise WorkbenchError(400, "refund amount is required")
+            if not note:
+                raise WorkbenchError(400, "refund note is required")
+            if len(note) > 200:
+                raise WorkbenchError(400, "refund note is too long")
             stored_method = method
             stored_amount = amount
+            stored_note = note
         else:
             raise WorkbenchError(409, "request cannot be marked failed from its current status")
         before = EvidenceSnapshot.of(row)
@@ -388,6 +401,7 @@ class EvidenceWorkflow:
         row.failure_reason = text
         row.refund_method = stored_method
         row.refund_amount = stored_amount
+        row.refund_note = stored_note
         row.failed_at = now
         self.session.flush()
         self.audit.write(
@@ -518,13 +532,21 @@ class EvidenceList:
             )
         )
         phones = self._phones({row.user_id for row in rows})
+        regular_ids = self._regular_ids({row.user_id for row in rows})
         listed = []
         for row in rows:
+            if row.user_id in vip_ids:
+                membership = "vip"
+            elif row.user_id in regular_ids:
+                membership = "regular"
+            else:
+                membership = "free"
             body = EvidenceView.summary(
                 row,
                 overdue=EvidenceOverdue.is_overdue(row, self.now),
                 vip=row.user_id in vip_ids,
             )
+            body["membership"] = membership
             phone = phones.get(row.user_id)
             body["phone"] = phone if reveal_phone else PhoneMask.apply(phone)
             listed.append(body)
@@ -537,6 +559,18 @@ class EvidenceList:
             select(Entitlement.user_id).where(
                 Entitlement.user_id.in_(user_ids),
                 Entitlement.kind == "vip",
+                Entitlement.expires_at > self.now,
+            )
+        ).all()
+        return set(rows)
+
+    def _regular_ids(self, user_ids: set[str]) -> set[str]:
+        if not user_ids:
+            return set()
+        rows = self.session.scalars(
+            select(Entitlement.user_id).where(
+                Entitlement.user_id.in_(user_ids),
+                Entitlement.kind == "regular",
                 Entitlement.expires_at > self.now,
             )
         ).all()

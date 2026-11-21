@@ -265,3 +265,96 @@ def test_support_does_not_inherit_admin_user_details():
             server.wait(timeout=10)
         except subprocess.TimeoutExpired:
             server.kill()
+
+
+def _hit_is(page, selector: str) -> bool:
+    box = page.locator(selector).bounding_box()
+    assert box, selector
+    return page.evaluate(
+        """([selector, x, y]) => {
+          const target = document.querySelector(selector);
+          const hit = document.elementFromPoint(x, y);
+          if (!target || !hit) return false;
+          return hit === target || target.contains(hit) || hit.contains(target);
+        }""",
+        [selector, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2],
+    )
+
+
+def test_w02_filters_stay_clickable_beside_the_drawer():
+    if os.environ.get("NADOU_RUN_BROWSER") != "1":
+        pytest.skip("set NADOU_RUN_BROWSER=1 to load the workbench in Chromium")
+    database = os.environ.get("DATABASE_URL", "")
+    if not database.startswith("postgresql"):
+        pytest.skip("browser check uses the Postgres started for CI")
+    playwright_sync = pytest.importorskip("playwright.sync_api")
+    from nadou.__main__ import DemoCommand
+
+    assert DemoCommand.run() == 0
+    port = _free_port()
+    server = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "nadou.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+        env=os.environ.copy(),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    base = f"http://127.0.0.1:{port}"
+    try:
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+                    break
+            except OSError:
+                if server.poll() is not None:
+                    raise AssertionError("server exited")
+                time.sleep(0.2)
+        else:
+            raise AssertionError("workbench did not start")
+        with playwright_sync.sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.goto(f"{base}/admin/#/login", wait_until="networkidle")
+            page.locator("h2", has_text="账号登录").wait_for()
+            page.fill("input[name=username]", DemoAccounts.ADMIN)
+            page.fill("input[name=password]", DemoAccounts.ADMIN_PASSWORD)
+            page.locator("button[type=submit]").click()
+            page.locator("h1", has_text="取证申请").wait_for()
+            assert page.locator("aside.drawer").count() == 0
+            assert page.locator("#evidence-from").get_attribute("placeholder") == "YYYY-MM-DD"
+            page.locator("button", has_text="查看").first.click()
+            page.locator("aside.drawer").wait_for()
+            for selector in (
+                "#evidence-search",
+                "#evidence-vip-label",
+                "#evidence-from",
+                "#evidence-to",
+            ):
+                assert _hit_is(page, selector), selector
+            page.locator("#evidence-vip-label").click()
+            page.locator("#evidence-search").click()
+            page.locator("td", has_text="南风知我意").wait_for(state="detached")
+            assert page.locator("td", has_text="星河旧梦").count() >= 1
+            page.locator("button[data-act=close-drawer]").click()
+            page.locator("aside.drawer").wait_for(state="detached")
+            page.locator("button", has_text="查看").first.click()
+            page.locator("aside.drawer").wait_for()
+            page.keyboard.press("Escape")
+            page.locator("aside.drawer").wait_for(state="detached")
+            browser.close()
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()

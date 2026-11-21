@@ -387,6 +387,7 @@ class AdminApi:
                     now,
                     payload.refund_method,
                     payload.refund_amount,
+                    payload.refund_note,
                 )
                 return AdminApi._evidence_detail(session, row, account, now)
 
