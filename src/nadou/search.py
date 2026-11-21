@@ -5,8 +5,17 @@ from sqlalchemy.orm import Session
 
 from nadou.entitlements import AccessDecision, AccessGrants, EntitlementPolicy, LockedSummary
 from nadou.models import Entitlement, IndexRecord, Task, User
-from nadou.normalize import PlatformLabel, ProgramNormalizer
-from nadou.schemas import LockedRecordOut, LockedSummaryOut, OpenRecordOut, SearchOut, TierCounts
+from nadou.normalize import ProgramNormalizer
+from nadou.platform_names import PlatformNames
+from nadou.program_titles import ProgramTitleGuard
+from nadou.schemas import (
+    LockedRecordOut,
+    LockedSummaryOut,
+    OpenRecordOut,
+    PlatformGroupOut,
+    SearchOut,
+    TierCounts,
+)
 from nadou.signed_url import SignedUrlProvider
 from nadou.text import RecordAge
 
@@ -22,7 +31,7 @@ class EmptyQuery(Exception):
 class ProgramSearch:
     """Search one program and filter every record for the caller."""
 
-    UNVERIFIED = "平台未识别"
+    UNRECOGNIZED_PLATFORM = PlatformNames.UNRECOGNIZED
     HIT_LABEL = "已命中"
     REASON_UNKNOWN_AGE = "检测时间待核实"
     _LOCKED_KEYS = ("record_id", "age_bucket", "locked", "lock_reason")
@@ -36,6 +45,8 @@ class ProgramSearch:
         canonical = ProgramNormalizer.from_session(self.session).canonical(raw_name)
         if not canonical:
             raise EmptyQuery(raw_name)
+        if not ProgramTitleGuard.is_billable(canonical):
+            return self._not_billable(canonical)
         grants = self._live_grants(user_id)
         rows = list(
             self.session.scalars(
@@ -53,15 +64,16 @@ class ProgramSearch:
         unverified = 0
         for record in rows:
             task = tasks.get(record.task_id)
-            if not self.included(task):
+            if not self.included(task) or not self.confirmed(record):
                 continue
             when = self.record_time(task, record)
             age = RecordAge.days(when, self.now) if when is not None else None
             if age is not None and age >= 30:
-                if self._unverified(task):
+                key = self._platform_key(task)
+                if key is None:
                     unverified += 1
-                elif task is not None and task.platform_name:
-                    platforms.add(task.platform_name)
+                else:
+                    platforms.add(key)
             kept.append((age, record, task))
 
         kept.sort(
@@ -71,22 +83,27 @@ class ProgramSearch:
                 item[1].id,
             )
         )
-        records: list[LockedRecordOut | OpenRecordOut] = []
+        open_records: list[OpenRecordOut] = []
+        locked_records: list[LockedRecordOut] = []
         locked_ages: list[int] = []
         any_old = False
         any_recent = False
         for age, record, task in kept:
             if age is None:
-                records.append(self._unknown_age(record))
+                locked_records.append(self._unknown_age(record))
                 continue
             if age >= 30:
                 any_old = True
             else:
                 any_recent = True
             decision = EntitlementPolicy.decide(age, self._grants_for(grants, canonical, record.id))
-            if decision.locked:
-                locked_ages.append(age)
-            records.append(self._present(record, task, decision, user_id))
+            presented = self._present(record, task, decision, user_id)
+            if isinstance(presented, LockedRecordOut):
+                if decision.locked:
+                    locked_ages.append(age)
+                locked_records.append(presented)
+            else:
+                open_records.append(presented)
 
         if any_old:
             outcome = "hit"
@@ -104,7 +121,8 @@ class ProgramSearch:
             platform_count=len(platforms),
             unverified_source_count=unverified,
             locked_summary=self._summary_out(summary),
-            records=records,
+            platform_groups=self._group_by_platform(open_records),
+            locked_records=locked_records,
         )
 
     def _live_grants(self, user_id: str | None) -> list[Entitlement]:
@@ -137,6 +155,29 @@ class ProgramSearch:
             program_90=program_90,
             screenshot=screenshot,
         )
+
+    def _not_billable(self, canonical: str) -> SearchOut:
+        summary = EntitlementPolicy.summarize_locked([], AccessGrants())
+        return SearchOut(
+            program_name=canonical,
+            outcome="miss",
+            platform_count=0,
+            unverified_source_count=0,
+            locked_summary=self._summary_out(summary),
+            platform_groups=[],
+            locked_records=[],
+        )
+
+    @staticmethod
+    def _platform_key(task: Task | None) -> tuple[str, str] | None:
+        if task is None or task.source_unverified or not task.platform_operator:
+            return None
+        return (task.platform_province or "", task.platform_operator)
+
+    @staticmethod
+    def confirmed(record: IndexRecord) -> bool:
+        """Only a confirmed hit is user-facing. Dispute rows stay internal."""
+        return record.hit_type == "consensus"
 
     @staticmethod
     def included(task: Task | None) -> bool:
@@ -173,6 +214,28 @@ class ProgramSearch:
         )
 
     @staticmethod
+    def _group_by_platform(records: list[OpenRecordOut]) -> list[PlatformGroupOut]:
+        buckets: dict[tuple[str, str, str], list[OpenRecordOut]] = {}
+        for record in records:
+            key = (
+                record.platform or "",
+                record.platform_province or "",
+                record.platform_operator or "",
+            )
+            buckets.setdefault(key, []).append(record)
+        groups: list[PlatformGroupOut] = []
+        for platform, province, operator in sorted(buckets):
+            groups.append(
+                PlatformGroupOut(
+                    platform=platform or ProgramSearch.UNRECOGNIZED_PLATFORM,
+                    platform_province=province or None,
+                    platform_operator=operator or None,
+                    records=buckets[(platform, province, operator)],
+                )
+            )
+        return groups
+
+    @staticmethod
     def _unknown_age(record: IndexRecord) -> LockedRecordOut:
         return LockedRecordOut(
             record_id=record.id,
@@ -205,23 +268,26 @@ class ProgramSearch:
             "can_download_screenshot": decision.can_download_screenshot,
         }
         if decision.reveal_fields:
-            if self._unverified(task):
-                payload["platform"] = self.UNVERIFIED
-                payload["platform_display"] = self.UNVERIFIED
-            else:
-                subtype = PlatformLabel.subtype(task.network_type, task.raw_filename)
-                payload["platform"] = task.platform_name
-                if subtype:
-                    payload["platform_subtype"] = subtype
-                payload["platform_display"] = PlatformLabel.display(task.platform_name, subtype)
+            payload["platform"] = (
+                self.UNRECOGNIZED_PLATFORM if self._unverified(task) else task.platform_name
+            )
+            payload["hit_label"] = ProgramSearch.HIT_LABEL
+            if task is not None and not self._unverified(task):
+                if task.platform_province:
+                    payload["platform_province"] = task.platform_province
+                if task.platform_operator:
+                    payload["platform_operator"] = task.platform_operator
+                if task.platform_subtype:
+                    payload["platform_subtype"] = task.platform_subtype
             if task is not None and task.network_type:
                 payload["network_type"] = task.network_type
-            payload["hit_label"] = ProgramSearch.HIT_LABEL
             payload["frame_count"] = record.frame_count
             payload["timestamps"] = list(record.timestamps or [])
             when = self.record_time(task, record)
             if when is not None:
                 payload["checked_at"] = when.astimezone(RecordAge.TZ).isoformat()
+            if record.category:
+                payload["category"] = record.category
         if decision.thumbnail:
             payload["thumbnail_url"] = self._sign(decision.thumbnail, record.id, user_id)
         if decision.hd:

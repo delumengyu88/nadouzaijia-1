@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from nadou.db import create_engine_for
 from nadou.importer import TaskExportImporter
-from nadou.models import IndexRecord, Task
+from nadou.models import IndexRecord, MemberQuery, QueryProgram, Task
 from nadou.records import IndexRecordStore
 from nadou.search import ProgramSearch
 from nadou.signed_url import FakeSignedUrlProvider
@@ -112,6 +112,26 @@ def test_check_constraints_reject_bad_values(pg_session):
         pg_session.flush()
 
 
+def test_query_program_resolution_constraint(pg_session):
+    pg_session.add(
+        MemberQuery(
+            id="q-bad",
+            created_at=datetime(2026, 11, 21, 12, 0, tzinfo=RecordAge.TZ),
+        )
+    )
+    pg_session.flush()
+    pg_session.add(
+        QueryProgram(
+            query_id="q-bad",
+            position=0,
+            uploaded_name="节目",
+            resolution="nope",
+        )
+    )
+    with pytest.raises(IntegrityError):
+        pg_session.flush()
+
+
 def test_importer_and_search_on_postgres(pg_session):
     body = (
         f"{HEADER}\n"
@@ -139,9 +159,10 @@ def test_importer_and_search_on_postgres(pg_session):
     assert found.program_name == "pg节目"
     assert found.outcome == "hit"
     assert found.platform_count == 1
-    assert found.records[0].locked is False
-    assert found.records[0].platform == "示例视频"
-    assert found.records[0].thumbnail_url.startswith("signed://derived/lowres/")
+    visible = found.platform_groups[0].records[0]
+    assert visible.locked is False
+    assert visible.platform == "示例视频"
+    assert visible.thumbnail_url.startswith("signed://derived/lowres/")
 
 
 def test_audit_and_notes_reject_mutation(pg_session):

@@ -1,4 +1,5 @@
-from nadou.normalize import PlatformNormalizer, ProgramNormalizer
+from nadou.normalize import ProgramNormalizer
+from nadou.platform_names import PlatformNames
 
 
 def test_fold_trims_width_and_case():
@@ -16,18 +17,29 @@ def test_program_alias_and_dedupe():
     assert normalizer.dedupe(["", "   ", "甲"]) == ["甲"]
 
 
-def test_platform_alias_merges_variants():
-    normalizer = PlatformNormalizer(
-        {
-            "重庆移动百视通OTT": "重庆移动",
-            "重庆移动百视通": "重庆移动",
-            "重庆移动": "重庆移动",
-        }
-    )
-    for variant in ("重庆移动百视通OTT", "重庆移动百视通", "  重庆移动百视通ＯＴＴ "):
-        result = normalizer.normalize(variant)
-        assert result.unverified is False
-        assert result.name == "重庆移动"
-    blank = normalizer.normalize("  ")
-    assert blank.unverified is True
-    assert blank.name is None
+def test_program_alias_with_several_targets_stays_one_title():
+    normalizer = ProgramNormalizer(pairs=[("abc剧", "节目1986"), ("ａｂｃ剧", "节目2010")])
+    assert normalizer.canonical("ABC剧") == "abc剧"
+
+
+def test_platform_parts_and_unrecognized():
+    guangdong = PlatformNames.normalize(" GD移动 ")
+    assert guangdong.province == "广东"
+    assert guangdong.operator == "移动"
+    assert guangdong.subtype is None
+    assert guangdong.name == "广东移动"
+    wide = PlatformNames.normalize("ＧＤ移动")
+    assert wide.count_key() == guangdong.count_key()
+    ott = PlatformNames.normalize("广东移动OTT")
+    bestv = PlatformNames.normalize("广东移动百视通")
+    assert ott.count_key() == bestv.count_key() == ("广东", "移动")
+    assert ott.subtype == "OTT"
+    assert bestv.subtype == "百视通"
+    zhejiang = PlatformNames.normalize("浙江移动")
+    assert zhejiang.count_key() == ("浙江", "移动")
+    assert zhejiang.count_key() != guangdong.count_key()
+    assert PlatformNames.normalize("公网广东移动").count_key() == ("广东", "移动")
+    unknown = PlatformNames.normalize("没有这个平台")
+    assert unknown.unrecognized is True
+    assert unknown.count_key() is None
+    assert PlatformNames.normalize("  ").unrecognized is True

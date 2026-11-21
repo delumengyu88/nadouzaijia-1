@@ -3,7 +3,9 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
-from nadou.models import Entitlement, IndexRecord, PlatformAlias, ProgramAlias, Task, User
+from nadou.models import Entitlement, IndexRecord, ProgramAlias, Task, User
+from nadou.platform_names import PlatformNames
+from nadou.program_titles import ProgramTitleGuard
 from nadou.records import IndexRecordStore
 from nadou.text import RecordAge
 
@@ -65,6 +67,9 @@ def add_hit(
                 raw_filename=filename or f"{task_id}.mp4",
                 network_type=None if unverified else network,
                 platform_name=None if unverified else platform,
+                platform_operator=None if unverified else platform,
+                platform_province=None,
+                platform_subtype=None,
                 source_unverified=unverified,
                 is_test=is_test,
             )
@@ -83,8 +88,14 @@ def add_hit(
     )
 
 
+def all_rows(body):
+    rows = [row for group in body.get("platform_groups", []) for row in group["records"]]
+    rows.extend(body.get("locked_records", []))
+    return rows
+
+
 def by_id(body):
-    return {row["record_id"]: row for row in body["records"]}
+    return {row["record_id"]: row for row in all_rows(body)}
 
 
 def test_server_filters_every_tier(session, client, clock):
@@ -142,7 +153,7 @@ def test_server_filters_every_tier(session, client, clock):
         params={"name": "其他节目"},
         headers={"X-User-Id": "user-p90"},
     ).json()
-    assert other["records"][0]["locked"] is True
+    assert other["locked_records"][0]["locked"] is True
     assert "plat-other" not in json.dumps(other)
 
     for body in (free, vip, regular, program_90, program_30, shot, expired):
@@ -232,7 +243,6 @@ def _assert_shape(body, tier):
 
 def test_counts_exclusions_and_fallbacks(session, client, clock):
     session.add(ProgramAlias(alias="边界别名", canonical_name=PROGRAM))
-    session.add(PlatformAlias(alias="平台甲ott", canonical_name="平台甲"))
     add_hit(
         session,
         task_id="keep-a",
@@ -346,7 +356,7 @@ def test_recent_only_and_miss(session, client, clock):
     assert recent["outcome"] == "recent_only"
     assert recent["platform_count"] == 0
     assert recent["unverified_source_count"] == 0
-    assert recent["records"][0]["lock_reason"] == "有最新记录，可委托取证"
+    assert recent["locked_records"][0]["lock_reason"] == "有最新记录，可委托取证"
     assert "保密平台" not in json.dumps(recent)
 
     add_hit(
@@ -360,7 +370,8 @@ def test_recent_only_and_miss(session, client, clock):
     session.commit()
     missed = client.get("/api/v1/programs/search", params={"name": "取消片"}).json()
     assert missed["outcome"] == "miss"
-    assert missed["records"] == []
+    assert missed["platform_groups"] == []
+    assert missed["locked_records"] == []
     assert missed["platform_count"] == 0
 
 
@@ -377,7 +388,7 @@ def test_created_at_beats_upload_time(session, client, clock):
     session.commit()
     body = client.get("/api/v1/programs/search", params={"name": "时间片"}).json()
     assert body["outcome"] == "recent_only"
-    assert body["records"][0]["age_bucket"] == "lt_30"
+    assert body["locked_records"][0]["age_bucket"] == "lt_30"
     assert "不应出现" not in json.dumps(body)
 
 
@@ -477,8 +488,8 @@ def test_unknown_age_is_not_a_fresh_hit(session, client, clock):
     assert alone["outcome"] == "miss"
     assert alone["platform_count"] == 0
     assert alone["unverified_source_count"] == 0
-    assert alone["records"][0]["age_bucket"] == "unknown"
-    assert alone["records"][0]["lock_reason"] == "检测时间待核实"
+    assert alone["locked_records"][0]["age_bucket"] == "unknown"
+    assert alone["locked_records"][0]["lock_reason"] == "检测时间待核实"
     assert "仍不泄露" not in json.dumps(alone)
     assert "有最新记录，可委托取证" not in json.dumps(alone)
 
@@ -512,7 +523,7 @@ def test_upsert_canonicalizes_program_alias(session, client, clock):
         task_id="alias-task",
         program_name="ａｂｃ剧",
         program_name_raw="ａｂｃ剧",
-        hit_type="dispute",
+        hit_type="consensus",
         frame_count=4,
         timestamps=["00:02:02"],
     )
@@ -525,10 +536,14 @@ def test_upsert_canonicalizes_program_alias(session, client, clock):
     by_alias = client.get("/api/v1/programs/search", params={"name": "ａｂｃ剧"}).json()
     assert by_standard["program_name"] == "标准剧"
     assert by_standard["outcome"] == "hit"
-    assert by_standard["records"][0]["record_id"] == by_alias["records"][0]["record_id"]
-    assert by_standard["records"][0]["platform"] == "示例视频"
-    assert by_standard["records"][0]["hit_label"] == "已命中"
-    assert "dispute" not in by_standard["records"][0]
+    visible = by_standard["platform_groups"][0]["records"][0]
+    alias_visible = by_alias["platform_groups"][0]["records"][0]
+    assert visible["record_id"] == alias_visible["record_id"]
+    assert visible["platform"] == "示例视频"
+    assert visible["frame_count"] == 4
+    assert visible["hit_label"] == "已命中"
+    assert "hit_type" not in visible
+    assert "match_type" not in json.dumps(by_standard)
 
 
 def test_locked_summary_by_entitlement(session, client, clock):
@@ -612,7 +627,7 @@ def test_locked_summary_by_entitlement(session, client, clock):
         assert body["locked_summary"] == summary
         tiers = summary["by_required_tier"]
         assert summary["unlockable_total"] == tiers["member"] + tiers["vip"]
-        raw = json.dumps(body["records"])
+        raw = json.dumps(body["locked_records"])
         for age in (10, 40, 50, 100, 120):
             row = by_id(body)[f"sum-rec-{age}"]
             if row["locked"]:
@@ -624,48 +639,219 @@ def test_locked_summary_by_entitlement(session, client, clock):
         assert unknown["age_bucket"] == "unknown"
 
 
-def test_subtype_does_not_add_a_platform(session, client, clock):
-    program = "平台计数节目"
-    when = at_age(clock, 200)
+def test_locked_rows_leak_no_real_fields_and_unconfirmed_stay_hidden(session, client, clock):
+    program = "泄漏节目"
+    platform = "保密平台甲"
+    raw_name = "泄漏节目原名"
     add_hit(
         session,
-        task_id="plat-ott",
-        record_id="rec-ott",
+        task_id="leak-locked",
+        record_id="leak-rec",
         program=program,
-        when=when,
-        platform="山东移动",
-        network="专网",
-        filename="专网-山东移动OTT-电影-2026.01.01.mp4",
+        when=at_age(clock, 100),
+        platform=platform,
+    )
+    session.add(
+        Task(
+            task_id="leak-dispute",
+            status="done",
+            created_at=at_age(clock, 100),
+            raw_filename="leak-dispute.mp4",
+            network_type="公网",
+            platform_name="疑似平台",
+            source_unverified=False,
+            is_test=False,
+        )
+    )
+    session.add(
+        IndexRecord(
+            id="leak-dispute-rec",
+            task_id="leak-dispute",
+            program_name=program,
+            program_name_raw=raw_name,
+            hit_type="dispute",
+            frame_count=2,
+            timestamps=["00:09:09"],
+        )
+    )
+    session.add(ProgramAlias(alias="泄漏别名", canonical_name=program))
+    session.commit()
+    body = client.get("/api/v1/programs/search", params={"name": "泄漏别名"}).json()
+    assert body["program_name"] == program
+    assert body["outcome"] == "hit"
+    assert body["platform_count"] == 1
+    assert "leak-dispute-rec" not in json.dumps(body)
+    assert "疑似平台" not in json.dumps(body)
+    assert body["locked_summary"]["locked_total"] == 1
+    assert body["locked_summary"]["by_required_tier"]["member"] == 1
+    forbidden_keys = {
+        "match_type",
+        "alias",
+        "pending",
+        "hit_type",
+        "program_name_raw",
+        "platform",
+        "platform_operator",
+        "platform_province",
+        "platform_subtype",
+        "thumbnail_url",
+        "hd_url",
+        "checked_at",
+        "timestamps",
+        "frame_count",
+        "network_type",
+    }
+
+    def keys(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                yield key
+                yield from keys(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from keys(item)
+
+    assert "match_type" not in set(keys(body))
+    assert "pending" not in set(keys(body))
+    locked = body["locked_records"]
+    assert len(locked) == 1
+    row = locked[0]
+    assert set(row) == LOCKED_KEYS
+    assert forbidden_keys.isdisjoint(row)
+    text = json.dumps(row, ensure_ascii=False)
+    for secret in (program, platform, raw_name, "leak-dispute.mp4", "00:09:09", "待确认", "疑似"):
+        assert secret not in text
+    assert "http" not in text
+    assert "signed://" not in text
+
+
+def test_unrecognized_platform_still_counts_as_a_hit(session, client, clock):
+    program = "平台节目"
+    add_hit(
+        session,
+        task_id="plat-known",
+        record_id="plat-known-rec",
+        program=program,
+        when=at_age(clock, 200),
+        platform="广东移动",
     )
     add_hit(
         session,
-        task_id="plat-iptv",
-        record_id="rec-iptv",
+        task_id="plat-unknown",
+        record_id="plat-unknown-rec",
         program=program,
-        when=when,
-        platform="山东移动",
-        network="专网",
-        filename="专网-山东移动IPTV-电影-2026.01.01.mp4",
-    )
-    add_hit(
-        session,
-        task_id="plat-unknown-name",
-        record_id="rec-unknown-name",
-        program=program,
-        when=when,
+        when=at_age(clock, 200),
         unverified=True,
-        filename="未标注平台.mp4",
+    )
+    add_hit(
+        session,
+        task_id="plat-many",
+        record_id="plat-many-rec",
+        program=program,
+        when=at_age(clock, 200),
+        unverified=True,
     )
     session.commit()
     body = client.get("/api/v1/programs/search", params={"name": program}).json()
+    assert body["outcome"] == "hit"
     assert body["platform_count"] == 1
+    assert body["unverified_source_count"] == 2
+    rows = by_id(body)
+    assert rows["plat-known-rec"]["platform"] == "广东移动"
+    assert rows["plat-unknown-rec"]["platform"] == "平台未识别"
+    assert rows["plat-many-rec"]["platform"] == "平台未识别"
+    assert "双解平台" not in json.dumps(body)
+
+
+def _store_platform(session, task_id, record_id, program, when, raw_platform, network="公网"):
+    parsed = PlatformNames.normalize(raw_platform)
+    session.add(
+        Task(
+            task_id=task_id,
+            status="done",
+            created_at=when,
+            raw_filename=f"{task_id}.mp4",
+            network_type=network,
+            platform_name=parsed.name,
+            platform_province=parsed.province,
+            platform_operator=parsed.operator,
+            platform_subtype=parsed.subtype,
+            source_unverified=parsed.unrecognized,
+            is_test=False,
+        )
+    )
+    session.add(
+        IndexRecord(
+            id=record_id,
+            task_id=task_id,
+            program_name=program,
+            program_name_raw=program,
+            hit_type="consensus",
+            frame_count=1,
+            timestamps=["00:00:01"],
+        )
+    )
+
+
+def test_platform_count_is_province_plus_operator(session, client, clock):
+    program = "运营商节目"
+    when = at_age(clock, 200)
+    _store_platform(session, "op-gd-ott", "op-gd-ott-rec", program, when, "广东移动OTT")
+    _store_platform(session, "op-gd-bestv", "op-gd-bestv-rec", program, when, "广东移动百视通")
+    _store_platform(session, "op-zj", "op-zj-rec", program, when, "浙江移动", network="专网")
+    _store_platform(session, "op-bad", "op-bad-rec", program, when, "没有这个平台")
+    session.commit()
+    body = client.get("/api/v1/programs/search", params={"name": program}).json()
+    assert body["outcome"] == "hit"
+    assert body["platform_count"] == 2
     assert body["unverified_source_count"] == 1
     rows = by_id(body)
-    assert rows["rec-ott"]["platform"] == "山东移动"
-    assert rows["rec-ott"]["platform_display"] == "山东移动 · 专网 OTT"
-    assert rows["rec-iptv"]["platform_display"] == "山东移动 · 专网 IPTV"
-    assert rows["rec-unknown-name"]["platform"] == "平台未识别"
-    assert rows["rec-unknown-name"]["platform_display"] == "平台未识别"
+    assert rows["op-gd-ott-rec"]["platform"] == "广东移动"
+    assert rows["op-gd-ott-rec"]["platform_operator"] == "移动"
+    assert rows["op-gd-ott-rec"]["platform_province"] == "广东"
+    assert rows["op-gd-ott-rec"]["platform_subtype"] == "OTT"
+    assert rows["op-gd-bestv-rec"]["platform_subtype"] == "百视通"
+    assert rows["op-zj-rec"]["platform"] == "浙江移动"
+    assert rows["op-zj-rec"]["network_type"] == "专网"
+    assert rows["op-bad-rec"]["platform"] == "平台未识别"
+    assert "platform_operator" not in rows["op-bad-rec"]
+
+
+def test_fragment_titles_are_not_billable(session, client, clock):
+    when = at_age(clock, 200)
+    for task_id, program in (
+        ("frag-dog", "狗"),
+        ("frag-home", "家庭"),
+        ("frag-short", "甲乙"),
+        ("frag-ok", "西游记"),
+    ):
+        add_hit(
+            session,
+            task_id=task_id,
+            record_id=f"{task_id}-rec",
+            program=program,
+            when=when,
+            platform="广东移动",
+        )
+    session.commit()
+    ProgramTitleGuard.set_stop_words(frozenset({"家庭", "狗", "怪", "远方"}))
+    try:
+        for name in ("狗", "家庭", "怪", "远方"):
+            body = client.get("/api/v1/programs/search", params={"name": name}).json()
+            assert body["outcome"] == "miss"
+            assert body["platform_groups"] == []
+            assert body["locked_records"] == []
+            assert body["platform_count"] == 0
+            assert body["locked_summary"]["locked_total"] == 0
+            assert body["locked_summary"]["unlockable_total"] == 0
+        short = client.get("/api/v1/programs/search", params={"name": "甲乙"}).json()
+        assert short["outcome"] == "hit"
+        assert short["platform_groups"][0]["records"][0]["record_id"] == "frag-short-rec"
+        found = client.get("/api/v1/programs/search", params={"name": "西游记"}).json()
+        assert found["outcome"] == "hit"
+        assert found["platform_groups"][0]["records"][0]["record_id"] == "frag-ok-rec"
+    finally:
+        ProgramTitleGuard.set_stop_words(frozenset())
 
 
 def test_no_zip_or_download_route(client):

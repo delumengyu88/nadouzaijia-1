@@ -22,8 +22,9 @@ class OpenRecordOut(BaseModel):
     can_download_report: bool
     can_download_screenshot: bool
     platform: str | None = None
+    platform_province: str | None = None
+    platform_operator: str | None = None
     platform_subtype: str | None = None
-    platform_display: str | None = None
     network_type: str | None = None
     hit_label: str | None = None
     frame_count: int | None = None
@@ -31,6 +32,7 @@ class OpenRecordOut(BaseModel):
     checked_at: str | None = None
     thumbnail_url: str | None = None
     hd_url: str | None = None
+    category: str | None = None
 
 
 class TierCounts(BaseModel):
@@ -59,10 +61,22 @@ class LockedSummaryOut(BaseModel):
         return data
 
 
+class PlatformGroupOut(BaseModel):
+    """One province+operator bucket inside a single program title."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    platform: str
+    platform_province: str | None = None
+    platform_operator: str | None = None
+    records: list[OpenRecordOut]
+
+
 class SearchOut(BaseModel):
     program_name: str
     outcome: Literal["hit", "miss", "recent_only"]
     platform_count: int
     unverified_source_count: int
     locked_summary: LockedSummaryOut
-    records: list[LockedRecordOut | OpenRecordOut]
+    platform_groups: list[PlatformGroupOut]
+    locked_records: list[LockedRecordOut]

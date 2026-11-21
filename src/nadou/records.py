@@ -32,6 +32,7 @@ class IndexRecordStore:
         timestamps: list[str],
         uploaded_at: datetime | None = None,
         record_id: str | None = None,
+        category: str | None = None,
     ) -> IndexRecord:
         if hit_type not in _HIT_TYPES:
             raise ValueError(f"unknown hit_type {hit_type!r}")
@@ -56,6 +57,7 @@ class IndexRecordStore:
                 frame_count=frame_count,
                 timestamps=list(timestamps),
                 uploaded_at=uploaded_at,
+                category=category,
             )
             self.session.add(existing)
         else:
@@ -63,6 +65,7 @@ class IndexRecordStore:
             existing.hit_type = hit_type
             existing.frame_count = frame_count
             existing.timestamps = list(timestamps)
+            existing.category = category
             if uploaded_at is not None:
                 existing.uploaded_at = uploaded_at
         return existing

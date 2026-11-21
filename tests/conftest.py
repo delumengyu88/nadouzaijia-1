@@ -13,8 +13,10 @@ from nadou.main import create_app
 from nadou.models import (  # noqa: F401
     Entitlement,
     IndexRecord,
+    MemberQuery,
     PlatformAlias,
     ProgramAlias,
+    QueryProgram,
     Task,
     User,
 )

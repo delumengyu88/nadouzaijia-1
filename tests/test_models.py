@@ -25,5 +25,7 @@ def test_schema_has_no_zip_or_download_tables():
         "splash_config",
         "announcements",
         "homepage_examples",
+        "member_queries",
+        "query_programs",
     }
     assert not any("zip" in name or "download" in name or "archive" in name for name in names)

@@ -1,0 +1,160 @@
+import hashlib
+from dataclasses import dataclass
+from io import BytesIO
+from pathlib import Path
+from typing import Protocol
+
+from PIL import Image, ImageDraw, ImageFont
+
+from nadou.signed_url import SignedUrlProvider
+
+_DERIVED = frozenset({"lowres", "card", "hd"})
+
+
+class FrameUnavailable(Exception):
+    """No private derived frame exists for this record."""
+
+
+class DerivedFrameSource(Protocol):
+    """Read a derived representative frame. Implementations must not return a URL."""
+
+    def fetch_representative(self, variant: str, record_id: str, user_id: str | None) -> bytes:
+        """Return image bytes for one derived variant."""
+
+
+class FrameByteReader(Protocol):
+    """Private bytes for a derived frame. The signed locator never reaches this reader."""
+
+    def read(self, variant: str, record_id: str) -> bytes:
+        """Return image bytes, or raise FrameUnavailable."""
+
+
+class SignedDerivedFrameSource:
+    """Ask SignedUrlProvider for a derived variant, then read bytes and drop the locator."""
+
+    def __init__(self, urls: SignedUrlProvider, reader: FrameByteReader) -> None:
+        self._urls = urls
+        self._reader = reader
+
+    def fetch_representative(self, variant: str, record_id: str, user_id: str | None) -> bytes:
+        locator = self._urls.sign_derived(variant, record_id, user_id)
+        if not str(locator).startswith("signed://derived/"):
+            raise RuntimeError("signer returned a non-derived locator")
+        return self._reader.read(variant, record_id)
+
+
+class GeneratedFrameReader:
+    """Synthetic frames for tests and local export. No network and no stored URL."""
+
+    def read(self, variant: str, record_id: str) -> bytes:
+        if variant not in _DERIVED:
+            raise ValueError("only derived variants can be read")
+        return SyntheticFrame.png(record_id)
+
+
+class MappedFrameReader:
+    """Test double: bytes keyed by variant and record id."""
+
+    def __init__(self, images: dict[tuple[str, str], bytes]) -> None:
+        self._images = images
+
+    def read(self, variant: str, record_id: str) -> bytes:
+        try:
+            return self._images[(variant, record_id)]
+        except KeyError as exc:
+            raise FrameUnavailable(record_id) from exc
+
+
+class SyntheticFrame:
+    """A generated picture. The colors depend on the record id and name no real title."""
+
+    @staticmethod
+    def png(record_id: str) -> bytes:
+        digest = hashlib.sha256(record_id.encode()).digest()
+        color = (digest[0], digest[1], digest[2])
+        image = Image.new("RGB", (960, 540), color)
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((36, 36, 924, 504), outline=(255, 255, 255), width=8)
+        inverse = tuple(255 - channel for channel in color)
+        draw.rectangle((72, 72, 420, 280), fill=inverse)
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+
+@dataclass(frozen=True)
+class PreparedFrame:
+    jpeg: bytes
+    width: int
+    height: int
+
+
+class WatermarkFont:
+    NAME = "DroidSansFallback-subset.ttf"
+
+    @staticmethod
+    def path() -> Path:
+        bundled = Path(__file__).resolve().parent / "fonts" / WatermarkFont.NAME
+        if not bundled.is_file():
+            raise FileNotFoundError("watermark font is not packaged")
+        return bundled
+
+    @staticmethod
+    def load(size: int) -> ImageFont.FreeTypeFont:
+        return ImageFont.truetype(WatermarkFont.path(), size)
+
+
+class FrameImage:
+    """Scale a derived frame, burn in the watermark, and encode a small JPEG."""
+
+    WIDTH = 600
+    TARGET_BYTES = 50 * 1024
+    MARK = "那豆在架"
+
+    @staticmethod
+    def prepare(raw: bytes) -> PreparedFrame:
+        image = Image.open(BytesIO(raw)).convert("RGB")
+        image = FrameImage._resize(image)
+        FrameImage._watermark(image)
+        jpeg = FrameImage._encode(image)
+        return PreparedFrame(jpeg=jpeg, width=image.width, height=image.height)
+
+    @staticmethod
+    def _resize(image: Image.Image) -> Image.Image:
+        if image.width == FrameImage.WIDTH:
+            return image
+        height = max(1, round(image.height * FrameImage.WIDTH / image.width))
+        return image.resize((FrameImage.WIDTH, height), Image.Resampling.LANCZOS)
+
+    @staticmethod
+    def _watermark(image: Image.Image) -> None:
+        font = WatermarkFont.load(max(64, image.width // 8))
+        overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        bbox = draw.textbbox((0, 0), FrameImage.MARK, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        x = image.width - text_width - 28
+        y = image.height - text_height - 28
+        pad = 10
+        draw.rounded_rectangle(
+            (x - pad, y - pad, x + text_width + pad, y + text_height + pad),
+            radius=8,
+            fill=(0, 0, 0, 150),
+        )
+        draw.text((x, y), FrameImage.MARK, font=font, fill=(255, 255, 255, 255))
+        merged = Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
+        image.paste(merged)
+
+    @staticmethod
+    def _encode(image: Image.Image) -> bytes:
+        quality = 70
+        best = b""
+        while quality >= 30:
+            buffer = BytesIO()
+            image.save(buffer, format="JPEG", quality=quality, optimize=True)
+            best = buffer.getvalue()
+            if len(best) <= FrameImage.TARGET_BYTES:
+                return best
+            quality -= 8
+        return best
