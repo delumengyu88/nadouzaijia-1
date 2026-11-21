@@ -17,45 +17,26 @@ class PlatformNormalizer:
     """Fold a platform string, then apply the alias table.
 
     The same instance is used for the CSV platform column and for parser output.
-    Network-specific aliases win over legacy rows that have no network type.
-    Disabled platforms are not loaded from the database.
     """
 
-    def __init__(
-        self,
-        aliases: Mapping[str, str],
-        by_network: Mapping[tuple[str, str], str] | None = None,
-    ) -> None:
+    def __init__(self, aliases: Mapping[str, str]) -> None:
         self._aliases = {
             TextNormalizer.fold(alias): TextNormalizer.fold(canonical)
             for alias, canonical in aliases.items()
         }
-        self._by_network = {
-            (network, TextNormalizer.fold(alias)): TextNormalizer.fold(canonical)
-            for (network, alias), canonical in (by_network or {}).items()
-        }
 
     @classmethod
     def from_session(cls, session: Session) -> "PlatformNormalizer":
-        rows = session.scalars(select(PlatformAlias).where(PlatformAlias.enabled.is_(True))).all()
-        generic: dict[str, str] = {}
-        by_network: dict[tuple[str, str], str] = {}
-        for row in rows:
-            if row.network_type:
-                by_network[(row.network_type, row.alias)] = row.canonical_name
-            else:
-                generic[row.alias] = row.canonical_name
-        return cls(generic, by_network)
+        rows = session.scalars(select(PlatformAlias)).all()
+        return cls({row.alias: row.canonical_name for row in rows})
 
-    def normalize(self, raw: str | None, network: str | None = None) -> NormalizedPlatform:
+    def normalize(self, raw: str | None) -> NormalizedPlatform:
         if raw is None:
             return NormalizedPlatform(None, True)
         folded = TextNormalizer.fold(raw)
         if not folded:
             return NormalizedPlatform(None, True)
-        specific = self._by_network.get((network, folded)) if network else None
-        chosen = specific if specific is not None else self._aliases.get(folded, folded)
-        canonical = TextNormalizer.fold(chosen)
+        canonical = TextNormalizer.fold(self._aliases.get(folded, folded))
         if not canonical:
             return NormalizedPlatform(None, True)
         return NormalizedPlatform(canonical, False)

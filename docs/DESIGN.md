@@ -118,9 +118,9 @@ Routes live under `/api/v1/admin`. Hiding a button is not the control: every rul
 | W02 取证申请, including 沟通备注 | yes | yes |
 | W04 用户与会员 | read, phone masked to the last 4 digits | full: staff accounts, ban/unban, manual grant |
 | W05 订单 | read, phone masked, no export; may reissue | full, including CSV export and reissue |
-| W07 别名库, W08 操作日志, index status | no | yes |
+| W08 操作日志, index status | no | yes |
 
-W03, W06, and the W09 page are not in this slice. The hourly index job and `GET /api/v1/admin/index/status` are the backend the W09 page will read.
+W03, W06, W07, and the W09 page are not in this slice. Platform names stay on the lookup side. The hourly index job and `GET /api/v1/admin/index/status` are the backend the W09 page will read.
 
 Search still uses `X-User-Id` as a local stand-in. That header is not workbench authentication.
 
@@ -159,12 +159,6 @@ Manual grant or extend takes `regular` or `vip`, a day count, and a reason. The 
 The order table is a read model until payment exists. `OrderLookup.by_order_number` and `GET /api/v1/admin/orders/by-number/{order_number}` find an order by its public number. Export is `GET /api/v1/admin/orders/export` (CSV, admin only).
 
 `EntitlementIssuer.issue` grants the order's original tier and duration. `order_issuances.order_id` is unique, so a second call returns the existing grant instead of creating another entitlement. The issuer tries three times, then sets the order and the issuance to `发放异常` and notifies once. `POST /api/v1/admin/orders/{id}/reissue` (support or admin) runs that same path only for `发放异常`. The body cannot carry a tier or a duration; the issuance row keeps the snapshot taken on the first attempt. A repeated reissue returns the entitlement already issued.
-
-### Platform aliases
-
-A workbench platform has a network type (`公网` or `专网`), a standard name, an alias list, an enabled flag, and the last editor and edit time. Within one network type an alias belongs to exactly one standard name (`uq_platform_alias_network`). A conflict responds 409 and names `existing_standard_name`. The existing row is not changed. The same alias may exist on the other network. Legacy rows with a null network still feed the importer when no network-specific alias matches. Disabled platforms are omitted from `PlatformNormalizer`.
-
-Backfill of a `来源待核实` task (`POST /api/v1/admin/platforms/backfill`) accepts only an enabled standard platform, and only when the task's network is empty or matches that platform. The task's `source_unverified` flag is cleared. The change is audited.
 
 ### Hourly index run
 

@@ -70,35 +70,6 @@ class MembershipIn(BaseModel):
     reason: str
 
 
-class PlatformCreateIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    network_type: Literal["公网", "专网"]
-    standard_name: str
-    aliases: list[str] = Field(default_factory=list)
-    enabled: bool = True
-
-
-class AliasIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    alias: str
-
-
-class PlatformPatchIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool
-
-
-class BackfillIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    task_id: str
-    network_type: Literal["公网", "专网"]
-    standard_name: str
-
-
 class ReissueIn(BaseModel):
     """Empty on purpose. Tier and duration cannot be changed on reissue."""
 

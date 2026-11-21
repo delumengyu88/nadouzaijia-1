@@ -1,4 +1,4 @@
-from tests.workbench_helpers import add_order, add_unverified_task, add_user, call
+from tests.workbench_helpers import add_order, add_user, call
 
 
 def test_anonymous_requests_are_rejected(workbench):
@@ -15,7 +15,6 @@ def test_anonymous_requests_are_rejected(workbench):
         ("GET", "/api/v1/admin/users?phone=90000001001", None),
         ("GET", "/api/v1/admin/orders", None),
         ("GET", "/api/v1/admin/orders/export", None),
-        ("GET", "/api/v1/admin/platforms", None),
         ("GET", "/api/v1/admin/index/status", None),
     ]
     for method, path, body in paths:
@@ -27,7 +26,6 @@ def test_support_cannot_call_admin_only_endpoints(workbench):
     order = add_order(
         workbench.session, user, workbench.clock.now, "DD-TEST-9001", status="已支付", issuance=None
     )
-    add_unverified_task(workbench.session, "task-unverified-1")
     support = workbench.support_token
     denied = [
         (
@@ -46,19 +44,6 @@ def test_support_cannot_call_admin_only_endpoints(workbench):
             {"tier": "vip", "days": 7, "reason": "补偿"},
         ),
         ("GET", "/api/v1/admin/orders/export", None),
-        ("GET", "/api/v1/admin/platforms", None),
-        (
-            "POST",
-            "/api/v1/admin/platforms",
-            {"network_type": "公网", "standard_name": "示例甲", "aliases": ["示例甲别名"]},
-        ),
-        ("POST", "/api/v1/admin/platforms/1/aliases", {"alias": "示例甲别名"}),
-        ("PATCH", "/api/v1/admin/platforms/1", {"enabled": False}),
-        (
-            "POST",
-            "/api/v1/admin/platforms/backfill",
-            {"task_id": "task-unverified-1", "network_type": "公网", "standard_name": "示例甲"},
-        ),
         ("GET", "/api/v1/admin/index/status", None),
         ("POST", f"/api/v1/admin/orders/{order.id}/reissue", {}),
     ]

@@ -149,28 +149,11 @@ class IndexRecord(Base):
 
 
 class PlatformAlias(Base):
-    """One alias inside a network type. Legacy rows may leave network_type null.
-
-    A null network means the alias applies when no network-specific row matches.
-    Within one network type an alias belongs to exactly one standard name.
-    """
-
     __tablename__ = "platform_aliases"
-    __table_args__ = (
-        UniqueConstraint("network_type", "alias", name="uq_platform_alias_network"),
-        CheckConstraint(
-            "network_type IS NULL OR network_type IN ('公网', '专网')",
-            name="ck_platform_alias_network",
-        ),
-    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    alias: Mapped[str] = mapped_column(String(200), nullable=False)
+    alias: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     canonical_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    network_type: Mapped[str | None] = mapped_column(String(8))
-    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    modified_by: Mapped[str | None] = mapped_column(String(64))
-    modified_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
 
 
 class ProgramAlias(Base):

@@ -32,11 +32,8 @@ from nadou.admin.orders import (
     OrderLookup,
     OrderView,
 )
-from nadou.admin.platforms import PlatformCatalog
 from nadou.admin.schemas import (
-    AliasIn,
     AmountIn,
-    BackfillIn,
     BanIn,
     DeliveryIn,
     EvidenceCreateIn,
@@ -44,8 +41,6 @@ from nadou.admin.schemas import (
     LoginIn,
     MembershipIn,
     NoteIn,
-    PlatformCreateIn,
-    PlatformPatchIn,
     ReissueIn,
     StaffCreateIn,
 )
@@ -541,91 +536,6 @@ class AdminApi:
                 body["entitlement_id"] = issuance.entitlement_id
                 body["issuance_status"] = issuance.status
                 return body
-
-            return Endpoint.invoke(action)
-
-        @app.get("/api/v1/admin/platforms")
-        def list_platforms(
-            _account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
-        ):
-            return PlatformCatalog(session, AuditWriter(session, clock(), None, None)).list_groups()
-
-        @app.post("/api/v1/admin/platforms", status_code=201)
-        def create_platform(
-            payload: PlatformCreateIn,
-            request: Request,
-            account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
-        ):
-            def action():
-                return PlatformCatalog(session, writer(session, account, request)).create(
-                    payload.network_type,
-                    payload.standard_name,
-                    payload.aliases,
-                    payload.enabled,
-                    account.username,
-                    clock(),
-                )
-
-            return Endpoint.invoke(action)
-
-        @app.post("/api/v1/admin/platforms/backfill")
-        def backfill_platform(
-            payload: BackfillIn,
-            request: Request,
-            account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
-        ):
-            def action():
-                task = PlatformCatalog(session, writer(session, account, request)).backfill(
-                    payload.task_id,
-                    payload.network_type,
-                    payload.standard_name,
-                    clock(),
-                )
-                return {
-                    "task_id": task.task_id,
-                    "platform_name": task.platform_name,
-                    "network_type": task.network_type,
-                    "source_unverified": task.source_unverified,
-                }
-
-            return Endpoint.invoke(action)
-
-        @app.post("/api/v1/admin/platforms/{platform_id}/aliases")
-        def add_alias(
-            platform_id: int,
-            payload: AliasIn,
-            request: Request,
-            account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
-        ):
-            def action():
-                return PlatformCatalog(session, writer(session, account, request)).add_alias(
-                    platform_id,
-                    payload.alias,
-                    account.username,
-                    clock(),
-                )
-
-            return Endpoint.invoke(action)
-
-        @app.patch("/api/v1/admin/platforms/{platform_id}")
-        def patch_platform(
-            platform_id: int,
-            payload: PlatformPatchIn,
-            request: Request,
-            account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
-        ):
-            def action():
-                return PlatformCatalog(session, writer(session, account, request)).set_enabled(
-                    platform_id,
-                    payload.enabled,
-                    account.username,
-                    clock(),
-                )
 
             return Endpoint.invoke(action)
 

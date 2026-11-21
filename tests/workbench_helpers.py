@@ -1,7 +1,7 @@
 from datetime import timedelta
 from uuid import uuid4
 
-from nadou.models import Entitlement, Order, OrderIssuance, Task, User
+from nadou.models import Entitlement, Order, OrderIssuance, User
 
 
 def auth(token: str) -> dict[str, str]:
@@ -78,18 +78,3 @@ def add_order(
         )
     session.commit()
     return order
-
-
-def add_unverified_task(session, task_id: str, network: str | None = "公网") -> Task:
-    task = Task(
-        task_id=task_id,
-        status="done",
-        raw_filename="unknown.mp4",
-        network_type=network,
-        platform_name=None,
-        source_unverified=True,
-        is_test=False,
-    )
-    session.add(task)
-    session.commit()
-    return task

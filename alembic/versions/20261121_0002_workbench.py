@@ -44,30 +44,6 @@ def upgrade() -> None:
         "source IS NULL OR source IN ('manual', 'order')",
     )
 
-    op.add_column("platform_aliases", sa.Column("network_type", sa.String(length=8), nullable=True))
-    # server_default fills any existing rows, then is removed so the column matches the model.
-    op.add_column(
-        "platform_aliases",
-        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
-    )
-    op.alter_column("platform_aliases", "enabled", server_default=None)
-    op.add_column("platform_aliases", sa.Column("modified_by", sa.String(length=64), nullable=True))
-    op.add_column(
-        "platform_aliases",
-        sa.Column("modified_at", sa.DateTime(timezone=True), nullable=True),
-    )
-    op.drop_constraint("platform_aliases_alias_key", "platform_aliases", type_="unique")
-    op.create_unique_constraint(
-        "uq_platform_alias_network",
-        "platform_aliases",
-        ["network_type", "alias"],
-    )
-    op.create_check_constraint(
-        "ck_platform_alias_network",
-        "platform_aliases",
-        "network_type IS NULL OR network_type IN ('公网', '专网')",
-    )
-
     op.create_table(
         "staff_accounts",
         sa.Column("id", sa.String(length=36), primary_key=True),
@@ -298,14 +274,6 @@ def downgrade() -> None:
     op.drop_table("staff_sessions")
     op.drop_table("staff_login_locks")
     op.drop_table("staff_accounts")
-
-    op.drop_constraint("ck_platform_alias_network", "platform_aliases", type_="check")
-    op.drop_constraint("uq_platform_alias_network", "platform_aliases", type_="unique")
-    op.create_unique_constraint("platform_aliases_alias_key", "platform_aliases", ["alias"])
-    op.drop_column("platform_aliases", "modified_at")
-    op.drop_column("platform_aliases", "modified_by")
-    op.drop_column("platform_aliases", "enabled")
-    op.drop_column("platform_aliases", "network_type")
 
     op.drop_constraint("ck_entitlements_source", "entitlements", type_="check")
     op.drop_column("entitlements", "source")
