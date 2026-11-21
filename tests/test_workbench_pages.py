@@ -8,7 +8,18 @@ from nadou.main import AdminUi
 from nadou.models import AuditLog, Entitlement
 from tests.workbench_helpers import add_order, add_user, call
 
-BANNED = ("待确认", "疑似命中", "确认命中", "别名", "匹配方式", "命中类型")
+BANNED = (
+    "待确认",
+    "疑似命中",
+    "确认命中",
+    "别名",
+    "匹配方式",
+    "命中类型",
+    "顺延",
+    "VIP 结束后生效",
+    "类别",
+    "年份",
+)
 
 
 def test_served_ui_has_no_banned_labels():
@@ -19,6 +30,9 @@ def test_served_ui_has_no_banned_labels():
     assert "客服消息" in text
     assert "平台未识别 ?" in text
     assert "已命中" in text
+    assert "普通会员 30 天，与已有会员同时计时" in text
+    assert "普通会员 至 " in text
+    assert "（与 VIP 同时计时）" in text
 
 
 def test_demo_pages_and_api_hide_banned_labels(workbench):

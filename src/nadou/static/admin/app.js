@@ -426,11 +426,11 @@ async function renderInvites() {
         <div class="field"><label>渠道标签</label><input class="input w-md" id="invite-channel" value="临江示例律所"></div>
         <div class="field"><label>码有效期</label><input class="input w-md" id="invite-until" type="date"></div>
       </div>
-      <p class="help">邀请码为 8 位大写字母数字，已去掉易混字符。兑换权益固定为 30 天普通会员。付费转化只统计小程序订单。</p>
+      <p class="help">邀请码为 8 位大写字母数字，已去掉易混字符。普通会员 30 天，与已有会员同时计时。付费转化只统计小程序订单。</p>
       <button class="btn btn-primary" type="button" data-act="invite-create" style="margin-top:12px">生成邀请码</button>
     </div></div>
     <div class="card" style="margin:0"><div class="card-hd">生成规则</div><div class="card-bd"><div class="kv">
-      <div class="k">兑换权益</div><div class="v">普通会员 30 天，与付费会员分别计时</div>
+      <div class="k">兑换权益</div><div class="v">普通会员 30 天，与已有会员同时计时</div>
       <div class="k">使用限制</div><div class="v">一码一次</div>
       <div class="k">状态</div><div class="v">未使用 / 已兑换 / 已过期 / 已作废</div>
       <div class="k">作废</div><div class="v">仅未使用的码可作废</div>
@@ -469,7 +469,7 @@ async function renderUsers() {
   const inviteGrant = activeGrants.find((row) => row.kind === "regular" && row.source === "invite");
   let tierLine = "无会员";
   if (user && vipGrant && inviteGrant) {
-    tierLine = `VIP 至 ${fmt(vipGrant.expires_at).slice(0, 10)}；普通会员 至 ${fmt(inviteGrant.expires_at).slice(0, 10)}（与 VIP 同时计时）`;
+    tierLine = `普通会员 至 ${fmt(inviteGrant.expires_at).slice(0, 10)}（与 VIP 同时计时）`;
   } else if (user && vipGrant) {
     tierLine = `VIP 至 ${fmt(vipGrant.expires_at).slice(0, 10)}`;
   } else if (user && inviteGrant) {

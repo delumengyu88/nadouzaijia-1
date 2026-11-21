@@ -10,7 +10,20 @@ from nadou.admin.demo_data import DemoAccounts
 
 pytestmark = pytest.mark.browser
 
-PAGES = ("#/w02", "#/w03", "#/w04", "#/w05", "#/w06", "#/w08", "#/w09")
+PAGES = ("#/w01", "#/w02", "#/w03", "#/w04", "#/w05", "#/w06", "#/w08", "#/w09")
+BANNED = (
+    "待确认",
+    "疑似命中",
+    "确认命中",
+    "别名",
+    "匹配方式",
+    "命中类型",
+    "顺延",
+    "VIP 结束后生效",
+    "类别",
+    "年份",
+)
+ENGLISH_LEAKS = ("user_id", "created_at", "undefined", "lorem", "TODO", "placeholder")
 
 
 def _free_port() -> int:
@@ -72,16 +85,32 @@ def test_each_workbench_page_loads_without_console_errors():
                 lambda msg: errors.append(msg.text) if msg.type == "error" else None,
             )
             page.goto(f"{base}/admin/#/login", wait_until="networkidle")
+            login_text = page.locator("body").inner_text()
+            assert "账号登录" in login_text
+            for word in BANNED:
+                assert word not in login_text
             page.fill("input[name=username]", DemoAccounts.ADMIN)
             page.fill("input[name=password]", DemoAccounts.ADMIN_PASSWORD)
             page.click("button[type=submit]")
             page.wait_for_selector("text=取证申请")
             for route in PAGES:
+                if route == "#/w01":
+                    continue
                 page.goto(f"{base}/admin/{route}", wait_until="networkidle")
+                page.wait_for_function(
+                    "() => {"
+                    " const title = document.querySelector('h1');"
+                    " return title && title.textContent.length > 0;"
+                    "}"
+                )
                 text = page.locator("body").inner_text()
                 assert len(text.strip()) > 40
                 assert "没有载入" not in text
                 assert "无法查看" not in text
+                for word in BANNED:
+                    assert word not in text
+                for leak in ENGLISH_LEAKS:
+                    assert leak not in text
             browser.close()
         assert errors == []
     finally:

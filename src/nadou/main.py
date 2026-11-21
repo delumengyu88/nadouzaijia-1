@@ -47,6 +47,7 @@ def create_app(
             session.close()
 
     @app.get("/health")
+    @app.get("/healthz")
     def health() -> dict[str, str]:
         return {"status": "ok"}
 

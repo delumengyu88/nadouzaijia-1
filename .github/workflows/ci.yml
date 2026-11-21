@@ -48,3 +48,45 @@ jobs:
         run: |
           python -m playwright install --with-deps chromium
           pytest -m browser
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start, restart, and start again from an empty volume
+        run: |
+          set -eu
+          wait_ready() {
+            i=0
+            while [ "$i" -lt 60 ]; do
+              if curl -fsS http://127.0.0.1:8000/healthz >/dev/null && curl -fsS http://127.0.0.1:8000/admin/ >/dev/null; then
+                return 0
+              fi
+              i=$((i + 1))
+              sleep 5
+            done
+            docker compose logs
+            return 1
+          }
+          login() {
+            curl -fsS -X POST http://127.0.0.1:8000/api/v1/admin/auth/login \
+              -H 'Content-Type: application/json' \
+              -d '{"username":"演示管理员","password":"demo-pass-2026"}' \
+              | grep -q '"role":"admin"'
+          }
+          docker compose up --build -d
+          wait_ready
+          login
+          docker compose up -d --force-recreate api
+          wait_ready
+          login
+          docker compose down -v
+          docker compose up -d
+          wait_ready
+          login
+          docker compose down -v
+      - name: Build the API image for arm64
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt --install arm64
+          docker buildx create --name nadou-arm --use
+          docker buildx build --platform linux/arm64 -t nadou:arm64 .
