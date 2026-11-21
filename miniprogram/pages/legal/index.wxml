@@ -1,0 +1,13 @@
+<view class="nav" style="padding-top: {{statusBarHeight}}px;">
+  <view class="nav-bar">
+    <view class="nav-back" bindtap="back">‹</view>
+    <view class="nav-title">协议与隐私</view>
+  </view>
+</view>
+<view style="height: {{navHeight}}px;"></view>
+<view class="body">
+  <view class="row" wx:for="{{rows}}" wx:key="id" data-id="{{item.id}}" bindtap="open">
+    <view class="row-title">{{item.title}}</view>
+    <text class="chev">›</text>
+  </view>
+</view>

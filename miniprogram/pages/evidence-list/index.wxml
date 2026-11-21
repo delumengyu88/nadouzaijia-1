@@ -1,0 +1,22 @@
+<view class="nav" style="padding-top: {{statusBarHeight}}px;">
+  <view class="nav-bar">
+    <view class="nav-back" bindtap="back">‹</view>
+    <view class="nav-title">取证申请</view>
+  </view>
+</view>
+<view style="height: {{navHeight}}px;"></view>
+<view class="body">
+  <view class="center-box" wx:if="{{empty}}">
+    <view class="center-title">暂无取证申请</view>
+    <view class="center-sub">提交后可在这里查看进度。</view>
+  </view>
+  <view class="row" wx:for="{{rows}}" wx:key="id" data-id="{{item.id}}" bindtap="open">
+    <view class="row-main">
+      <view class="row-title">{{item.name}}</view>
+      <view class="row-sub">{{item.line}}</view>
+    </view>
+    <text class="tag {{item.badgeCls}}">{{item.badge}}</text>
+    <text class="chev">›</text>
+  </view>
+  <view class="btn block" bindtap="create">新建申请</view>
+</view>

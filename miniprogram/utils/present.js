@@ -1,0 +1,99 @@
+var catalog = require('../api/catalog')
+
+function findRow(id) {
+  var found = null
+  Object.keys(catalog.programs).forEach(function (name) {
+    catalog.programs[name].rows.forEach(function (row) {
+      if (row.id === id) found = row
+    })
+  })
+  return found
+}
+
+function toRow(rec, programName) {
+  var extra = findRow(rec.record_id) || {}
+  var unknown = !extra.platform
+  return {
+    id: rec.record_id,
+    title: extra.title || programName,
+    platform: unknown ? '平台未识别' : extra.platform,
+    unknown: unknown,
+    sub: unknown ? '' : (extra.sub || ''),
+    time: extra.time || '',
+    clock: extra.clock || '14:22',
+    date: extra.date || '',
+    badge: extra.low || rec.access === 'lowres' ? '低清' : '高清',
+    low: !!(extra.low || rec.access === 'lowres'),
+    canSave: !!rec.can_download_screenshot && rec.access !== 'lowres' && !extra.low
+  }
+}
+
+function groupRows(rows) {
+  var groups = []
+  rows.forEach(function (row) {
+    var last = groups.length ? groups[groups.length - 1] : null
+    if (!last || last.platform !== row.platform) {
+      groups.push({ platform: row.platform, unknown: row.unknown, rows: [row] })
+    } else last.rows.push(row)
+  })
+  return groups
+}
+
+function present(search, meta) {
+  var info = meta || {}
+  var name = info.name || search.program_name || ''
+  var opens = []
+  var evidence = 0
+  var locked = 0
+  ;(search.records || []).forEach(function (rec) {
+    if (rec.locked) {
+      if (rec.age_bucket === 'lt_30') evidence += 1
+      else locked += 1
+      return
+    }
+    opens.push(toRow(rec, name))
+  })
+  var window = search.locked_window || {}
+  var lockedCount = window.count || locked
+  var range = window.start && window.end ? window.start + ' 至 ' + window.end : ''
+  var showOpen = opens.length > 0 && !info.forceLocked
+  var showLocked = !showOpen && search.outcome === 'hit'
+  var header = ''
+  if (showOpen) {
+    header = '命中 ' + opens.length + ' 条 · 涉及 ' + search.platform_count + ' 个平台'
+  } else if (info.queried) {
+    header = '查询于 ' + info.queried
+  }
+  var memberText = info.expired ? '续费会员 · ¥299/30天起' : '开通会员 · ¥299/30天起'
+  var note = ''
+  if (showOpen && search.unverified_source_count > 0) {
+    note = '无法解析或不在对照表中的少见记录显示「平台未识别」，计为命中但不计入平台数。'
+  }
+  return {
+    name: name,
+    example: !!search.example,
+    badge: search.outcome === 'miss' ? '未命中' : '已命中',
+    hit: search.outcome === 'hit',
+    miss: search.outcome === 'miss',
+    header: header,
+    platformCount: search.platform_count,
+    platformLine: '涉及 ' + search.platform_count + ' 个平台',
+    showOpen: showOpen,
+    groups: showOpen ? groupRows(opens) : [],
+    showLocked: showLocked,
+    lockedCount: lockedCount,
+    lockedRange: range,
+    recordLine: '记录 ' + lockedCount + ' 条 · 涉及 ' + search.platform_count + ' 个平台',
+    unlockText: '解锁后查看 ' + lockedCount + ' 条记录',
+    fakeRows: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+    memberText: memberText,
+    singleText: '单节目解锁（含 30 天以上）¥199',
+    showEvidence: evidence > 0,
+    showDownload: showOpen && !search.example && !!info.canExport,
+    showHint: showLocked && !info.expired,
+    expired: !!info.expired,
+    note: note
+  }
+}
+
+module.exports = { present: present, findRow: findRow }

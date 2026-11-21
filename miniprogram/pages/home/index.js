@@ -1,0 +1,113 @@
+var api = require('../../api/index')
+var nav = require('../../utils/nav')
+
+Page({
+  data: { showBrand: true, title: '', examples: [], taps: 0, showSplash: false, seconds: 5 },
+  onShow: function () {
+    this.paint()
+    if (!api.splashSeen()) this.armSplash()
+  },
+  onUnload: function () {
+    if (this.splashTimer) clearInterval(this.splashTimer)
+  },
+  paint: function () {
+    var data = nav.layout()
+    var home = api.homeState()
+    data.showBrand = true
+    data.title = ''
+    data.showBack = false
+    data.showSplash = !api.splashSeen()
+    data.seconds = this.data.seconds || 5
+    Object.keys(home).forEach(function (key) { data[key] = home[key] })
+    this.setData(data)
+    nav.selectTab(this, 0)
+  },
+  armSplash: function () {
+    if (this.splashTimer) return
+    var self = this
+    this.setData({ showSplash: true, seconds: 5 })
+    this.splashTimer = setInterval(function () {
+      var next = self.data.seconds - 1
+      if (next <= 0) {
+        self.finishSplash()
+        return
+      }
+      self.setData({ seconds: next })
+    }, 1000)
+  },
+  finishSplash: function () {
+    if (this.splashTimer) clearInterval(this.splashTimer)
+    this.splashTimer = 0
+    api.markSplashSeen()
+    this.paint()
+  },
+  closeAnnounce: function () {
+    api.markAnnounceSeen()
+    this.onShow()
+  },
+  openDone: function () {
+    var id = this.data.doneQueryId
+    if (id) api.markQuerySeen(id)
+    wx.navigateTo({ url: '/pages/query/index?id=' + id })
+  },
+  openRunning: function () {
+    if (!this.data.runningId) return
+    wx.navigateTo({ url: '/pages/query/index?id=' + this.data.runningId })
+  },
+  onInput: function (e) {
+    this.setData({ draft: e.detail.value })
+    api.setDraft(e.detail.value)
+  },
+  goInput: function () {
+    wx.navigateTo({ url: '/pages/input/index' })
+  },
+  start: function () {
+    var text = this.data.draft || ''
+    if (!String(text).trim()) {
+      wx.showToast({ title: '请先输入节目名', icon: 'none' })
+      return
+    }
+    if (!api.profile || api.accountKind() === 'guest') {
+      this.setData({ needLogin: true })
+      return
+    }
+    api.setDraft(text)
+    wx.navigateTo({ url: '/pages/input/index?auto=1' })
+  },
+  login: function () {
+    api.login()
+    this.setData({ needLogin: false })
+    this.onShow()
+    wx.showToast({ title: '已登录', icon: 'none' })
+  },
+  upload: function () {
+    var self = this
+    wx.chooseMessageFile({
+      count: 1,
+      type: 'file',
+      extension: ['xlsx', 'xls', 'csv'],
+      success: function (res) {
+        var file = res.tempFiles && res.tempFiles[0]
+        if (!file) return
+        api.setDraft('')
+        wx.navigateTo({
+          url: '/pages/input/index?file=1&name=' + encodeURIComponent(file.name) + '&size=' + file.size
+        })
+      }
+    })
+  },
+  openExample: function (e) {
+    var name = e.currentTarget.dataset.name
+    wx.navigateTo({ url: '/pages/report/index?example=1&name=' + encodeURIComponent(name) })
+  },
+  tapExamples: function () {
+    var n = (this.data.taps || 0) + 1
+    if (n >= 5) {
+      api.toggleExamples()
+      this.setData({ taps: 0 })
+      this.onShow()
+      return
+    }
+    this.setData({ taps: n })
+  }
+})

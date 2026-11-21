@@ -1,0 +1,20 @@
+<view class="nav" style="padding-top: {{statusBarHeight}}px;">
+  <view class="nav-bar">
+    <view class="nav-back" bindtap="back">‹</view>
+    <view class="nav-title">我的订单</view>
+  </view>
+</view>
+<view style="height: {{navHeight}}px;"></view>
+<view class="body">
+  <view class="center-box" wx:if="{{empty}}">
+    <view class="center-title">暂无订单</view>
+    <view class="center-sub">开通会员或解锁后，订单会出现在这里。</view>
+  </view>
+  <view class="row" wx:for="{{rows}}" wx:key="orderNo" data-id="{{item.orderNo}}" bindtap="open">
+    <view class="row-main">
+      <view class="row-title">{{item.title}}</view>
+      <view class="row-sub">{{item.line}}</view>
+    </view>
+    <text class="chev">›</text>
+  </view>
+</view>

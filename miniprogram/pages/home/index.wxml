@@ -1,0 +1,79 @@
+<view class="tab-page">
+<view class="nav" style="padding-top: {{statusBarHeight}}px;">
+  <view class="nav-bar">
+    <view class="nav-brand">那豆在架</view>
+  </view>
+</view>
+<view style="height: {{navHeight}}px;"></view>
+<view class="body">
+  <view class="pad">
+    <view class="h1">已收录平台片单检索，免费</view>
+    <view class="sub">已收录 {{platformTotal}} 个平台</view>
+  </view>
+  <view class="banner run" wx:if="{{banner == 'running'}}" bindtap="openRunning">
+    <text>{{bannerText}}</text><text class="chev">›</text>
+  </view>
+  <view class="banner" wx:elif="{{banner == 'guest' || banner == 'free'}}">{{bannerText}}</view>
+  <view class="card">
+    <view class="card-title">输入片单</view>
+    <textarea class="area" placeholder="粘贴或输入节目名，一行一个" value="{{draft}}" bindinput="onInput" maxlength="20000" />
+    <view class="btn ghost" bindtap="upload">上传 Excel</view>
+    <view class="hint">.xlsx，首行为「节目名」，≤500 行</view>
+    <view class="btn" bindtap="start">开始查询</view>
+  </view>
+  <view class="sec-head">
+    <text class="sec-title" bindtap="tapExamples">示例报告</text>
+    <text class="sec-more">点开看完整报告</text>
+  </view>
+  <view class="note" wx:if="{{examplesError}}">示例报告暂时无法加载。</view>
+  <view class="ex" wx:for="{{examples}}" wx:key="name" data-name="{{item.name}}" bindtap="openExample">
+    <view class="thumb">
+      <view class="moon"></view>
+      <view class="hill"></view>
+      <text class="thumb-badge">高清</text>
+      <text class="thumb-wm">那豆在架</text>
+      <text class="thumb-time">00:12:31</text>
+    </view>
+    <view class="ex-main">
+      <view class="ex-name-row"><text class="ex-tag">示例</text><text class="ex-name">{{item.name}}</text></view>
+      <view class="ex-line">{{item.line}}</view>
+      <view class="ex-sub">{{item.sub}}</view>
+    </view>
+    <text class="chev">›</text>
+  </view>
+  <view class="foot-gap"></view>
+</view>
+</view>
+<view class="splash-cover" wx:if="{{showSplash}}">
+  <view class="stage-mid">
+    <view class="stage-title">那豆在架</view>
+    <view class="stage-sub">已收录平台片单检索</view>
+    <view class="stage-line"></view>
+  </view>
+  <view class="splash-skip" bindtap="finishSplash">跳过 {{seconds}}</view>
+</view>
+<view class="mask" wx:if="{{showAnnounce && !showSplash}}">
+  <view class="dialog">
+    <view class="dialog-title">公告</view>
+    <view class="dialog-body">每月 2 日和 16 日更新片单索引。查询完成后，结果按当前权益展示。免费用户可看不少于 180 天前的低清记录。</view>
+    <view class="btn" bindtap="closeAnnounce">我知道了</view>
+  </view>
+</view>
+<view class="mask" wx:if="{{showDone && !showAnnounce && !showSplash}}">
+  <view class="dialog">
+    <view class="dialog-title">查询完成</view>
+    <block wx:if="{{doneSingle}}">
+      <view class="dialog-body">{{doneName}}</view>
+      <view class="sub">{{doneLine}}</view>
+    </block>
+    <view class="dialog-body" wx:else>{{doneText}}</view>
+    <view class="btn" bindtap="openDone">去查看</view>
+  </view>
+</view>
+<view class="mask" wx:if="{{needLogin}}">
+  <view class="dialog">
+    <view class="dialog-title">登录后继续</view>
+    <view class="dialog-body">登录后可保存查询记录，并可开通会员。</view>
+    <view class="btn" bindtap="login">微信登录</view>
+  </view>
+</view>

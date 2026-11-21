@@ -1,0 +1,30 @@
+<view class="nav" style="padding-top: {{statusBarHeight}}px;">
+  <view class="nav-bar">
+    <view class="nav-back" bindtap="back">‹</view>
+    <view class="nav-title">取证进度</view>
+  </view>
+</view>
+<view style="height: {{navHeight}}px;"></view>
+<view class="body">
+  <view class="pad">
+    <view class="choice-top">
+      <text class="h1" style="font-size:40rpx;">{{name}}</text>
+      <text class="tag {{badgeCls}}">{{badge}}</text>
+    </view>
+    <view class="sub">{{sub}}</view>
+  </view>
+  <view class="err-box" wx:if="{{reason}}">{{reason}}</view>
+  <view class="refund-box" wx:if="{{hasRefund}}">已全额退款 ¥{{refundAmount}} · {{refundMethod}} · {{refundTime}}</view>
+  <view class="warn-box" wx:if="{{showPayBanner}}">{{payBanner}}</view>
+  <view class="tl">
+    <view class="tl-item {{item.cls}}" wx:for="{{steps}}" wx:key="name">
+      <view class="tl-rail"></view>
+      <view class="tl-dot"></view>
+      <text class="tl-name">{{item.name}}</text>
+    </view>
+  </view>
+  <view class="note">{{message}}</view>
+  <view class="btn block" wx:if="{{canWithdraw}}" bindtap="withdraw">撤回</view>
+  <view class="btn block" wx:if="{{canConfirm}}" bindtap="confirm">确认完成</view>
+  <button class="link" open-type="contact" session-from="{{contactFrom}}">联系客服</button>
+</view>

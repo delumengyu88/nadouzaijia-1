@@ -1,0 +1,24 @@
+<view class="nav" style="padding-top: {{statusBarHeight}}px;">
+  <view class="nav-bar">
+    <view class="nav-back" bindtap="back">‹</view>
+    <view class="nav-title">截图</view>
+  </view>
+</view>
+<view style="height: {{navHeight}}px;"></view>
+<view class="body">
+  <view class="thumb shot {{low ? 'low' : ''}}">
+    <view class="moon"></view>
+    <view class="hill"></view>
+    <text class="thumb-badge">{{low ? '低清' : '高清'}}</text>
+    <text class="thumb-wm">那豆在架</text>
+    <text class="thumb-time">{{time}}</text>
+  </view>
+  <view class="pad" style="margin-top:24rpx;">
+    <view class="row-title {{unknown ? 'unknown' : ''}}" style="{{unknown ? 'color:#9aa3af;' : ''}}">{{platform}}</view>
+    <view class="sub">排查时间 {{date}}{{low ? '' : ' · 可双指缩放'}}</view>
+  </view>
+  <view class="warn-box" wx:if="{{low}}">当前为普通分辨率低清水印图，不可放大到高清。</view>
+  <view class="center-sub" wx:if="{{programOnly}}">单节目权益可查看高清，不提供下载。</view>
+  <view class="btn slim" wx:if="{{canSave}}" bindtap="save">下载到相册</view>
+  <view class="btn slim" wx:if="{{low}}" bindtap="upgrade">开通会员看高清</view>
+</view>
