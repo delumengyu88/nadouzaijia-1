@@ -1,12 +1,12 @@
 from datetime import timedelta
 
 from sqlalchemy import func, select
-from tests.workbench_helpers import add_order, add_user, auth, call
 
 from nadou.admin.members import EntitlementBook
 from nadou.admin.notify import FakeNotifier
 from nadou.admin.orders import EntitlementIssuer, OrderGrantWriter, OrderLookup
 from nadou.models import AuditLog, Entitlement, Order, OrderIssuance, User
+from tests.workbench_helpers import add_order, add_user, auth, call
 
 
 class FlakyWriter:

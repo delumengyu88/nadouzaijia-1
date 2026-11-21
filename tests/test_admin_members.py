@@ -1,11 +1,11 @@
 from datetime import timedelta
 
 from sqlalchemy import func, select
-from tests.workbench_helpers import add_user, call
 
 from nadou.admin.members import EntitlementBook
 from nadou.admin.phone import PhoneMask
 from nadou.models import AuditLog, Entitlement
+from tests.workbench_helpers import add_user, call
 
 
 def test_phone_mask_keeps_last_four_digits():

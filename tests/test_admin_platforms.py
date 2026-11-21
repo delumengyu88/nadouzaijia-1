@@ -1,7 +1,7 @@
 from sqlalchemy import func, select
-from tests.workbench_helpers import add_unverified_task, call
 
 from nadou.models import AuditLog, PlatformAlias, Task
+from tests.workbench_helpers import add_unverified_task, call
 
 
 def test_alias_conflict_names_the_existing_platform_and_does_not_overwrite(workbench):
