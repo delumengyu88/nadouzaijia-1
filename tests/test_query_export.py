@@ -6,7 +6,6 @@ from urllib.parse import quote
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 from PIL import Image, ImageDraw
-from sqlalchemy import select
 
 from nadou.db import Database
 from nadou.frames import (
@@ -15,19 +14,19 @@ from nadou.frames import (
     SignedDerivedFrameSource,
     SyntheticFrame,
 )
-from nadou.importer import TaskExportImporter
 from nadou.main import create_app
 from nadou.models import (
     Entitlement,
     IndexRecord,
     MemberQuery,
-    PlatformAlias,
     ProgramAlias,
     QueryProgram,
     Task,
     User,
 )
+from nadou.platform_names import PlatformNames
 from nadou.query_export import HitColumns, PartNames, RestStatus
+from nadou.search import ProgramSearch
 from nadou.signed_url import FakeSignedUrlProvider
 from nadou.text import RecordAge
 
@@ -106,7 +105,7 @@ def add_record(
     program,
     when,
     status="done",
-    platform="样例平台",
+    platform="示例视频",
     network="专网",
     unverified=False,
     is_test=False,
@@ -344,7 +343,7 @@ def test_header_columns_and_exact_strings(session, clock):
         record_id="rec-hit",
         program="海边故事",
         when=at_age(clock, 100),
-        platform="样例平台",
+        platform="示例视频",
         network="专网",
         hit_type="consensus",
     )
@@ -354,7 +353,7 @@ def test_header_columns_and_exact_strings(session, clock):
         record_id="rec-alias",
         program="别名故事",
         when=at_age(clock, 120),
-        platform="样例视频",
+        platform="示例视频",
         network="公网",
         hit_type="consensus",
     )
@@ -364,7 +363,7 @@ def test_header_columns_and_exact_strings(session, clock):
         record_id="rec-dispute",
         program="别名故事",
         when=at_age(clock, 110),
-        platform="样例视频",
+        platform="示例视频",
         network="公网",
         hit_type="dispute",
     )
@@ -496,7 +495,7 @@ def test_two_records_of_the_same_platform_and_program(session, clock):
         record_id="rec-same-1",
         program="重复节目",
         when=at_age(clock, 40, hour=9),
-        platform="样例平台",
+        platform="示例视频",
         network="专网",
         hit_type="consensus",
     )
@@ -506,7 +505,7 @@ def test_two_records_of_the_same_platform_and_program(session, clock):
         record_id="rec-same-2",
         program="重复节目",
         when=at_age(clock, 80, hour=15),
-        platform="样例平台",
+        platform="示例视频",
         network="专网",
         hit_type="consensus",
     )
@@ -521,7 +520,7 @@ def test_two_records_of_the_same_platform_and_program(session, clock):
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
     assert len(records) == 2
-    assert records[0][0] == records[1][0] == "专网 · 样例平台"
+    assert records[0][0] == records[1][0] == "专网 · 示例视频"
     assert records[0][2] == records[1][2] == "重复节目"
     assert records[0][3] == records[1][3] == "重复节目"
     assert records[0][4] != records[1][4]
@@ -622,7 +621,7 @@ def test_excludes_test_prefix_and_non_done(session, clock):
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
     assert len(records) == 2
-    assert {row[0] for row in records} == {"专网 · 样例平台", "来源待核实"}
+    assert {row[0] for row in records} == {"专网 · 示例视频", PlatformNames.UNRECOGNIZED}
     assert rest_table(workbook["未命中与待处理"]) == [("只有新记录", RestStatus.MISS, None)]
     text = " ".join(str(value) for row in records for value in row if value)
     assert "TEST_台" not in text
@@ -851,65 +850,107 @@ def test_membership_age_floor_changes_rows_and_scope(session, clock):
         both.close()
 
 
-def test_platform_uses_normalizer_and_unverified_label(session, clock):
+def test_unrecognized_platform_is_still_a_hit(session, clock):
     add_user(session, "user-vip", clock, "vip")
-    session.add(PlatformAlias(alias="样例别名台", canonical_name="样例平台"))
-    session.flush()
-    body = (
-        "task_id,状态,提交时间,filename,公网/专网,平台名\n"
-        "t-file,done,2026-08-01 10:00:00,专网-样例别名台-样片-2026.08.01.mp4,,\n"
-        "t-col,done,2026-08-01 10:00:00,公网-别的名字-样片-2026.08.01.mp4,专网,样例别名台\n"
-    )
-    TaskExportImporter(session).import_csv(body)
-    for task_id, record_id, program in (
-        ("t-file", "rec-file-plat", "文件节目"),
-        ("t-col", "rec-col-plat", "栏目节目"),
-    ):
-        session.add(
-            IndexRecord(
-                id=record_id,
-                task_id=task_id,
-                program_name=program,
-                program_name_raw=program,
-                hit_type="consensus",
-                frame_count=1,
-                timestamps=["00:01:00"],
-            )
-        )
     add_record(
         session,
-        task_id="task-unknown",
-        record_id="rec-unknown",
-        program="未知节目",
+        task_id="task-many",
+        record_id="rec-many",
+        program="多解节目",
         when=at_age(clock, 100),
-        unverified=True,
-        filename="unknown.mp4",
+        platform="双解平台",
+        network="专网",
+    )
+    add_record(
+        session,
+        task_id="task-none",
+        record_id="rec-none",
+        program="无解节目",
+        when=at_age(clock, 110),
+        platform="没有这个平台",
+        network="公网",
+    )
+    add_record(
+        session,
+        task_id="task-known",
+        record_id="rec-known",
+        program="已知节目",
+        when=at_age(clock, 120),
+        platform="示例视频ott",
+        network="专网",
     )
     add_query(
         session,
         clock,
         "q-platform",
         [
-            {"uploaded": "文件节目", "matched": "文件节目", "resolution": "exact"},
-            {"uploaded": "栏目节目", "matched": "栏目节目", "resolution": "exact"},
-            {"uploaded": "未知节目", "matched": "未知节目", "resolution": "exact"},
+            {"uploaded": "多解节目", "matched": "多解节目", "resolution": "exact"},
+            {"uploaded": "无解节目", "matched": "无解节目", "resolution": "exact"},
+            {"uploaded": "已知节目", "matched": "已知节目", "resolution": "exact"},
         ],
     )
     session.commit()
-    stored = session.scalars(select(Task).where(Task.task_id.in_(["t-file", "t-col"]))).all()
-    assert {task.task_id: task.platform_name for task in stored} == {
-        "t-file": "样例平台",
-        "t-col": "样例平台",
-    }
     response = export(make_client(session, clock), "q-platform", "user-vip")
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
     by_name = {row[2]: row[0] for row in records}
     assert by_name == {
-        "文件节目": "专网 · 样例平台",
-        "栏目节目": "专网 · 样例平台",
-        "未知节目": "来源待核实",
+        "多解节目": PlatformNames.UNRECOGNIZED,
+        "无解节目": PlatformNames.UNRECOGNIZED,
+        "已知节目": "专网 · 示例视频",
     }
+    assert len(records) == 3
+    assert PlatformNames.UNRECOGNIZED == "平台未识别"
+    assert rest_table(workbook["未命中与待处理"]) == []
+    workbook.close()
+
+
+def test_ambiguous_same_name_is_not_a_hit(session, clock):
+    add_user(session, "user-vip", clock, "vip")
+    session.add(ProgramAlias(alias="abc剧", canonical_name="节目1986"))
+    session.add(ProgramAlias(alias="ａｂｃ剧", canonical_name="节目2010"))
+    add_record(
+        session,
+        task_id="amb-1986",
+        record_id="amb-rec-1986",
+        program="节目1986",
+        when=at_age(clock, 200),
+        platform="示例视频",
+    )
+    add_record(
+        session,
+        task_id="amb-2010",
+        record_id="amb-rec-2010",
+        program="节目2010",
+        when=at_age(clock, 40),
+        platform="示例专网",
+    )
+    add_record(
+        session,
+        task_id="task-clear",
+        record_id="rec-clear",
+        program="唯一节目",
+        when=at_age(clock, 100),
+    )
+    add_query(
+        session,
+        clock,
+        "q-same-name",
+        [
+            {"uploaded": "ABC剧", "matched": "节目1986", "resolution": "exact"},
+            {"uploaded": "唯一节目", "matched": "唯一节目", "resolution": "exact"},
+        ],
+    )
+    session.commit()
+    response = export(make_client(session, clock), "q-same-name", "user-vip")
+    workbook = load_workbook(BytesIO(response.content))
+    _headers, records, _styled = hit_table(workbook["命中结果"])
+    assert [row[2] for row in records] == ["唯一节目"]
+    assert "节目1986" not in {row[3] for row in records}
+    assert "节目2010" not in {row[3] for row in records}
+    assert rest_table(workbook["未命中与待处理"]) == [
+        ("ABC剧", RestStatus.SAME_NAME, ProgramSearch.AMBIGUOUS_MESSAGE)
+    ]
     workbook.close()
 
 

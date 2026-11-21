@@ -156,7 +156,7 @@ Columns, in order: 平台, 节目类型, 上传节目名, 匹配节目名, 检�
 
 There is no 匹配方式 column, no yellow alias fill, and no 「名称相近，请核对」 note. An `alias` resolution is a confirmed hit through the admin alias table, and it uses the same columns as `exact` or `manual`. The only hit label is `确认命中`. Every exported row would show that same value, so the 命中类型 column is omitted.
 
-平台 is the task network plus the platform name after `PlatformNormalizer`, so a later alias still applies. Import already stored the filename-parser fallback when the CSV cells were empty. Display is `专网 · 样例平台` when both parts are known, the platform alone when the network is missing, and `来源待核实` when the platform does not resolve.
+平台 uses `PlatformNames`, the same fixed map as import and search. Display is `专网 · 示例视频` when the network and one standard name are both known, or the standard name alone when the network is missing. A value that maps to zero standards or to more than one is still a hit row, and the cell is exactly `平台未识别`.
 
 节目类型 is the query program's type, or blank. 上传节目名 is the uploaded text. 匹配节目名 is the canonical name. 检测日期 is the Beijing calendar date of the same timestamp search uses (`tasks.created_at`, else `tasks.file_uploaded_at`, else `index_records.uploaded_at`). Date only, not a time.
 
@@ -177,6 +177,9 @@ Columns: 上传节目名, 状态, 说明. Row order follows the query. This shee
 | `miss`, or `exact` / `alias` / `manual` with no visible record | 未命中 | stored detail, usually blank |
 | `pending` | 待确认 | candidate names |
 | `failed` | 失败 | failure reason |
+| uploaded name matches several catalog programs | 同名节目 | `匹配到多个同名节目，补充年份或集数后重新查询` |
+
+An uploaded name with more than one `ProgramNormalizer` candidate is not a hit, even when index rows exist for those programs. The export uses `ProgramSearch.AMBIGUOUS_MESSAGE` and does not pick one of them.
 
 A program with at least one visible confirmed hit is not repeated here. Pending programs, failed programs, and unconfirmed `dispute` records do not contribute hit rows.
 

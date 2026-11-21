@@ -15,7 +15,8 @@ from nadou.entitlements import AccessGrants, EntitlementPolicy
 from nadou.frames import DerivedFrameSource, FrameImage, FrameUnavailable
 from nadou.importer import TestTaskFilter
 from nadou.models import Entitlement, IndexRecord, MemberQuery, QueryProgram, Task, User
-from nadou.normalize import PlatformNormalizer, ProgramNormalizer
+from nadou.normalize import ProgramNormalizer
+from nadou.platform_names import PlatformNames
 from nadou.search import ProgramSearch, UnknownUser
 from nadou.text import RecordAge
 
@@ -75,15 +76,16 @@ class ScopeLabel:
 
 
 class PlatformLabel:
-    UNVERIFIED = "来源待核实"
+    """Display a platform with `PlatformNames`. Zero or several standards stay a hit."""
 
     @staticmethod
-    def display(network: str | None, platform: str | None, unverified: bool) -> str:
-        if unverified or not platform:
-            return PlatformLabel.UNVERIFIED
+    def display(network: str | None, platform: str | None) -> str:
+        resolved = PlatformNames.normalize(platform)
+        if resolved.unrecognized or not resolved.name:
+            return PlatformNames.UNRECOGNIZED
         if network:
-            return f"{network} · {platform}"
-        return platform
+            return f"{network} · {resolved.name}"
+        return resolved.name
 
 
 class HitColumns:
@@ -105,6 +107,7 @@ class RestStatus:
     MISS = "未命中"
     PENDING = "待确认"
     FAILED = "失败"
+    SAME_NAME = "同名节目"
 
 
 class ShotPlaceholder:
@@ -428,16 +431,13 @@ class RecordWindow:
         record: IndexRecord,
         now: datetime,
         grants: AccessGrants,
-        normalizer: PlatformNormalizer,
     ) -> bool:
-        if not ProgramSearch.included(task):
+        if not ProgramSearch.included(task) or not ProgramSearch.confirmed(record):
             return False
         filename = task.raw_filename if task is not None else ""
         platform_raw = task.platform_name if task is not None else ""
-        normalized = normalizer.normalize(platform_raw or None)
-        if TestTaskFilter.excluded(filename, platform_raw, normalized.name):
-            return False
-        if record.hit_type != "consensus":
+        resolved = PlatformNames.normalize(platform_raw or None)
+        if TestTaskFilter.excluded(filename, platform_raw, resolved.name):
             return False
         when = ProgramSearch.record_time(task, record)
         if when is None:
@@ -492,17 +492,28 @@ class QueryExport:
         user_id: str | None,
     ) -> tuple[list[HitRow], list[RestRow]]:
         programs = ProgramNormalizer.from_session(self.session)
-        platforms = PlatformNormalizer.from_session(self.session)
-        names = {
-            programs.canonical(item.matched_name or "")
-            for item in items
-            if item.resolution in RecordWindow.HIT_RESOLUTIONS
-        }
-        names.discard("")
+        names: set[str] = set()
+        for item in items:
+            if item.resolution not in RecordWindow.HIT_RESOLUTIONS:
+                continue
+            if len(programs.candidates(item.uploaded_name)) != 1:
+                continue
+            canonical = programs.canonical(item.matched_name or item.uploaded_name)
+            if canonical:
+                names.add(canonical)
         by_program, tasks = self._load(names)
         hits: list[HitRow] = []
         rest: list[RestRow] = []
         for item in items:
+            if len(programs.candidates(item.uploaded_name)) > 1:
+                rest.append(
+                    RestRow(
+                        item.uploaded_name,
+                        RestStatus.SAME_NAME,
+                        ProgramSearch.AMBIGUOUS_MESSAGE,
+                    )
+                )
+                continue
             if item.resolution == "pending":
                 rest.append(RestRow(item.uploaded_name, RestStatus.PENDING, item.detail or ""))
                 continue
@@ -512,13 +523,13 @@ class QueryExport:
             if item.resolution == "miss":
                 rest.append(RestRow(item.uploaded_name, RestStatus.MISS, item.detail or ""))
                 continue
-            canonical = programs.canonical(item.matched_name or "")
-            visible = self._visible(by_program.get(canonical, []), tasks, grants, platforms)
+            canonical = programs.canonical(item.matched_name or item.uploaded_name)
+            visible = self._visible(by_program.get(canonical, []), tasks, grants)
             if not visible:
                 rest.append(RestRow(item.uploaded_name, RestStatus.MISS, item.detail or ""))
                 continue
             for record, task in visible:
-                hits.append(self._hit(item, canonical, record, task, platforms, grants, user_id))
+                hits.append(self._hit(item, canonical, record, task, grants, user_id))
         return hits, rest
 
     def _load(self, names: set[str]) -> tuple[dict[str, list[IndexRecord]], dict[str, Task]]:
@@ -544,12 +555,11 @@ class QueryExport:
         records: list[IndexRecord],
         tasks: dict[str, Task],
         grants: AccessGrants,
-        platforms: PlatformNormalizer,
     ) -> list[tuple[IndexRecord, Task | None]]:
         kept: list[tuple[datetime, IndexRecord, Task | None]] = []
         for record in records:
             task = tasks.get(record.task_id)
-            if not RecordWindow.permitted(task, record, self.now, grants, platforms):
+            if not RecordWindow.permitted(task, record, self.now, grants):
                 continue
             when = ProgramSearch.record_time(task, record)
             if when is None:
@@ -564,7 +574,6 @@ class QueryExport:
         canonical: str,
         record: IndexRecord,
         task: Task | None,
-        platforms: PlatformNormalizer,
         grants: AccessGrants,
         user_id: str | None,
     ) -> HitRow:
@@ -575,11 +584,9 @@ class QueryExport:
         decision = EntitlementPolicy.decide(age, grants)
         prepared = self._frame(decision.thumbnail, record.id, user_id)
         platform_raw = task.platform_name if task is not None else None
-        normalized = platforms.normalize(platform_raw)
-        unverified = task is None or task.source_unverified or normalized.unverified
         network = task.network_type if task is not None else None
         return HitRow(
-            platform=PlatformLabel.display(network, normalized.name, unverified),
+            platform=PlatformLabel.display(network, platform_raw),
             program_type=item.program_type or "",
             uploaded_name=item.uploaded_name,
             matched_name=canonical,
