@@ -15,12 +15,23 @@ PROGRAM = "示例节目"
 PROGRAM_ALIAS = "示例剧集"
 
 
+class DevSeedDisabled(RuntimeError):
+    """The fixed demo VIP user is local-only and stays off unless explicitly allowed."""
+
+
 class Seed:
     """Build a synthetic export and index. No real titles, hosts, or buckets."""
 
-    def __init__(self, session: Session, now: datetime | None = None) -> None:
+    def __init__(
+        self,
+        session: Session,
+        now: datetime | None = None,
+        *,
+        allow_dev_user: bool = False,
+    ) -> None:
         self.session = session
         self.now = now or datetime.now(RecordAge.TZ)
+        self.allow_dev_user = allow_dev_user
 
     def run(self) -> str:
         self._aliases()
@@ -130,6 +141,11 @@ class Seed:
             )
 
     def _users(self) -> None:
+        if not self.allow_dev_user:
+            raise DevSeedDisabled(
+                "Refusing to create the dev VIP user. "
+                "Set NADOU_ALLOW_DEV_SEED=1 for a local database."
+            )
         if self.session.get(User, DEMO_VIP_USER_ID) is None:
             self.session.add(User(id=DEMO_VIP_USER_ID, created_at=self.now))
         expires = self.now + timedelta(days=30)
@@ -160,11 +176,16 @@ def main() -> None:
     from nadou.config import get_settings
     from nadou.db import Database
 
+    settings = get_settings()
+    if not settings.allow_dev_seed:
+        raise SystemExit(
+            "Refusing to seed the dev VIP user. Set NADOU_ALLOW_DEV_SEED=1 for a local database."
+        )
     command.upgrade(Config("alembic.ini"), "head")
-    database = Database(get_settings().database_url)
+    database = Database(settings.database_url)
     session = database.session()
     try:
-        csv_text = Seed(session).run()
+        csv_text = Seed(session, allow_dev_user=True).run()
         session.commit()
     except Exception:
         session.rollback()

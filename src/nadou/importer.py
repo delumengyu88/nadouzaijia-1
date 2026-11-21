@@ -76,21 +76,21 @@ class TaskExportImporter:
         normalizer: PlatformNormalizer,
         line_no: int,
     ) -> tuple[bool, bool]:
-        task_id = _cell(row, "task_id")
+        task_id = self._cell(row, "task_id")
         if not task_id:
             raise TaskExportImportError(f"line {line_no}: task_id is empty")
-        status = _cell(row, "状态").casefold()
+        status = self._cell(row, "状态").casefold()
         if status not in self.STATUSES:
             raise TaskExportImportError(f"line {line_no}: unknown status {status!r}")
-        submitted = _cell(row, "提交时间")
+        submitted = self._cell(row, "提交时间")
         try:
             created_at = RecordAge.parse_submitted(submitted) if submitted else None
         except ValueError as exc:
             raise TaskExportImportError(f"line {line_no}: {exc}") from exc
 
-        filename = _cell(row, "filename")
-        network_cell = _cell(row, "公网/专网")
-        platform_cell = _cell(row, "平台名")
+        filename = self._cell(row, "filename")
+        network_cell = self._cell(row, "公网/专网")
+        platform_cell = self._cell(row, "平台名")
         parsed = FilenameParser.parse(filename)
         if network_cell:
             network = network_cell if network_cell in self.NETWORKS else None
@@ -114,9 +114,9 @@ class TaskExportImporter:
         existing.is_test = is_test
         return created, is_test
 
-
-def _cell(row: dict[str, str | None], key: str) -> str:
-    value = row.get(key)
-    if value is None:
-        return ""
-    return value.strip()
+    @staticmethod
+    def _cell(row: dict[str, str | None], key: str) -> str:
+        value = row.get(key)
+        if value is None:
+            return ""
+        return value.strip()

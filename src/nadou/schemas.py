@@ -7,7 +7,7 @@ class LockedRecordOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     record_id: str
-    age_bucket: Literal["lt_30", "d30_89", "d90_179", "ge_180"]
+    age_bucket: Literal["lt_30", "d30_89", "d90_179", "ge_180", "unknown"]
     locked: Literal[True]
     lock_reason: str
 

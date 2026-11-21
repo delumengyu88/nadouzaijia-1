@@ -29,7 +29,7 @@ Normalization and parsing are classes. `SignedUrlProvider` is the seam the real 
 
 ## Data model
 
-Ages use the Beijing calendar date of `tasks.created_at`. If that is null, use `tasks.file_uploaded_at`, then `index_records.uploaded_at`. A hit-list row whose `task_id` is absent from the export counts as `done`.
+Ages use the Beijing calendar date of `tasks.created_at`. If that is null, use `tasks.file_uploaded_at`, then `index_records.uploaded_at`. If all three are null, the row is not treated as younger than 30 days: it stays locked with `检测时间待核实`, is omitted from `platform_count` and from `unverified_source_count`, and does not by itself make the outcome `hit` or `recent_only`. A hit-list row whose `task_id` is absent from the export counts as `done`.
 
 | Table | Why it exists |
 |---|---|
@@ -37,7 +37,7 @@ Ages use the Beijing calendar date of `tasks.created_at`. If that is null, use `
 | `index_records` | One monitored video hitting one program: canonical program name, `consensus` / `dispute`, frame count, timestamps. This is the search result row. |
 | `platform_aliases` | Operator map applied to **both** the CSV `平台名` and the filename parser (for example `重庆移动百视通OTT` → `重庆移动`). |
 | `program_aliases` | Same fold-and-map rules for indexed names and the search query. |
-| `users` | Caller of the search endpoint. `X-User-Id` is a stand-in until WeChat login. |
+| `users` | Caller of the search endpoint. `X-User-Id` is a local-only stand-in until WeChat login; it is not production authentication. |
 | `entitlements` | Active grants: `regular` / `vip` (expiry), `program_90` / `program_30` (canonical program + expiry), `screenshot` (one record id + expiry). The policy takes the widest live grant. Payment upgrade rules (suspended 普通 days, 7-day renewals) are not implemented; a grant counts when `expires_at` is in the future. |
 
 `tasks.platform_name` is null and `source_unverified` is true when the platform is still unknown. The API shows `来源待核实` only on records the caller is allowed to see. Those rows are not part of the distinct platform count. `is_test` is set when the raw filename, the raw platform, or the canonical platform starts with `test_` (case-insensitive, after full/half-width fold). Test rows are stored so a later export can clear the flag, and they never appear in search.
@@ -49,7 +49,7 @@ No other tables. In particular there is no order table and no ZIP / archive tabl
 1. `GET /health` — process up.
 2. `GET /api/v1/programs/search?name=` — canonicalize `name`, return that program's counted records filtered for the caller.
 
-Missing `X-User-Id` is a free caller. An unknown id is 404. There is no import endpoint; import is `TaskExportImporter`, used by the seed script and tests. Workbench upload can call the same class later.
+Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is local-only until WeChat login lands.** Do not expose this header as account authentication on a shared or deployed API. There is no import endpoint; import is `TaskExportImporter`, used by the seed script and tests. Workbench upload can call the same class later.
 
 ## Import
 
@@ -81,7 +81,9 @@ Record age buckets, Beijing calendar days: `<30`, `30–89`, `90–179`, `≥180
 
 `<30` is never unlocked. Locked placeholders are only `record_id`, `age_bucket`, `locked`, `lock_reason`. They omit platform, check time, timestamps, and every URL.
 
-`platform_count` is distinct normalized platforms on counted records with age `≥30`. `unverified_source_count` is the number of those records marked `来源待核实`. Outcome is `hit` when any counted record is `≥30`, `recent_only` when the only counted records are `<30`, otherwise `miss`. Cancelled, duplicate, and `test_` rows are omitted entirely.
+`platform_count` is distinct normalized platforms on counted records with a known age `≥30`. `unverified_source_count` is the number of those records marked `来源待核实`. Rows with no check time are in neither count. Outcome is `hit` when any dated record is `≥30`, `recent_only` when the only dated records are `<30`, otherwise `miss` (an unknown-age placeholder can still be listed). Cancelled, duplicate, and `test_` rows are omitted entirely.
+
+`IndexRecordStore.upsert` stores the program name only after `ProgramNormalizer` (the same fold and alias map search uses), so a later importer can pass a raw or full-width name and still match a search.
 
 Several grants at once: visibility is the widest; report download is only when a membership tier itself covers that age; screenshot download is membership-or-that-screenshot.
 
@@ -91,4 +93,4 @@ Several grants at once: visibility is the widest; report download is only when a
 
 ## Local run
 
-Postgres via `docker-compose.yml`. The API container runs Alembic then uvicorn. `python -m nadou.seed` writes a synthetic export (no real titles, buckets, domains, or hosts), imports it, and inserts matching index rows.
+Postgres via `docker-compose.yml`, published only on `127.0.0.1:5432`. The API container runs Alembic then uvicorn. `python -m nadou.seed` writes a synthetic export (no real titles, buckets, domains, or hosts), imports it, and inserts matching index rows. It also creates a fixed VIP user id, so it refuses to run unless `NADOU_ALLOW_DEV_SEED=1`. That flag defaults off. Compose sets it on the local API container only.

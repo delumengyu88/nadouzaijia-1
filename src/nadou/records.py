@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from nadou.models import IndexRecord
+from nadou.normalize import ProgramNormalizer
 
 _NAMESPACE = uuid.UUID("6f9c0b2e-1c0a-4f3e-9a77-3a1e0a9b7c21")
 _HIT_TYPES = frozenset({"consensus", "dispute"})
@@ -36,17 +37,20 @@ class IndexRecordStore:
             raise ValueError(f"unknown hit_type {hit_type!r}")
         if frame_count < 0:
             raise ValueError("frame_count must be >= 0")
+        canonical = ProgramNormalizer.from_session(self.session).canonical(program_name)
+        if not canonical:
+            raise ValueError("program_name is empty")
         existing = self.session.scalar(
             select(IndexRecord).where(
                 IndexRecord.task_id == task_id,
-                IndexRecord.program_name == program_name,
+                IndexRecord.program_name == canonical,
             )
         )
         if existing is None:
             existing = IndexRecord(
-                id=record_id or self.public_id(task_id, program_name),
+                id=record_id or self.public_id(task_id, canonical),
                 task_id=task_id,
-                program_name=program_name,
+                program_name=canonical,
                 program_name_raw=program_name_raw,
                 hit_type=hit_type,
                 frame_count=frame_count,

@@ -29,6 +29,9 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "postgres: integration tests that require DATABASE_URL pointing at Postgres",
+]
 
 [tool.ruff]
 line-length = 100

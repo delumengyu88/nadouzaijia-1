@@ -23,6 +23,7 @@ class ProgramSearch:
     """Search one program and filter every record for the caller."""
 
     UNVERIFIED = "来源待核实"
+    REASON_UNKNOWN_AGE = "检测时间待核实"
     _LOCKED_KEYS = ("record_id", "age_bucket", "locked", "lock_reason")
 
     def __init__(self, session: Session, urls: SignedUrlProvider, now: datetime) -> None:
@@ -46,7 +47,7 @@ class ProgramSearch:
             for task in self.session.scalars(select(Task).where(Task.task_id.in_(task_ids))).all():
                 tasks[task.task_id] = task
 
-        kept: list[tuple[int, IndexRecord, Task | None]] = []
+        kept: list[tuple[int | None, IndexRecord, Task | None]] = []
         platforms: set[str] = set()
         unverified = 0
         for record in rows:
@@ -54,26 +55,38 @@ class ProgramSearch:
             if not self.included(task):
                 continue
             when = self.record_time(task, record)
-            age = RecordAge.days(when, self.now) if when is not None else -1
-            if age >= 30:
+            age = RecordAge.days(when, self.now) if when is not None else None
+            if age is not None and age >= 30:
                 if self._unverified(task):
                     unverified += 1
                 elif task is not None and task.platform_name:
                     platforms.add(task.platform_name)
             kept.append((age, record, task))
 
-        kept.sort(key=lambda item: (item[0], item[1].id))
+        kept.sort(
+            key=lambda item: (
+                item[0] is None,
+                item[0] if item[0] is not None else 0,
+                item[1].id,
+            )
+        )
         records: list[LockedRecordOut | OpenRecordOut] = []
         any_old = False
+        any_recent = False
         for age, record, task in kept:
+            if age is None:
+                records.append(self._unknown_age(record))
+                continue
             if age >= 30:
                 any_old = True
+            else:
+                any_recent = True
             decision = EntitlementPolicy.decide(age, self._grants_for(grants, canonical, record.id))
             records.append(self._present(record, task, decision, user_id))
 
         if any_old:
             outcome = "hit"
-        elif kept:
+        elif any_recent:
             outcome = "recent_only"
         else:
             outcome = "miss"
@@ -135,6 +148,15 @@ class ProgramSearch:
     @staticmethod
     def _unverified(task: Task | None) -> bool:
         return task is None or task.source_unverified or not task.platform_name
+
+    @staticmethod
+    def _unknown_age(record: IndexRecord) -> LockedRecordOut:
+        return LockedRecordOut(
+            record_id=record.id,
+            age_bucket="unknown",
+            locked=True,
+            lock_reason=ProgramSearch.REASON_UNKNOWN_AGE,
+        )
 
     def _present(
         self,

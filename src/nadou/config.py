@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +11,10 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://nadou:nadou_dev_password@localhost:5432/nadou"
     app_env: str = "local"
+    allow_dev_seed: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("NADOU_ALLOW_DEV_SEED"),
+    )
 
 
 @lru_cache

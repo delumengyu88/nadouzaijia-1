@@ -1,7 +1,10 @@
 import json
 from datetime import datetime, timedelta
 
+from sqlalchemy import select
+
 from nadou.models import Entitlement, IndexRecord, PlatformAlias, ProgramAlias, Task, User
+from nadou.records import IndexRecordStore
 from nadou.text import RecordAge
 
 PROGRAM = "边界节目"
@@ -416,6 +419,115 @@ def test_screenshot_does_not_spill_and_unknown_user(session, client, clock):
     assert missing.status_code == 404
     blank = client.get("/api/v1/programs/search", params={"name": "   "})
     assert blank.status_code == 400
+
+
+def test_unknown_age_is_not_a_fresh_hit(session, client, clock):
+    add_hit(
+        session,
+        task_id="no-time",
+        record_id="rec-no-time",
+        program="无时间节目",
+        when=at_age(clock, 10),
+        created_at=False,
+        platform="不能当最新",
+        unverified=True,
+    )
+    add_hit(
+        session,
+        task_id="dated",
+        record_id="rec-dated",
+        program="无时间节目",
+        when=at_age(clock, 100),
+        platform="平台甲",
+    )
+    add_user(session, "user-vip-time", clock, "vip")
+    session.commit()
+    free = client.get("/api/v1/programs/search", params={"name": "无时间节目"}).json()
+    assert free["outcome"] == "hit"
+    assert free["platform_count"] == 1
+    assert free["unverified_source_count"] == 0
+    unknown = by_id(free)["rec-no-time"]
+    assert set(unknown) == LOCKED_KEYS
+    assert unknown["age_bucket"] == "unknown"
+    assert unknown["lock_reason"] == "检测时间待核实"
+    assert unknown["lock_reason"] != "有最新记录，可委托取证"
+    assert "不能当最新" not in json.dumps(free)
+    vip = client.get(
+        "/api/v1/programs/search",
+        params={"name": "无时间节目"},
+        headers={"X-User-Id": "user-vip-time"},
+    ).json()
+    vip_unknown = by_id(vip)["rec-no-time"]
+    assert vip_unknown["locked"] is True
+    assert vip_unknown["lock_reason"] == "检测时间待核实"
+    assert "不能当最新" not in json.dumps(vip_unknown)
+    assert by_id(vip)["rec-dated"]["access"] == "full"
+
+    add_hit(
+        session,
+        task_id="only-unknown",
+        record_id="rec-only-unknown",
+        program="只有未知时间",
+        when=at_age(clock, 5),
+        created_at=False,
+        platform="仍不泄露",
+    )
+    session.commit()
+    alone = client.get("/api/v1/programs/search", params={"name": "只有未知时间"}).json()
+    assert alone["outcome"] == "miss"
+    assert alone["platform_count"] == 0
+    assert alone["unverified_source_count"] == 0
+    assert alone["records"][0]["age_bucket"] == "unknown"
+    assert alone["records"][0]["lock_reason"] == "检测时间待核实"
+    assert "仍不泄露" not in json.dumps(alone)
+    assert "有最新记录，可委托取证" not in json.dumps(alone)
+
+
+def test_upsert_canonicalizes_program_alias(session, client, clock):
+    session.add(ProgramAlias(alias="ＡＢＣ剧", canonical_name="标准剧"))
+    when = at_age(clock, 200)
+    session.add(
+        Task(
+            task_id="alias-task",
+            status="done",
+            created_at=when,
+            raw_filename="alias-task.mp4",
+            network_type="公网",
+            platform_name="示例视频",
+            source_unverified=False,
+            is_test=False,
+        )
+    )
+    store = IndexRecordStore(session)
+    raw = "  ＡＢＣ剧 "
+    stored = store.upsert(
+        task_id="alias-task",
+        program_name=raw,
+        program_name_raw=raw,
+        hit_type="consensus",
+        frame_count=1,
+        timestamps=["00:01:02"],
+    )
+    again = store.upsert(
+        task_id="alias-task",
+        program_name="ａｂｃ剧",
+        program_name_raw="ａｂｃ剧",
+        hit_type="dispute",
+        frame_count=4,
+        timestamps=["00:02:02"],
+    )
+    assert stored.id == again.id
+    assert stored.program_name == "标准剧"
+    assert again.program_name_raw == "ａｂｃ剧"
+    assert len(session.scalars(select(IndexRecord)).all()) == 1
+    session.commit()
+    by_standard = client.get("/api/v1/programs/search", params={"name": "标准剧"}).json()
+    by_alias = client.get("/api/v1/programs/search", params={"name": "ａｂｃ剧"}).json()
+    assert by_standard["program_name"] == "标准剧"
+    assert by_standard["outcome"] == "hit"
+    assert by_standard["records"][0]["record_id"] == by_alias["records"][0]["record_id"]
+    assert by_standard["records"][0]["platform"] == "示例视频"
+    assert by_standard["records"][0]["hit_type"] == "dispute"
 
 
 def test_no_zip_or_download_route(client):
