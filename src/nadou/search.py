@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 from nadou.entitlements import AccessDecision, AccessGrants, EntitlementPolicy, LockedSummary
 from nadou.models import Entitlement, IndexRecord, Task, User
 from nadou.normalize import ProgramNormalizer
+from nadou.platform_names import PlatformNames
 from nadou.schemas import LockedRecordOut, LockedSummaryOut, OpenRecordOut, SearchOut, TierCounts
 from nadou.signed_url import SignedUrlProvider
-from nadou.text import RecordAge
+from nadou.text import RecordAge, TextNormalizer
 
 
 class UnknownUser(Exception):
@@ -22,8 +23,9 @@ class EmptyQuery(Exception):
 class ProgramSearch:
     """Search one program and filter every record for the caller."""
 
-    UNVERIFIED = "来源待核实"
+    UNRECOGNIZED_PLATFORM = PlatformNames.UNRECOGNIZED
     REASON_UNKNOWN_AGE = "检测时间待核实"
+    AMBIGUOUS_MESSAGE = "匹配到多个同名节目，补充年份或集数后重新查询"
     _LOCKED_KEYS = ("record_id", "age_bucket", "locked", "lock_reason")
 
     def __init__(self, session: Session, urls: SignedUrlProvider, now: datetime) -> None:
@@ -32,9 +34,13 @@ class ProgramSearch:
         self.now = now
 
     def search(self, raw_name: str, user_id: str | None) -> SearchOut:
-        canonical = ProgramNormalizer.from_session(self.session).canonical(raw_name)
-        if not canonical:
+        normalizer = ProgramNormalizer.from_session(self.session)
+        candidates = normalizer.candidates(raw_name)
+        if not candidates:
             raise EmptyQuery(raw_name)
+        if len(candidates) > 1:
+            return self._ambiguous(TextNormalizer.fold(raw_name))
+        canonical = candidates[0]
         grants = self._live_grants(user_id)
         rows = list(
             self.session.scalars(
@@ -137,6 +143,18 @@ class ProgramSearch:
             screenshot=screenshot,
         )
 
+    def _ambiguous(self, folded_name: str) -> SearchOut:
+        summary = EntitlementPolicy.summarize_locked([], AccessGrants())
+        return SearchOut(
+            program_name=folded_name,
+            outcome="ambiguous",
+            platform_count=0,
+            unverified_source_count=0,
+            locked_summary=self._summary_out(summary),
+            records=[],
+            message=self.AMBIGUOUS_MESSAGE,
+        )
+
     @staticmethod
     def confirmed(record: IndexRecord) -> bool:
         """Only a confirmed hit is user-facing. Dispute rows stay internal."""
@@ -209,7 +227,9 @@ class ProgramSearch:
             "can_download_screenshot": decision.can_download_screenshot,
         }
         if decision.reveal_fields:
-            payload["platform"] = self.UNVERIFIED if self._unverified(task) else task.platform_name
+            payload["platform"] = (
+                self.UNRECOGNIZED_PLATFORM if self._unverified(task) else task.platform_name
+            )
             if task is not None and task.network_type:
                 payload["network_type"] = task.network_type
             payload["frame_count"] = record.frame_count

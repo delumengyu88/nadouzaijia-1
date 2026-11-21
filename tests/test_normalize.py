@@ -1,4 +1,5 @@
-from nadou.normalize import PlatformNormalizer, ProgramNormalizer
+from nadou.normalize import ProgramNormalizer
+from nadou.platform_names import PlatformNames
 
 
 def test_fold_trims_width_and_case():
@@ -16,18 +17,21 @@ def test_program_alias_and_dedupe():
     assert normalizer.dedupe(["", "   ", "甲"]) == ["甲"]
 
 
-def test_platform_alias_merges_variants():
-    normalizer = PlatformNormalizer(
-        {
-            "重庆移动百视通OTT": "重庆移动",
-            "重庆移动百视通": "重庆移动",
-            "重庆移动": "重庆移动",
-        }
-    )
-    for variant in ("重庆移动百视通OTT", "重庆移动百视通", "  重庆移动百视通ＯＴＴ "):
-        result = normalizer.normalize(variant)
-        assert result.unverified is False
-        assert result.name == "重庆移动"
-    blank = normalizer.normalize("  ")
-    assert blank.unverified is True
-    assert blank.name is None
+def test_program_alias_with_several_targets_is_not_collapsed():
+    normalizer = ProgramNormalizer(pairs=[("abc剧", "节目1986"), ("ａｂｃ剧", "节目2010")])
+    assert normalizer.candidates("ABC剧") == ["节目1986", "节目2010"]
+    assert normalizer.canonical("ABC剧") == ""
+
+
+def test_platform_code_map():
+    assert PlatformNames.normalize(" GD移动 ").name == "广东移动"
+    assert PlatformNames.normalize("ＧＤ移动").name == "广东移动"
+    assert PlatformNames.normalize("广东移动").unrecognized is False
+    unknown = PlatformNames.normalize("没有这个平台")
+    assert unknown.name is None
+    assert unknown.unrecognized is True
+    many = PlatformNames.normalize("双解平台")
+    assert many.name is None
+    assert many.unrecognized is True
+    assert PlatformNames.standards("双解平台") == ("广东移动", "示例视频")
+    assert PlatformNames.normalize("  ").unrecognized is True

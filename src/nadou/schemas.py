@@ -58,8 +58,9 @@ class LockedSummaryOut(BaseModel):
 
 class SearchOut(BaseModel):
     program_name: str
-    outcome: Literal["hit", "miss", "recent_only"]
+    outcome: Literal["hit", "miss", "recent_only", "ambiguous"]
     platform_count: int
     unverified_source_count: int
     locked_summary: LockedSummaryOut
     records: list[LockedRecordOut | OpenRecordOut]
+    message: str | None = None

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
-from nadou.models import Entitlement, IndexRecord, PlatformAlias, ProgramAlias, Task, User
+from nadou.models import Entitlement, IndexRecord, ProgramAlias, Task, User
 from nadou.records import IndexRecordStore
 from nadou.text import RecordAge
 
@@ -232,7 +232,6 @@ def _assert_shape(body, tier):
 
 def test_counts_exclusions_and_fallbacks(session, client, clock):
     session.add(ProgramAlias(alias="边界别名", canonical_name=PROGRAM))
-    session.add(PlatformAlias(alias="平台甲ott", canonical_name="平台甲"))
     add_hit(
         session,
         task_id="keep-a",
@@ -326,7 +325,7 @@ def test_counts_exclusions_and_fallbacks(session, client, clock):
     assert by_id(body)["rec-fresh"]["age_bucket"] == "lt_30"
     assert "平台乙" not in json.dumps(body)
     assert by_id(body)["rec-orphan"]["access"] == "lowres"
-    assert by_id(body)["rec-orphan"]["platform"] == "来源待核实"
+    assert by_id(body)["rec-orphan"]["platform"] == "平台未识别"
     assert by_id(body)["rec-fallback"]["access"] == "lowres"
     assert by_id(body)["rec-fallback"]["platform"] == "平台己"
     assert "checked_at" in by_id(body)["rec-fallback"]
@@ -706,6 +705,87 @@ def test_locked_rows_leak_no_real_fields_and_unconfirmed_stay_hidden(session, cl
         assert secret not in text
     assert "http" not in text
     assert "signed://" not in text
+
+
+def test_unrecognized_platform_still_counts_as_a_hit(session, client, clock):
+    program = "平台节目"
+    add_hit(
+        session,
+        task_id="plat-known",
+        record_id="plat-known-rec",
+        program=program,
+        when=at_age(clock, 200),
+        platform="广东移动",
+    )
+    add_hit(
+        session,
+        task_id="plat-unknown",
+        record_id="plat-unknown-rec",
+        program=program,
+        when=at_age(clock, 200),
+        unverified=True,
+    )
+    add_hit(
+        session,
+        task_id="plat-many",
+        record_id="plat-many-rec",
+        program=program,
+        when=at_age(clock, 200),
+        unverified=True,
+    )
+    session.commit()
+    body = client.get("/api/v1/programs/search", params={"name": program}).json()
+    assert body["outcome"] == "hit"
+    assert body["platform_count"] == 1
+    assert body["unverified_source_count"] == 2
+    rows = by_id(body)
+    assert rows["plat-known-rec"]["platform"] == "广东移动"
+    assert rows["plat-unknown-rec"]["platform"] == "平台未识别"
+    assert rows["plat-many-rec"]["platform"] == "平台未识别"
+    assert "双解平台" not in json.dumps(body)
+
+
+def test_ambiguous_program_is_not_a_hit(session, client, clock):
+    session.add(ProgramAlias(alias="abc剧", canonical_name="节目1986"))
+    session.add(ProgramAlias(alias="ａｂｃ剧", canonical_name="节目2010"))
+    add_hit(
+        session,
+        task_id="amb-1986",
+        record_id="amb-rec-1986",
+        program="节目1986",
+        when=at_age(clock, 200),
+        platform="广东移动",
+    )
+    add_hit(
+        session,
+        task_id="amb-2010",
+        record_id="amb-rec-2010",
+        program="节目2010",
+        when=at_age(clock, 40),
+        platform="示例视频",
+    )
+    session.commit()
+    body = client.get("/api/v1/programs/search", params={"name": " ABC剧 "}).json()
+    assert body["outcome"] == "ambiguous"
+    assert body["program_name"] == "abc剧"
+    assert body["message"] == "匹配到多个同名节目，补充年份或集数后重新查询"
+    assert body["records"] == []
+    assert body["platform_count"] == 0
+    assert body["unverified_source_count"] == 0
+    summary = body["locked_summary"]
+    assert summary["locked_total"] == 0
+    assert summary["unlockable_total"] == 0
+    assert summary["by_required_tier"] == {"member": 0, "vip": 0, "evidence_only": 0}
+    assert summary["cheapest_full_unlock"] is None
+    assert summary["unlocks_by_product"] == {}
+    text = json.dumps(body, ensure_ascii=False)
+    assert "节目1986" not in text
+    assert "节目2010" not in text
+    assert "amb-rec-1986" not in text
+    assert "广东移动" not in text
+    direct = client.get("/api/v1/programs/search", params={"name": "节目1986"}).json()
+    assert direct["outcome"] == "hit"
+    assert direct["records"][0]["record_id"] == "amb-rec-1986"
 
 
 def test_no_zip_or_download_route(client):

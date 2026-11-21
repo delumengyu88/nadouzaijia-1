@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from nadou.importer import TaskExportImporter
-from nadou.models import Entitlement, PlatformAlias, ProgramAlias, User
+from nadou.models import Entitlement, ProgramAlias, User
 from nadou.records import IndexRecordStore
 from nadou.text import RecordAge, TextNormalizer
 
@@ -103,8 +103,6 @@ class Seed:
         return datetime(day.year, day.month, day.day, 11, 12, 24, tzinfo=RecordAge.TZ)
 
     def _aliases(self) -> None:
-        self._ensure_alias(PlatformAlias, "示例视频OTT", "示例视频")
-        self._ensure_alias(PlatformAlias, "示例视频平台", "示例视频")
         self._ensure_alias(ProgramAlias, PROGRAM_ALIAS, PROGRAM)
 
     def _ensure_alias(self, model, alias: str, canonical: str) -> None:

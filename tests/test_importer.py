@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from nadou.importer import TaskExportImporter, TaskExportImportError
-from nadou.models import PlatformAlias, Task
+from nadou.models import Task
 from nadou.text import RecordAge
 
 HEADER = "task_id,状态,提交时间,filename,公网/专网,平台名"
@@ -45,7 +45,7 @@ def test_reimport_updates_in_place(session):
     )
     second = _import(
         session,
-        "a1b2c3d4,cancelled,2026-06-01 08:00:00,renamed.mp4,专网,另一平台",
+        "a1b2c3d4,cancelled,2026-06-01 08:00:00,renamed.mp4,专网,GD移动",
     )
     assert second.inserted == 0
     assert second.updated == 1
@@ -54,35 +54,35 @@ def test_reimport_updates_in_place(session):
     assert tasks[0].status == "cancelled"
     assert tasks[0].raw_filename == "renamed.mp4"
     assert tasks[0].network_type == "专网"
-    assert tasks[0].platform_name == "另一平台"
+    assert tasks[0].platform_name == "广东移动"
 
 
 def test_empty_columns_fall_back_to_filename(session):
-    _import(session, "t-parse,done,2026-01-02 03:04:05,公网-解析平台-电影-2026.01.02.mp4,,")
+    _import(session, "t-parse,done,2026-01-02 03:04:05,公网-GD移动-电影-2026.01.02.mp4,,")
     task = session.get(Task, "t-parse")
     assert task.network_type == "公网"
-    assert task.platform_name == "解析平台"
+    assert task.platform_name == "广东移动"
     assert task.source_unverified is False
 
 
 def test_provided_columns_win_over_filename(session):
     _import(
         session,
-        "t-col,done,2026-01-02 03:04:05,公网-解析平台-电影-2026.01.02.mp4,专网,指定平台",
+        "t-col,done,2026-01-02 03:04:05,公网-其他名字-电影-2026.01.02.mp4,专网,GD移动",
     )
     task = session.get(Task, "t-col")
     assert task.network_type == "专网"
-    assert task.platform_name == "指定平台"
+    assert task.platform_name == "广东移动"
 
 
 def test_invalid_network_does_not_fall_back(session):
     _import(
         session,
-        "t-badnet,done,2026-01-02 03:04:05,专网-解析平台-电影-2026.01.02.mp4,其他,",
+        "t-badnet,done,2026-01-02 03:04:05,公网-GD移动-电影-2026.01.02.mp4,其他,",
     )
     task = session.get(Task, "t-badnet")
     assert task.network_type is None
-    assert task.platform_name == "解析平台"
+    assert task.platform_name == "广东移动"
 
 
 def test_unknown_filename_is_unverified(session):
@@ -95,28 +95,27 @@ def test_unknown_filename_is_unverified(session):
         assert task.source_unverified is True
 
 
-def test_alias_merges_column_and_parser_output(session):
-    session.add_all(
-        [
-            PlatformAlias(alias="重庆移动百视通OTT", canonical_name="重庆移动"),
-            PlatformAlias(alias="重庆移动百视通", canonical_name="重庆移动"),
-        ]
-    )
-    session.flush()
+def test_code_map_merges_column_and_parser_output(session):
     _import(
         session,
         "\n".join(
             [
-                "t-col,done,2026-01-02 03:04:05,unknown.mp4,公网,重庆移动百视通OTT",
-                "t-parse,done,2026-01-02 03:04:05,公网-重庆移动百视通-电影-2026.01.02.mp4,,",
-                "t-wide,done,2026-01-02 03:04:05,unknown.mp4,专网,重庆移动百视通ＯＴＴ",
+                "t-col,done,2026-01-02 03:04:05,unknown.mp4,公网,GD移动",
+                "t-parse,done,2026-01-02 03:04:05,公网-GD移动-电影-2026.01.02.mp4,,",
+                "t-wide,done,2026-01-02 03:04:05,unknown.mp4,专网,ＧＤ移动",
+                "t-none,done,2026-01-02 03:04:05,unknown.mp4,公网,没有这个平台",
+                "t-many,done,2026-01-02 03:04:05,unknown.mp4,公网,双解平台",
             ]
         ),
     )
     for task_id in ("t-col", "t-parse", "t-wide"):
         task = session.get(Task, task_id)
-        assert task.platform_name == "重庆移动"
+        assert task.platform_name == "广东移动"
         assert task.source_unverified is False
+    for task_id in ("t-none", "t-many"):
+        task = session.get(Task, task_id)
+        assert task.platform_name is None
+        assert task.source_unverified is True
 
 
 def test_test_prefix_is_flagged_even_when_done(session):

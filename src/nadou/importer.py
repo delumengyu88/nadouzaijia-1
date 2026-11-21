@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from nadou.filename_parser import FilenameParser
 from nadou.models import Task
-from nadou.normalize import PlatformNormalizer
+from nadou.platform_names import PlatformNames
 from nadou.text import RecordAge, TextNormalizer
 
 
@@ -53,14 +53,13 @@ class TaskExportImporter:
         if missing:
             raise TaskExportImportError("CSV missing columns: " + ", ".join(missing))
 
-        normalizer = PlatformNormalizer.from_session(self.session)
         inserted = 0
         updated = 0
         test_rows = 0
         for line_no, row in enumerate(reader, start=2):
             if all(not (value or "").strip() for value in row.values()):
                 continue
-            created, is_test = self._upsert(row, normalizer, line_no)
+            created, is_test = self._upsert(row, line_no)
             if created:
                 inserted += 1
             else:
@@ -73,7 +72,6 @@ class TaskExportImporter:
     def _upsert(
         self,
         row: dict[str, str | None],
-        normalizer: PlatformNormalizer,
         line_no: int,
     ) -> tuple[bool, bool]:
         task_id = self._cell(row, "task_id")
@@ -97,7 +95,7 @@ class TaskExportImporter:
         else:
             network = parsed.network_type
         platform_raw = platform_cell if platform_cell else parsed.platform
-        normalized = normalizer.normalize(platform_raw)
+        normalized = PlatformNames.normalize(platform_raw)
         is_test = TestTaskFilter.excluded(filename, platform_raw, normalized.name)
 
         existing = self.session.get(Task, task_id)
@@ -110,7 +108,7 @@ class TaskExportImporter:
         existing.raw_filename = filename
         existing.network_type = network
         existing.platform_name = normalized.name
-        existing.source_unverified = normalized.unverified
+        existing.source_unverified = normalized.unrecognized
         existing.is_test = is_test
         return created, is_test
 
