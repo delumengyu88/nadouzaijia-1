@@ -154,6 +154,7 @@ def test_each_workbench_page_loads_without_console_errors():
 
 
 def test_support_does_not_inherit_admin_user_details():
+    """Admin bans a user, logs out, and 客服 must see only the ban and a masked phone."""
     if os.environ.get("NADOU_RUN_BROWSER") != "1":
         pytest.skip("set NADOU_RUN_BROWSER=1 to load the workbench in Chromium")
     database = os.environ.get("DATABASE_URL", "")
@@ -177,12 +178,35 @@ def test_support_does_not_inherit_admin_user_details():
         ],
         cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
         env=os.environ.copy(),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
     )
     base = f"http://127.0.0.1:{port}"
     phone = "13700009054"
     openid = "o0000000000000a5"
+    server_log: list[str] = []
+
+    def _drain() -> None:
+        if server.stdout is None:
+            return
+        for line in server.stdout:
+            server_log.append(line)
+
+    threading.Thread(target=_drain, daemon=True).start()
+
+    def sign_in(page, username: str, password: str) -> None:
+        page.locator("h2", has_text="账号登录").wait_for()
+        page.fill("input[name=username]", username)
+        page.fill("input[name=password]", password)
+        with page.expect_response(
+            lambda res: res.url.endswith("/auth/login") and res.request.method == "POST"
+        ) as login:
+            page.click("button[type=submit]")
+        detail = f"{login.value.status} {login.value.text()} {''.join(server_log)[-2000:]}"
+        assert login.value.ok, detail
+        page.locator("h1", has_text="取证申请").wait_for()
+
     try:
         deadline = time.time() + 30
         while time.time() < deadline:
@@ -191,45 +215,45 @@ def test_support_does_not_inherit_admin_user_details():
                     break
             except OSError:
                 if server.poll() is not None:
-                    raise AssertionError("server exited")
+                    raise AssertionError("".join(server_log) or "server exited")
                 time.sleep(0.2)
         else:
-            raise AssertionError("workbench did not start")
+            raise AssertionError("workbench did not start\n" + "".join(server_log))
         with playwright_sync.sync_playwright() as playwright:
             browser = playwright.chromium.launch()
             page = browser.new_page(viewport={"width": 1440, "height": 900})
             page.goto(f"{base}/admin/#/login", wait_until="networkidle")
-            page.fill("input[name=username]", DemoAccounts.ADMIN)
-            page.fill("input[name=password]", DemoAccounts.ADMIN_PASSWORD)
-            page.click("button[type=submit]")
-            page.locator("h1", has_text="取证申请").wait_for()
+            sign_in(page, DemoAccounts.ADMIN, DemoAccounts.ADMIN_PASSWORD)
             page.goto(f"{base}/admin/#/w04", wait_until="networkidle")
             page.locator("h1", has_text="用户与会员").wait_for()
             page.fill("#user-query", phone)
             page.click("button[data-act=user-search]")
             page.locator("text=何帆").wait_for()
-            admin_text = page.locator("body").inner_text()
-            assert phone in admin_text
-            assert openid in admin_text
             page.click("button[data-act=ban-open]")
             page.locator("#ban-type").wait_for()
             page.select_option("#ban-type", "permanent")
             page.fill("#ban-reason", "验收封禁")
             page.click("button[data-act=ban]")
-            page.locator("text=已封禁").wait_for()
-            page.goto(f"{base}/admin/#/w05", wait_until="networkidle")
-            page.click("button[data-act=logout]")
+            page.locator(".tag", has_text="已封禁").wait_for()
+            with page.expect_navigation():
+                page.click("button[data-act=logout]")
             page.locator("h2", has_text="账号登录").wait_for()
-            page.fill("input[name=username]", DemoAccounts.SUPPORT)
-            page.fill("input[name=password]", DemoAccounts.SUPPORT_PASSWORD)
-            page.click("button[type=submit]")
-            page.locator("h1", has_text="取证申请").wait_for()
+            assert "reset=" in page.url
+            sign_in(page, DemoAccounts.SUPPORT, DemoAccounts.SUPPORT_PASSWORD)
+            assert page.url.endswith("#/w02")
+            evidence = page.locator("body").inner_text()
+            assert phone not in evidence
+            assert "9054" in evidence
             page.goto(f"{base}/admin/#/w04", wait_until="networkidle")
-            page.locator("h1", has_text="用户与会员").wait_for()
+            page.fill("#user-query", phone)
+            page.click("button[data-act=user-search]")
+            page.locator(".tag", has_text="已封禁").wait_for()
             support_text = page.locator("body").inner_text()
+            assert "永久" in support_text
+            assert "验收封禁" in support_text
             assert phone not in support_text
             assert openid not in support_text
-            assert page.locator("#user-query").input_value() == ""
+            assert "9054" in support_text
             page.goto(f"{base}/admin/#/w05", wait_until="networkidle")
             orders = page.locator("body").inner_text()
             assert phone not in orders

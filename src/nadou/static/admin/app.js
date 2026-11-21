@@ -1020,8 +1020,10 @@ async function onClick(event) {
   if (act === "logout") {
     await api("/api/v1/admin/auth/logout", { method: "POST" });
     sessionStorage.removeItem("nadou-token");
-    location.replace("/admin/#/login");
-    location.reload();
+    const next = new URL("/admin/", location.origin);
+    next.searchParams.set("reset", String(Date.now()));
+    next.hash = "/login";
+    location.replace(next.href);
     return;
   }
   if (act === "evidence-filter") {
@@ -1219,7 +1221,10 @@ async function onClick(event) {
       payload.until = `${until}:00+08:00`;
     }
     const result = await api(`/api/v1/admin/users/${id}/ban`, { method: "POST", json: payload });
-    state.user = null;
+    if (result.ok) {
+      const detail = await api(`/api/v1/admin/users/${id}`);
+      state.user = detail.ok ? detail.data : null;
+    }
     await afterChange(result.ok, result.status, result.data);
     return;
   }

@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from nadou.admin.members import EntitlementBook
 from nadou.admin.phone import PhoneMask
 from nadou.models import AuditLog, Entitlement
-from tests.workbench_helpers import add_user, call
+from tests.workbench_helpers import add_order, add_user, call
 
 
 def test_phone_mask_keeps_last_four_digits():
@@ -57,6 +57,34 @@ def test_support_sees_masked_phone_and_cannot_mutate_users(workbench):
     assert listed.json()[0]["wechat_openid"] is None
     assert detail.json()["wechat_openid"] is None
     assert detail.json()["phone"].endswith("1234")
+
+
+def test_support_evidence_and_orders_hide_full_phone(workbench):
+    phone = "13700009999"
+    openid = "o-support-must-not-see"
+    user = add_user(workbench.session, workbench.clock.now, phone)
+    user.wechat_openid = openid
+    workbench.session.commit()
+    created = call(
+        workbench,
+        "POST",
+        "/api/v1/admin/evidence-requests",
+        workbench.admin_token,
+        json={"user_id": user.id, "request_type": "常规", "application_number": "QZ-MASK-1"},
+        expected=201,
+    ).json()
+    order = add_order(workbench.session, user, workbench.clock.now, "DD-MASK-1")
+    support = workbench.support_token
+    blobs = [
+        call(workbench, "GET", "/api/v1/admin/evidence-requests", support).text,
+        call(workbench, "GET", f"/api/v1/admin/evidence-requests/{created['id']}", support).text,
+        call(workbench, "GET", "/api/v1/admin/orders", support).text,
+        call(workbench, "GET", f"/api/v1/admin/orders/{order.id}", support).text,
+    ]
+    for blob in blobs:
+        assert phone not in blob
+        assert openid not in blob
+        assert "9999" in blob
     call(
         workbench,
         "POST",
