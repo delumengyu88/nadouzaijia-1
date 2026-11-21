@@ -1,3 +1,5 @@
+import csv
+import io
 from datetime import datetime
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
@@ -12,6 +14,15 @@ from nadou.admin.auth import (
     StaffDirectory,
     StaffSessions,
 )
+from nadou.admin.content import (
+    AnnouncementBook,
+    AnnouncementView,
+    ExampleBook,
+    ExampleView,
+    ProgramCatalog,
+    SplashBook,
+    SplashView,
+)
 from nadou.admin.errors import WorkbenchError
 from nadou.admin.evidence import (
     EvidenceList,
@@ -21,8 +32,9 @@ from nadou.admin.evidence import (
     EvidenceView,
     EvidenceWorkflow,
 )
-from nadou.admin.indexing import IndexStatus
-from nadou.admin.members import MemberAdmin, MemberDirectory, UserView
+from nadou.admin.indexing import CsvTaskExportSource, IndexJob, IndexRunBusy, IndexStatus
+from nadou.admin.invites import InviteBook, InviteStats, InviteView
+from nadou.admin.members import MemberAdmin, MemberDirectory, UserProfile, UserView
 from nadou.admin.orders import (
     EntitlementIssuer,
     OrderAudit,
@@ -30,18 +42,27 @@ from nadou.admin.orders import (
     OrderExport,
     OrderGrantWriter,
     OrderLookup,
+    OrderRefund,
     OrderView,
 )
 from nadou.admin.schemas import (
     AmountIn,
+    AnnouncementIn,
     BanIn,
     DeliveryIn,
     EvidenceCreateIn,
+    ExampleIn,
+    ExampleMoveIn,
     FailIn,
+    ImportIn,
+    InviteBatchIn,
     LoginIn,
     MembershipIn,
     NoteIn,
+    OnlineIn,
+    RefundIn,
     ReissueIn,
+    SplashIn,
     StaffCreateIn,
 )
 from nadou.config import get_settings
@@ -91,8 +112,9 @@ class AdminApi:
                 raise HTTPException(status_code=403, detail="admin only")
             return account
 
-        def writer(session: Session, account: StaffAccount, request: Request) -> AuditWriter:
-            return AuditWriter(session, clock(), account, ClientAddress.of(request))
+        def writer(session: Session, account: StaffAccount, request: Request | None) -> AuditWriter:
+            address = None if request is None else ClientAddress.of(request)
+            return AuditWriter(session, clock(), account, address)
 
         @app.post("/api/v1/admin/auth/login")
         def login(
@@ -203,10 +225,23 @@ class AdminApi:
         @app.get("/api/v1/admin/audit-logs")
         def audit_logs(
             limit: int = Query(default=100, ge=1, le=500),
+            actor: str | None = None,
+            object_type: str | None = None,
+            q: str | None = None,
+            created_from: datetime | None = None,
+            created_to: datetime | None = None,
             _account: StaffAccount = Depends(require_admin),
             session: Session = Depends(get_session),
         ):
-            return AuditQuery.latest(session, limit)
+            return AuditQuery.latest(
+                session,
+                limit,
+                actor=actor,
+                object_type=object_type,
+                query=q,
+                created_from=AwareInstant.parse(created_from),
+                created_to=AwareInstant.parse(created_to),
+            )
 
         @app.get("/api/v1/admin/evidence-requests")
         def list_evidence(
@@ -226,6 +261,7 @@ class AdminApi:
                 created_from=AwareInstant.parse(created_from),
                 created_to=AwareInstant.parse(created_to),
                 vip_first=vip_first,
+                reveal_phone=_account.role == "admin",
             )
 
         @app.post("/api/v1/admin/evidence-requests", status_code=201)
@@ -375,14 +411,16 @@ class AdminApi:
         @app.get("/api/v1/admin/users")
         def list_users(
             phone: str | None = None,
+            q: str | None = None,
             account: StaffAccount = Depends(current_staff),
             session: Session = Depends(get_session),
         ):
-            if not phone:
+            query = (q or phone or "").strip()
+            if not query:
                 raise HTTPException(status_code=400, detail="phone is required")
 
             def action():
-                rows = MemberDirectory(session).by_phone(phone)
+                rows = MemberDirectory(session).by_contact(query)
                 return [UserView.render(row, reveal_phone=account.role == "admin") for row in rows]
 
             return Endpoint.invoke(action)
@@ -395,7 +433,12 @@ class AdminApi:
         ):
             def action():
                 user = MemberDirectory(session).get(user_id)
-                return UserView.render(user, reveal_phone=account.role == "admin")
+                return UserProfile.detail(
+                    session,
+                    user,
+                    reveal_phone=account.role == "admin",
+                    now=clock(),
+                )
 
             return Endpoint.invoke(action)
 
@@ -466,8 +509,8 @@ class AdminApi:
         ):
             reveal = account.role == "admin"
             return [
-                OrderView.render(order, phone, reveal_phone=reveal)
-                for order, phone in OrderDirectory(session).list_orders()
+                OrderView.render(order, phone, reveal_phone=reveal, issuance=issuance)
+                for order, phone, issuance in OrderDirectory(session).list_orders()
             ]
 
         @app.get("/api/v1/admin/orders/export")
@@ -476,8 +519,8 @@ class AdminApi:
             session: Session = Depends(get_session),
         ):
             rows = [
-                OrderView.render(order, phone, reveal_phone=True)
-                for order, phone in OrderDirectory(session).list_orders()
+                OrderView.render(order, phone, reveal_phone=True, issuance=issuance)
+                for order, phone, issuance in OrderDirectory(session).list_orders()
             ]
             return Response(
                 content=OrderExport.csv(rows),
@@ -494,8 +537,10 @@ class AdminApi:
             order = OrderLookup.by_order_number(session, order_number)
             if order is None:
                 raise HTTPException(status_code=404, detail="order not found")
-            _order, phone = OrderDirectory(session).one(order)
-            return OrderView.render(order, phone, reveal_phone=account.role == "admin")
+            _order, phone, issuance = OrderDirectory(session).one(order)
+            return OrderView.render(
+                order, phone, reveal_phone=account.role == "admin", issuance=issuance
+            )
 
         @app.get("/api/v1/admin/orders/{order_id}")
         def get_order(
@@ -505,8 +550,10 @@ class AdminApi:
         ):
             def action():
                 order = OrderLookup.by_id(session, order_id)
-                _order, phone = OrderDirectory(session).one(order)
-                return OrderView.render(order, phone, reveal_phone=account.role == "admin")
+                _order, phone, issuance = OrderDirectory(session).one(order)
+                return OrderView.render(
+                    order, phone, reveal_phone=account.role == "admin", issuance=issuance
+                )
 
             return Endpoint.invoke(action)
 
@@ -531,11 +578,242 @@ class AdminApi:
                 )
                 issuance = issuer.reissue(order)
                 OrderAudit.reissue(writer(session, account, request), order, before, issuance)
-                _order, phone = OrderDirectory(session).one(order)
-                body = OrderView.render(order, phone, reveal_phone=account.role == "admin")
+                _order, phone, current = OrderDirectory(session).one(order)
+                body = OrderView.render(
+                    order, phone, reveal_phone=account.role == "admin", issuance=current
+                )
                 body["entitlement_id"] = issuance.entitlement_id
                 body["issuance_status"] = issuance.status
                 return body
+
+            return Endpoint.invoke(action)
+
+        @app.post("/api/v1/admin/orders/{order_id}/refund")
+        def refund_order(
+            order_id: str,
+            payload: RefundIn,
+            request: Request,
+            account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            def action():
+                order = OrderLookup.by_id(session, order_id)
+                OrderRefund(session, writer(session, account, request), clock()).refund(
+                    order, payload.reason
+                )
+                _order, phone, issuance = OrderDirectory(session).one(order)
+                return OrderView.render(order, phone, reveal_phone=True, issuance=issuance)
+
+            return Endpoint.invoke(action)
+
+        @app.get("/api/v1/admin/staff/locks")
+        def staff_locks(
+            _account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            return StaffDirectory.active_locks(session, clock())
+
+        @app.get("/api/v1/admin/invite-codes/stats")
+        def invite_stats(
+            _account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            return InviteStats.channels(session, clock())
+
+        @app.get("/api/v1/admin/invite-codes/export")
+        def export_invites(
+            _account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            rows = InviteBook(session, writer(session, _account, None), clock()).list_codes(
+                status=None, channel=None, query=None
+            )
+            return Response(
+                content=AdminApi._invite_csv(rows),
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=invites.csv"},
+            )
+
+        @app.get("/api/v1/admin/invite-codes")
+        def list_invites(
+            status: str | None = None,
+            channel: str | None = None,
+            q: str | None = None,
+            account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            return InviteBook(session, writer(session, account, None), clock()).list_codes(
+                status=status, channel=channel, query=q
+            )
+
+        @app.post("/api/v1/admin/invite-codes", status_code=201)
+        def create_invites(
+            payload: InviteBatchIn,
+            request: Request,
+            account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            def action():
+                now = clock()
+                rows = InviteBook(session, writer(session, account, request), now).generate(
+                    payload.count,
+                    payload.channel,
+                    AwareInstant.parse(payload.expires_at),
+                    account,
+                )
+                return [InviteView.render(row, now, None) for row in rows]
+
+            return Endpoint.invoke(action)
+
+        @app.post("/api/v1/admin/invite-codes/{code_id}/void")
+        def void_invite(
+            code_id: str,
+            request: Request,
+            account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            def action():
+                now = clock()
+                row = InviteBook(session, writer(session, account, request), now).void(
+                    code_id, account
+                )
+                phone = None
+                if row.redeemed_by:
+                    user = session.get(User, row.redeemed_by)
+                    phone = None if user is None else user.phone
+                return InviteView.render(row, now, phone)
+
+            return Endpoint.invoke(action)
+
+        @app.get("/api/v1/admin/content/splash")
+        def get_splash(
+            _account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            book = SplashBook(session, writer(session, _account, None), clock())
+            return SplashView.render(book.get())
+
+        @app.put("/api/v1/admin/content/splash")
+        def save_splash(
+            payload: SplashIn,
+            request: Request,
+            account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            def action():
+                row = SplashBook(session, writer(session, account, request), clock()).save(
+                    enabled=payload.enabled,
+                    image_name=payload.image_name,
+                    jump_label=payload.jump_label,
+                    slogan=payload.slogan,
+                )
+                return SplashView.render(row)
+
+            return Endpoint.invoke(action)
+
+        @app.get("/api/v1/admin/content/announcements")
+        def list_announcements(
+            account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            return AnnouncementBook(session, writer(session, account, None), clock()).list_rows()
+
+        @app.post("/api/v1/admin/content/announcements", status_code=201)
+        def save_announcement(
+            payload: AnnouncementIn,
+            request: Request,
+            account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            def action():
+                row = AnnouncementBook(session, writer(session, account, request), clock()).save(
+                    title=payload.title,
+                    body=payload.body,
+                    button_text=payload.button_text,
+                    jump_label=payload.jump_label,
+                    starts_at=AwareInstant.parse(payload.starts_at),
+                    ends_at=AwareInstant.parse(payload.ends_at),
+                    frequency=payload.frequency,
+                    online=payload.online,
+                    announcement_id=payload.id,
+                )
+                return AnnouncementView.render(row, clock())
+
+            return Endpoint.invoke(action)
+
+        @app.post("/api/v1/admin/content/announcements/{announcement_id}/online")
+        def announcement_online(
+            announcement_id: str,
+            payload: OnlineIn,
+            request: Request,
+            account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            def action():
+                book = AnnouncementBook(session, writer(session, account, request), clock())
+                row = book.set_online(announcement_id, payload.online)
+                return AnnouncementView.render(row, clock())
+
+            return Endpoint.invoke(action)
+
+        @app.get("/api/v1/admin/content/examples")
+        def list_examples(
+            account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            return ExampleBook(session, writer(session, account, None), clock()).list_rows()
+
+        @app.get("/api/v1/admin/content/programs")
+        def list_programs(
+            _account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            return ProgramCatalog.list_programs(session)
+
+        @app.post("/api/v1/admin/content/examples", status_code=201)
+        def add_example(
+            payload: ExampleIn,
+            request: Request,
+            account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            def action():
+                row = ExampleBook(session, writer(session, account, request), clock()).add(
+                    payload.program_name, payload.record_id
+                )
+                return ExampleView.render(row)
+
+            return Endpoint.invoke(action)
+
+        @app.post("/api/v1/admin/content/examples/{example_id}/online")
+        def example_online(
+            example_id: str,
+            payload: OnlineIn,
+            request: Request,
+            account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            def action():
+                row = ExampleBook(session, writer(session, account, request), clock()).set_online(
+                    example_id, payload.online
+                )
+                return ExampleView.render(row)
+
+            return Endpoint.invoke(action)
+
+        @app.post("/api/v1/admin/content/examples/{example_id}/move")
+        def move_example(
+            example_id: str,
+            payload: ExampleMoveIn,
+            request: Request,
+            account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            def action():
+                row = ExampleBook(session, writer(session, account, request), clock()).move(
+                    example_id, payload.direction
+                )
+                return ExampleView.render(row)
 
             return Endpoint.invoke(action)
 
@@ -544,7 +822,34 @@ class AdminApi:
             _account: StaffAccount = Depends(require_admin),
             session: Session = Depends(get_session),
         ):
-            return IndexStatus.payload(session)
+            return IndexStatus.payload(session, clock())
+
+        @app.post("/api/v1/admin/index/import")
+        def import_index(
+            payload: ImportIn,
+            request: Request,
+            account: StaffAccount = Depends(require_admin),
+            session: Session = Depends(get_session),
+        ):
+            def action():
+                try:
+                    run = IndexJob(session, CsvTaskExportSource(payload.csv), notifier, clock).run()
+                except IndexRunBusy:
+                    raise WorkbenchError(409, "index run is already active") from None
+                writer(session, account, request).write(
+                    "index_run",
+                    str(run.id),
+                    "import_index",
+                    None,
+                    {
+                        "status": run.status,
+                        "new_rows": run.new_rows,
+                        "error": run.error_summary,
+                    },
+                )
+                return IndexStatus.payload(session, clock())
+
+            return Endpoint.invoke(action)
 
     @staticmethod
     def _staff(account: StaffAccount) -> dict:
@@ -578,3 +883,22 @@ class AdminApi:
             phone=phone,
             reveal_phone=account.role == "admin",
         )
+
+    @staticmethod
+    def _invite_csv(rows: list[dict]) -> str:
+        buffer = io.StringIO()
+        writer = csv.writer(buffer, lineterminator="\n")
+        header = (
+            "code",
+            "channel",
+            "status",
+            "created_at",
+            "expires_at",
+            "redeemed_phone",
+            "redeemed_at",
+            "voided_at",
+        )
+        writer.writerow(header)
+        for row in rows:
+            writer.writerow([row.get(name) or "" for name in header])
+        return buffer.getvalue()

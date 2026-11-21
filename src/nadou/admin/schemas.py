@@ -74,3 +74,71 @@ class ReissueIn(BaseModel):
     """Empty on purpose. Tier and duration cannot be changed on reissue."""
 
     model_config = ConfigDict(extra="forbid")
+
+
+class RefundIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str
+
+
+class InviteRedeemIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+
+
+class InviteBatchIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    count: int = Field(ge=1, le=200)
+    channel: str
+    expires_at: datetime
+
+
+class SplashIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    image_name: str = ""
+    jump_label: str | None = None
+    slogan: str = ""
+
+
+class AnnouncementIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    body: str
+    button_text: str
+    jump_label: str | None = None
+    starts_at: datetime
+    ends_at: datetime
+    frequency: Literal["once", "every"]
+    online: bool = True
+    id: str | None = None
+
+
+class ExampleIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    program_name: str
+    record_id: str | None = None
+
+
+class ExampleMoveIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    direction: Literal["up", "down"]
+
+
+class OnlineIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    online: bool
+
+
+class ImportIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    csv: str

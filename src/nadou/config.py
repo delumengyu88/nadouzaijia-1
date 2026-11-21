@@ -27,6 +27,10 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("NADOU_TASK_EXPORT_PATH"),
     )
+    data_source: str = Field(
+        default="demo",
+        validation_alias=AliasChoices("NADOU_DATA_SOURCE"),
+    )
 
 
 @lru_cache

@@ -103,6 +103,10 @@ class EvidenceView:
             "vip": vip,
             "quote_amount": request.quote_amount,
             "payment_amount": request.payment_amount,
+            "program_name": request.program_name,
+            "platform_label": request.platform_label,
+            "contact_name": request.contact_name,
+            "phone": None,
         }
 
     @staticmethod
@@ -117,6 +121,7 @@ class EvidenceView:
     ) -> dict:
         body = EvidenceView.summary(request, overdue=overdue, vip=vip)
         shown = phone if reveal_phone else PhoneMask.apply(phone)
+        body["phone"] = shown
         body.update(
             {
                 "phone": shown,
@@ -129,6 +134,9 @@ class EvidenceView:
                 "refund_method": request.refund_method,
                 "refund_amount": request.refund_amount,
                 "failed_at": EvidenceView._iso(request.failed_at),
+                "record_ref": request.record_ref,
+                "organization": request.organization,
+                "requirement": request.requirement,
                 "notes": [EvidenceView.note(note) for note in notes],
             }
         )
@@ -381,6 +389,7 @@ class EvidenceList:
         created_from: datetime | None,
         created_to: datetime | None,
         vip_first: bool,
+        reveal_phone: bool = True,
     ) -> list[dict]:
         stmt = select(EvidenceRequest)
         if status:
@@ -401,14 +410,18 @@ class EvidenceList:
                 row.id,
             )
         )
-        return [
-            EvidenceView.summary(
+        phones = self._phones({row.user_id for row in rows})
+        listed = []
+        for row in rows:
+            body = EvidenceView.summary(
                 row,
                 overdue=EvidenceOverdue.is_overdue(row, self.now),
                 vip=row.user_id in vip_ids,
             )
-            for row in rows
-        ]
+            phone = phones.get(row.user_id)
+            body["phone"] = phone if reveal_phone else PhoneMask.apply(phone)
+            listed.append(body)
+        return listed
 
     def _vip_ids(self, user_ids: set[str]) -> set[str]:
         if not user_ids:
@@ -421,3 +434,9 @@ class EvidenceList:
             )
         ).all()
         return set(rows)
+
+    def _phones(self, user_ids: set[str]) -> dict[str, str | None]:
+        if not user_ids:
+            return {}
+        users = self.session.scalars(select(User).where(User.id.in_(user_ids))).all()
+        return {user.id: user.phone for user in users}

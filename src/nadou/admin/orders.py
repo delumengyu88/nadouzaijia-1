@@ -32,7 +32,13 @@ class OrderLookup:
 
 class OrderView:
     @staticmethod
-    def render(order: Order, phone: str | None, *, reveal_phone: bool) -> dict:
+    def render(
+        order: Order,
+        phone: str | None,
+        *,
+        reveal_phone: bool,
+        issuance: OrderIssuance | None = None,
+    ) -> dict:
         shown = phone if reveal_phone else PhoneMask.apply(phone)
         return {
             "id": order.id,
@@ -44,6 +50,13 @@ class OrderView:
             "amount": order.amount,
             "status": order.status,
             "created_at": order.created_at.isoformat(),
+            "client": order.client,
+            "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+            "refunded_at": order.refunded_at.isoformat() if order.refunded_at else None,
+            "refund_reason": order.refund_reason,
+            "attempts": None if issuance is None else issuance.attempts,
+            "last_error": None if issuance is None else issuance.last_error,
+            "issuance_status": None if issuance is None else issuance.status,
         }
 
 
@@ -188,18 +201,66 @@ class EntitlementIssuer:
         return row
 
 
+class OrderRefund:
+    """A refund expires the entitlement this order issued. Tier and days are not editable."""
+
+    REFUNDABLE = frozenset({"已支付", "已发放", "发放异常"})
+
+    def __init__(self, session: Session, audit: AuditWriter, now: datetime) -> None:
+        self.session = session
+        self.audit = audit
+        self.now = now
+
+    def refund(self, order: Order, reason: str) -> Order:
+        text = reason.strip()
+        if order.status not in OrderRefund.REFUNDABLE:
+            raise WorkbenchError(409, "order cannot be refunded")
+        if not text:
+            raise WorkbenchError(400, "refund reason is required")
+        if len(text) > 500:
+            raise WorkbenchError(400, "refund reason is too long")
+        issuance = self.session.scalar(
+            select(OrderIssuance).where(OrderIssuance.order_id == order.id)
+        )
+        before = {"status": order.status, "entitlement_id": None}
+        if issuance is not None and issuance.entitlement_id is not None:
+            entitlement = self.session.get(Entitlement, issuance.entitlement_id)
+            before["entitlement_id"] = issuance.entitlement_id
+            if entitlement is not None and entitlement.expires_at > self.now:
+                entitlement.expires_at = self.now
+        order.status = "已退款"
+        order.refunded_at = self.now
+        order.refund_reason = text
+        self.session.flush()
+        self.audit.write(
+            "order",
+            order.id,
+            "refund_order",
+            before,
+            {
+                "status": order.status,
+                "refund_reason": text,
+                "entitlement_id": before["entitlement_id"],
+            },
+        )
+        return order
+
+
 class OrderDirectory:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def list_orders(self) -> list[tuple[Order, str | None]]:
+    def list_orders(self) -> list[tuple[Order, str | None, OrderIssuance | None]]:
         rows = list(
             self.session.scalars(select(Order).order_by(Order.created_at.desc(), Order.id)).all()
         )
-        return [(order, self._phone(order.user_id)) for order in rows]
+        return [(order, self._phone(order.user_id), self.issuance(order)) for order in rows]
 
-    def one(self, order: Order) -> tuple[Order, str | None]:
-        return order, self._phone(order.user_id)
+    def one(self, order: Order) -> tuple[Order, str | None, OrderIssuance | None]:
+        return order, self._phone(order.user_id), self.issuance(order)
+
+    def issuance(self, order: Order) -> OrderIssuance | None:
+        return self.session.scalar(select(OrderIssuance).where(OrderIssuance.order_id == order.id))
 
     def _phone(self, user_id: str) -> str | None:
         user = self.session.get(User, user_id)

@@ -326,7 +326,7 @@ def test_counts_exclusions_and_fallbacks(session, client, clock):
     assert by_id(body)["rec-fresh"]["age_bucket"] == "lt_30"
     assert "平台乙" not in json.dumps(body)
     assert by_id(body)["rec-orphan"]["access"] == "lowres"
-    assert by_id(body)["rec-orphan"]["platform"] == "来源待核实"
+    assert by_id(body)["rec-orphan"]["platform"] == "平台未识别"
     assert by_id(body)["rec-fallback"]["access"] == "lowres"
     assert by_id(body)["rec-fallback"]["platform"] == "平台己"
     assert "checked_at" in by_id(body)["rec-fallback"]
@@ -527,7 +527,8 @@ def test_upsert_canonicalizes_program_alias(session, client, clock):
     assert by_standard["outcome"] == "hit"
     assert by_standard["records"][0]["record_id"] == by_alias["records"][0]["record_id"]
     assert by_standard["records"][0]["platform"] == "示例视频"
-    assert by_standard["records"][0]["hit_type"] == "dispute"
+    assert by_standard["records"][0]["hit_label"] == "已命中"
+    assert "dispute" not in by_standard["records"][0]
 
 
 def test_locked_summary_by_entitlement(session, client, clock):
@@ -621,6 +622,50 @@ def test_locked_summary_by_entitlement(session, client, clock):
         unknown = by_id(body)["sum-rec-unknown"]
         assert unknown["lock_reason"] == "检测时间待核实"
         assert unknown["age_bucket"] == "unknown"
+
+
+def test_subtype_does_not_add_a_platform(session, client, clock):
+    program = "平台计数节目"
+    when = at_age(clock, 200)
+    add_hit(
+        session,
+        task_id="plat-ott",
+        record_id="rec-ott",
+        program=program,
+        when=when,
+        platform="山东移动",
+        network="专网",
+        filename="专网-山东移动OTT-电影-2026.01.01.mp4",
+    )
+    add_hit(
+        session,
+        task_id="plat-iptv",
+        record_id="rec-iptv",
+        program=program,
+        when=when,
+        platform="山东移动",
+        network="专网",
+        filename="专网-山东移动IPTV-电影-2026.01.01.mp4",
+    )
+    add_hit(
+        session,
+        task_id="plat-unknown-name",
+        record_id="rec-unknown-name",
+        program=program,
+        when=when,
+        unverified=True,
+        filename="未标注平台.mp4",
+    )
+    session.commit()
+    body = client.get("/api/v1/programs/search", params={"name": program}).json()
+    assert body["platform_count"] == 1
+    assert body["unverified_source_count"] == 1
+    rows = by_id(body)
+    assert rows["rec-ott"]["platform"] == "山东移动"
+    assert rows["rec-ott"]["platform_display"] == "山东移动 · 专网 OTT"
+    assert rows["rec-iptv"]["platform_display"] == "山东移动 · 专网 IPTV"
+    assert rows["rec-unknown-name"]["platform"] == "平台未识别"
+    assert rows["rec-unknown-name"]["platform_display"] == "平台未识别"
 
 
 def test_no_zip_or_download_route(client):

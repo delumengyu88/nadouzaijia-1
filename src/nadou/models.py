@@ -73,6 +73,8 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
     phone: Mapped[str | None] = mapped_column(String(32), unique=True)
+    wechat_openid: Mapped[str | None] = mapped_column(String(64), unique=True)
+    display_name: Mapped[str | None] = mapped_column(String(64))
     ban_type: Mapped[str | None] = mapped_column(String(16))
     ban_reason: Mapped[str | None] = mapped_column(String(500))
     ban_until: Mapped[datetime | None] = mapped_column(AwareDateTime)
@@ -88,7 +90,7 @@ class Entitlement(Base):
             name="ck_entitlements_kind",
         ),
         CheckConstraint(
-            "source IS NULL OR source IN ('manual', 'order')",
+            "source IS NULL OR source IN ('manual', 'order', 'invite')",
             name="ck_entitlements_source",
         ),
     )
@@ -250,6 +252,12 @@ class EvidenceRequest(Base):
     refund_amount: Mapped[int | None] = mapped_column(Integer)
     failed_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
     overdue_notified_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+    program_name: Mapped[str | None] = mapped_column(String(200))
+    platform_label: Mapped[str | None] = mapped_column(String(200))
+    record_ref: Mapped[str | None] = mapped_column(String(64))
+    contact_name: Mapped[str | None] = mapped_column(String(64))
+    organization: Mapped[str | None] = mapped_column(String(200))
+    requirement: Mapped[str | None] = mapped_column(String(500))
     notes: Mapped[list["EvidenceNote"]] = relationship(back_populates="request")
 
 
@@ -273,7 +281,7 @@ class Order(Base):
     __tablename__ = "orders"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('待支付', '已支付', '已发放', '发放异常')",
+            "status IN ('待支付', '已支付', '已发放', '发放异常', '已退款')",
             name="ck_orders_status",
         ),
         CheckConstraint("tier IN ('regular', 'vip')", name="ck_orders_tier"),
@@ -290,6 +298,10 @@ class Order(Base):
     amount: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+    client: Mapped[str | None] = mapped_column(String(16))
+    paid_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+    refunded_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+    refund_reason: Mapped[str | None] = mapped_column(String(500))
 
 
 class OrderIssuance(Base):
@@ -352,6 +364,64 @@ class IndexAlertEpisode(Base):
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     opened_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+
+
+class InviteCode(Base):
+    __tablename__ = "invite_codes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    code: Mapped[str] = mapped_column(String(8), unique=True, nullable=False)
+    channel: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(ForeignKey("staff_accounts.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+    redeemed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    redeemed_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+    voided_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+    voided_by: Mapped[str | None] = mapped_column(String(64))
+
+
+class SplashConfig(Base):
+    __tablename__ = "splash_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    image_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    jump_label: Mapped[str | None] = mapped_column(String(200))
+    slogan: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    updated_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+
+
+class Announcement(Base):
+    __tablename__ = "announcements"
+    __table_args__ = (
+        CheckConstraint("frequency IN ('once', 'every')", name="ck_announcement_frequency"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    title: Mapped[str] = mapped_column(String(80), nullable=False)
+    body: Mapped[str] = mapped_column(String(200), nullable=False)
+    button_text: Mapped[str] = mapped_column(String(32), nullable=False)
+    jump_label: Mapped[str | None] = mapped_column(String(200))
+    starts_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+    frequency: Mapped[str] = mapped_column(String(16), nullable=False)
+    online: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+
+
+class HomepageExample(Base):
+    """At most five rows. The workbench enforces the cap."""
+
+    __tablename__ = "homepage_examples"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    program_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    record_id: Mapped[str | None] = mapped_column(String(36))
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    online: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    platform_hits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    detected_on: Mapped[datetime | None] = mapped_column(AwareDateTime)
 
 
 for _append_only in (AuditLog, EvidenceNote):

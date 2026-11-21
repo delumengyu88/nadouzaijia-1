@@ -22,8 +22,10 @@ class OpenRecordOut(BaseModel):
     can_download_report: bool
     can_download_screenshot: bool
     platform: str | None = None
+    platform_subtype: str | None = None
+    platform_display: str | None = None
     network_type: str | None = None
-    hit_type: str | None = None
+    hit_label: str | None = None
     frame_count: int | None = None
     timestamps: list[str] | None = None
     checked_at: str | None = None

@@ -68,7 +68,10 @@ def test_admin_can_manage_staff_and_read_index_status(workbench):
     listed = call(workbench, "GET", "/api/v1/admin/staff", workbench.admin_token).json()
     assert {row["username"] for row in listed} >= {"wb-admin", "wb-support", "wb-extra"}
     status = call(workbench, "GET", "/api/v1/admin/index/status", workbench.admin_token).json()
-    assert status == {"last_successful_index_at": None}
+    assert status["last_successful_index_at"] is None
+    assert status["stale"] is False
+    assert status["runs"] == []
+    assert status["unrecognized"] == []
     logs = call(workbench, "GET", "/api/v1/admin/audit-logs", workbench.admin_token).json()
     assert any(row["action"] == "create_staff" for row in logs)
     assert all("password" not in str(row) for row in logs)

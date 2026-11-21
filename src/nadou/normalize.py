@@ -7,6 +7,33 @@ from nadou.models import PlatformAlias, ProgramAlias
 from nadou.text import TextNormalizer
 
 
+class PlatformLabel:
+    """Province plus operator is the counted name. Subtype is only a display suffix."""
+
+    TOKENS = ("OTT", "IPTV", "百视通")
+
+    @staticmethod
+    def subtype(network: str | None, filename: str | None) -> str | None:
+        parts: list[str] = []
+        if network:
+            parts.append(network)
+        text = (filename or "").casefold()
+        for token in PlatformLabel.TOKENS:
+            if token.casefold() in text:
+                parts.append(token)
+        if not parts:
+            return None
+        return " ".join(parts)
+
+    @staticmethod
+    def display(name: str | None, subtype: str | None) -> str:
+        if not name:
+            return "平台未识别"
+        if subtype:
+            return f"{name} · {subtype}"
+        return name
+
+
 class NormalizedPlatform:
     def __init__(self, name: str | None, unverified: bool) -> None:
         self.name = name

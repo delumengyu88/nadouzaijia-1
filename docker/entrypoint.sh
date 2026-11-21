@@ -9,4 +9,5 @@ until alembic upgrade head; do
   fi
   sleep 1
 done
+python -m nadou seed-demo
 exec uvicorn nadou.main:app --host 0.0.0.0 --port 8000

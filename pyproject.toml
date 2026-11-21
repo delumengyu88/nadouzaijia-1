@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "httpx>=0.27",
+    "playwright>=1.49",
     "pytest>=8.3",
     "ruff>=0.8",
 ]
@@ -28,11 +29,15 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+nadou = ["static/admin/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "postgres: integration tests that require DATABASE_URL pointing at Postgres",
+    "browser: loads the workbench in a headless browser",
 ]
 
 [tool.ruff]

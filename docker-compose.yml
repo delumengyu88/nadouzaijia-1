@@ -18,6 +18,7 @@ services:
       DATABASE_URL: postgresql+psycopg://nadou:nadou_dev_password@db:5432/nadou
       APP_ENV: local
       NADOU_ALLOW_DEV_SEED: "1"
+      NADOU_DATA_SOURCE: demo
     ports:
       - "8000:8000"
     depends_on:

@@ -2,14 +2,15 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from nadou.admin.evidence import EvidenceOverdueScanner
 from nadou.admin.notify import Notifier
+from nadou.filename_parser import FilenameParser
 from nadou.importer import TaskExportImporter
-from nadou.models import IndexAlertEpisode, IndexRun, IndexRunLock
+from nadou.models import IndexAlertEpisode, IndexRun, IndexRunLock, Task
 
 
 class TaskExportUnavailable(RuntimeError):
@@ -25,6 +26,18 @@ class TaskExportSource:
 
     def fetch(self) -> str:
         raise NotImplementedError
+
+
+class CsvTaskExportSource(TaskExportSource):
+    """CSV text uploaded from the workbench. The hourly file reader stays separate."""
+
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+    def fetch(self) -> str:
+        if not self.content.strip():
+            raise TaskExportUnavailable("import file is empty")
+        return self.content
 
 
 class LocalFileTaskExportSource(TaskExportSource):
@@ -134,6 +147,42 @@ class IndexMonitor:
         )
 
 
+class IndexAlerts:
+    """Read-only rows whose platform could not be resolved. Nothing here is editable."""
+
+    LABEL = "平台未识别"
+
+    @staticmethod
+    def unrecognized(session: Session) -> list[dict]:
+        rows = list(
+            session.scalars(
+                select(Task)
+                .where(
+                    Task.is_test.is_(False),
+                    Task.status == "done",
+                    or_(Task.source_unverified.is_(True), Task.platform_name.is_(None)),
+                )
+                .order_by(Task.created_at.desc(), Task.task_id)
+            ).all()
+        )
+        listed = []
+        for task in rows:
+            parsed = FilenameParser.parse(task.raw_filename or "")
+            if parsed.network_type is None and parsed.platform is None:
+                reason = "文件名无平台字段，解析失败"
+            else:
+                reason = "无法解析或不在平台对照表中"
+            listed.append(
+                {
+                    "task_id": task.task_id,
+                    "filename": task.raw_filename,
+                    "reason": reason,
+                    "display": IndexAlerts.LABEL,
+                }
+            )
+        return listed
+
+
 class IndexStatus:
     @staticmethod
     def last_successful_at(session: Session) -> datetime | None:
@@ -142,9 +191,44 @@ class IndexStatus:
         )
 
     @staticmethod
-    def payload(session: Session) -> dict:
+    def payload(session: Session, now: datetime | None = None) -> dict:
         last = IndexStatus.last_successful_at(session)
-        return {"last_successful_index_at": last.isoformat() if last else None}
+        runs = list(
+            session.scalars(
+                select(IndexRun).order_by(IndexRun.started_at.desc(), IndexRun.id.desc()).limit(80)
+            ).all()
+        )
+        failures = 0
+        for run in runs:
+            if run.status == "success":
+                break
+            if run.status == "failed":
+                failures += 1
+        success = next((run for run in runs if run.status == "success"), None)
+        stale = False
+        if now is not None and last is not None:
+            stale = now - last > IndexMonitor.STALE_AFTER
+        latest = runs[0] if runs else None
+        return {
+            "last_successful_index_at": last.isoformat() if last else None,
+            "stale": stale,
+            "consecutive_failures": failures,
+            "last_success_new_rows": None if success is None else success.new_rows,
+            "last_run": None if latest is None else IndexStatus._run(latest),
+            "runs": [IndexStatus._run(run) for run in runs],
+            "unrecognized": IndexAlerts.unrecognized(session),
+        }
+
+    @staticmethod
+    def _run(run: IndexRun) -> dict:
+        return {
+            "id": run.id,
+            "started_at": run.started_at.isoformat(),
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            "new_rows": run.new_rows,
+            "status": run.status,
+            "error_summary": run.error_summary,
+        }
 
 
 class IndexJob:

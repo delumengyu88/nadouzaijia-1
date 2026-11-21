@@ -40,7 +40,7 @@ Ages use the Beijing calendar date of `tasks.created_at`. If that is null, use `
 | `users` | Caller of the search endpoint. `X-User-Id` is a local-only stand-in until WeChat login; it is not production authentication. |
 | `entitlements` | Active grants: `regular` / `vip` (expiry), `program_90` / `program_30` (canonical program + expiry), `screenshot` (one record id + expiry). The policy takes the widest live grant. Payment upgrade rules (suspended 普通 days, 7-day renewals) are not implemented; a grant counts when `expires_at` is in the future. |
 
-`tasks.platform_name` is null and `source_unverified` is true when the platform is still unknown. The API shows `来源待核实` only on records the caller is allowed to see. Those rows are not part of the distinct platform count. `is_test` is set when the raw filename, the raw platform, or the canonical platform starts with `test_` (case-insensitive, after full/half-width fold). Test rows are stored so a later export can clear the flag, and they never appear in search.
+`tasks.platform_name` is null and `source_unverified` is true when the platform is still unknown. The API shows `平台未识别` only on records the caller is allowed to see. Those rows still count as hits, and they are not part of the distinct platform count. `is_test` is set when the raw filename, the raw platform, or the canonical platform starts with `test_` (case-insensitive, after full/half-width fold). Test rows are stored so a later export can clear the flag, and they never appear in search.
 
 The search core stops at these tables. The workbench section adds staff, audit, evidence, order, and index-run tables. There is still no ZIP or archive table, and no endpoint returns a file or a download URL.
 
@@ -59,7 +59,7 @@ CSV header, exact names: `task_id,状态,提交时间,filename,公网/专网,平
 - `状态`: `done` / `cancelled` / `duplicate`.
 - `提交时间`: `YYYY-MM-DD HH:MM:SS` in Beijing, stored as `created_at`.
 - Network and platform columns are used when non-empty. An empty column falls back to `FilenameParser`. Each field falls back on its own.
-- The chosen platform string then goes through `PlatformNormalizer` (trim, full/half-width, casefold, alias table). Empty result → `来源待核实`.
+- The chosen platform string then goes through `PlatformNormalizer` (trim, full/half-width, casefold, alias table). Empty result → `平台未识别`.
 - A non-empty network value that is not `公网` or `专网` is not replaced by the parser.
 
 `FilenameParser` reads a leading `公网` / `专网` and the next `-` or whitespace field as the platform. `unknown.mp4`, `1905.mp4`, and `VID_...` have no network prefix and stay unknown.
@@ -95,7 +95,7 @@ Record age buckets, Beijing calendar days: `<30`, `30–89`, `90–179`, `≥180
 
 Product ids: `screenshot` (one purchase opens one ≥90-day locked record; the count is how many such records are locked), `single_program_90d`, `single_program_30d`, `membership_regular`, `membership_vip`. `single_program_30d` and `membership_vip` open both the vip and member buckets. The other three open only the member bucket. Nothing opens `evidence_only`.
 
-`platform_count` is distinct normalized platforms on counted records with a known age `≥30`. `unverified_source_count` is the number of those records marked `来源待核实`. Rows with no check time are in neither count. Outcome is `hit` when any dated record is `≥30`, `recent_only` when the only dated records are `<30`, otherwise `miss` (an unknown-age placeholder can still be listed). Cancelled, duplicate, and `test_` rows are omitted entirely.
+`platform_count` is distinct normalized platforms on counted records with a known age `≥30`. `unverified_source_count` is the number of those records marked `平台未识别`. Rows with no check time are in neither count. Outcome is `hit` when any dated record is `≥30`, `recent_only` when the only dated records are `<30`, otherwise `miss` (an unknown-age placeholder can still be listed). Cancelled, duplicate, and `test_` rows are omitted entirely.
 
 `IndexRecordStore.upsert` stores the program name only after `ProgramNormalizer` (the same fold and alias map search uses), so a later importer can pass a raw or full-width name and still match a search.
 

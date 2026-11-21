@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from nadou.admin.audit import AuditWriter
 from nadou.admin.errors import WorkbenchError
-from nadou.admin.phone import PhoneMask
-from nadou.models import Entitlement, User
+from nadou.admin.phone import OpenIdMask, PhoneMask
+from nadou.models import Entitlement, InviteCode, User
 
 
 class EntitlementBook:
@@ -14,17 +14,21 @@ class EntitlementBook:
 
     MANUAL = "manual"
     ORDER = "order"
+    INVITE = "invite"
 
     @staticmethod
     def counts_for_revenue(source: str | None) -> bool:
-        return source != EntitlementBook.MANUAL
+        return source in {None, EntitlementBook.ORDER}
 
     @staticmethod
     def revenue_entitlements(session: Session) -> list[Entitlement]:
         return list(
             session.scalars(
                 select(Entitlement).where(
-                    or_(Entitlement.source.is_(None), Entitlement.source != EntitlementBook.MANUAL)
+                    or_(
+                        Entitlement.source.is_(None),
+                        Entitlement.source == EntitlementBook.ORDER,
+                    )
                 )
             ).all()
         )
@@ -34,9 +38,12 @@ class UserView:
     @staticmethod
     def render(user: User, *, reveal_phone: bool) -> dict:
         phone = user.phone if reveal_phone else PhoneMask.apply(user.phone)
+        openid = user.wechat_openid if reveal_phone else OpenIdMask.apply(user.wechat_openid)
         return {
             "id": user.id,
             "phone": phone,
+            "wechat_openid": openid,
+            "display_name": user.display_name,
             "created_at": user.created_at.isoformat(),
             "ban_type": user.ban_type,
             "ban_reason": user.ban_reason,
@@ -56,10 +63,17 @@ class MemberDirectory:
         return user
 
     def by_phone(self, phone: str) -> list[User]:
-        number = phone.strip()
-        if not number:
+        return self.by_contact(phone)
+
+    def by_contact(self, query: str) -> list[User]:
+        text = query.strip()
+        if not text:
             raise WorkbenchError(400, "phone is required")
-        return list(self.session.scalars(select(User).where(User.phone == number)).all())
+        return list(
+            self.session.scalars(
+                select(User).where(or_(User.phone == text, User.wechat_openid == text))
+            ).all()
+        )
 
 
 class MemberAdmin:
@@ -146,6 +160,10 @@ class MemberAdmin:
                 Entitlement.user_id == user.id,
                 Entitlement.kind == tier,
                 Entitlement.expires_at > now,
+                or_(
+                    Entitlement.source.is_(None),
+                    Entitlement.source != EntitlementBook.INVITE,
+                ),
             )
             .order_by(Entitlement.expires_at.desc())
         )
@@ -186,4 +204,55 @@ class MemberAdmin:
             "kind": row.kind,
             "source": row.source,
             "expires_at": row.expires_at,
+        }
+
+
+class UserProfile:
+    @staticmethod
+    def detail(session: Session, user: User, *, reveal_phone: bool, now: datetime) -> dict:
+        body = UserView.render(user, reveal_phone=reveal_phone)
+        grants = list(
+            session.scalars(
+                select(Entitlement)
+                .where(Entitlement.user_id == user.id)
+                .order_by(Entitlement.expires_at.desc(), Entitlement.id)
+            ).all()
+        )
+        body["entitlements"] = [UserProfile._grant(row, now) for row in grants]
+        codes = list(
+            session.scalars(
+                select(InviteCode)
+                .where(InviteCode.redeemed_by == user.id)
+                .order_by(InviteCode.redeemed_at)
+            ).all()
+        )
+        body["invites"] = [
+            {
+                "code": code.code,
+                "channel": code.channel,
+                "redeemed_at": code.redeemed_at.isoformat() if code.redeemed_at else None,
+            }
+            for code in codes
+        ]
+        return body
+
+    @staticmethod
+    def _grant(row: Entitlement, now: datetime) -> dict:
+        if row.source == EntitlementBook.MANUAL:
+            source_label = "手动发放"
+        elif row.source == EntitlementBook.ORDER:
+            source_label = "订单"
+        elif row.source == EntitlementBook.INVITE:
+            source_label = "邀请码"
+        else:
+            source_label = None
+        return {
+            "id": row.id,
+            "kind": row.kind,
+            "program_name": row.program_name,
+            "record_id": row.record_id,
+            "source": row.source,
+            "source_label": source_label,
+            "expires_at": row.expires_at.isoformat(),
+            "active": row.expires_at > now,
         }

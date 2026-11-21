@@ -21,5 +21,9 @@ def test_schema_has_no_zip_or_download_tables():
         "index_runs",
         "index_run_locks",
         "index_alert_episodes",
+        "invite_codes",
+        "splash_config",
+        "announcements",
+        "homepage_examples",
     }
     assert not any("zip" in name or "download" in name or "archive" in name for name in names)

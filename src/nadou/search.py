@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from nadou.entitlements import AccessDecision, AccessGrants, EntitlementPolicy, LockedSummary
 from nadou.models import Entitlement, IndexRecord, Task, User
-from nadou.normalize import ProgramNormalizer
+from nadou.normalize import PlatformLabel, ProgramNormalizer
 from nadou.schemas import LockedRecordOut, LockedSummaryOut, OpenRecordOut, SearchOut, TierCounts
 from nadou.signed_url import SignedUrlProvider
 from nadou.text import RecordAge
@@ -22,7 +22,8 @@ class EmptyQuery(Exception):
 class ProgramSearch:
     """Search one program and filter every record for the caller."""
 
-    UNVERIFIED = "来源待核实"
+    UNVERIFIED = "平台未识别"
+    HIT_LABEL = "已命中"
     REASON_UNKNOWN_AGE = "检测时间待核实"
     _LOCKED_KEYS = ("record_id", "age_bucket", "locked", "lock_reason")
 
@@ -204,10 +205,18 @@ class ProgramSearch:
             "can_download_screenshot": decision.can_download_screenshot,
         }
         if decision.reveal_fields:
-            payload["platform"] = self.UNVERIFIED if self._unverified(task) else task.platform_name
+            if self._unverified(task):
+                payload["platform"] = self.UNVERIFIED
+                payload["platform_display"] = self.UNVERIFIED
+            else:
+                subtype = PlatformLabel.subtype(task.network_type, task.raw_filename)
+                payload["platform"] = task.platform_name
+                if subtype:
+                    payload["platform_subtype"] = subtype
+                payload["platform_display"] = PlatformLabel.display(task.platform_name, subtype)
             if task is not None and task.network_type:
                 payload["network_type"] = task.network_type
-            payload["hit_type"] = record.hit_type
+            payload["hit_label"] = ProgramSearch.HIT_LABEL
             payload["frame_count"] = record.frame_count
             payload["timestamps"] = list(record.timestamps or [])
             when = self.record_time(task, record)

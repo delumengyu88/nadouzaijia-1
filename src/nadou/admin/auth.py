@@ -93,6 +93,33 @@ class StaffDirectory:
         session.flush()
         return account
 
+    @staticmethod
+    def active_locks(session: Session, now: datetime) -> list[dict]:
+        rows = list(
+            session.scalars(
+                select(StaffLoginLock).where(StaffLoginLock.locked_until.is_not(None))
+            ).all()
+        )
+        listed = []
+        for row in rows:
+            if row.locked_until is None or row.locked_until <= now:
+                continue
+            account = session.get(StaffAccount, row.account_id)
+            if account is None:
+                continue
+            listed.append(
+                {
+                    "account_id": account.id,
+                    "username": account.username,
+                    "role": account.role,
+                    "ip": row.ip,
+                    "locked_until": row.locked_until.isoformat(),
+                    "consecutive_failures": row.consecutive_failures,
+                }
+            )
+        listed.sort(key=lambda item: item["username"])
+        return listed
+
 
 class StaffAuthenticator:
     """Five failures lock that account from that IP for 30 minutes. Other IPs are unaffected."""

@@ -77,8 +77,39 @@ class AuditView:
 
 class AuditQuery:
     @staticmethod
-    def latest(session, limit: int = 100) -> list[dict]:
-        rows = session.scalars(
-            select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit)
-        ).all()
-        return [AuditView.render(row) for row in rows]
+    def latest(
+        session,
+        limit: int = 100,
+        *,
+        actor: str | None = None,
+        object_type: str | None = None,
+        query: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+    ) -> list[dict]:
+        statement = select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        if actor:
+            statement = statement.where(AuditLog.actor_username == actor)
+        if object_type:
+            statement = statement.where(AuditLog.object_type == object_type)
+        if created_from is not None:
+            statement = statement.where(AuditLog.created_at >= created_from)
+        if created_to is not None:
+            statement = statement.where(AuditLog.created_at <= created_to)
+        rows = list(session.scalars(statement.limit(500)).all())
+        needle = (query or "").strip().casefold()
+        if needle:
+            rows = [row for row in rows if needle in AuditQuery._blob(row)]
+        return [AuditView.render(row) for row in rows[:limit]]
+
+    @staticmethod
+    def _blob(row: AuditLog) -> str:
+        parts = [
+            row.actor_username or "",
+            row.object_type,
+            row.object_id,
+            row.action,
+            "" if row.before_json is None else str(row.before_json),
+            "" if row.after_json is None else str(row.after_json),
+        ]
+        return " ".join(parts).casefold()
