@@ -8,7 +8,7 @@
 <view class="body">
   <view class="pad">
     <view class="h1">已收录平台片单检索，免费</view>
-    <view class="sub">已收录 {{platformTotal}} 个平台</view>
+    <view class="sub" wx:if="{{showPlatformTotal}}">已收录 {{platformTotal}} 个平台</view>
   </view>
   <view class="banner run" wx:if="{{banner == 'running'}}" bindtap="openRunning">
     <text>{{bannerText}}</text><text class="chev">›</text>
@@ -22,6 +22,7 @@
     <view class="hint">.xlsx，含「节目名称」列，≤500 行</view>
     <view class="btn" bindtap="start">开始查询</view>
   </view>
+  <block wx:if="{{examples.length || examplesError}}">
   <view class="sec-head">
     <text class="sec-title" bindtap="tapExamples">示例报告</text>
   </view>
@@ -41,6 +42,7 @@
     </view>
     <text class="chev">›</text>
   </view>
+  </block>
   <view class="foot-gap"></view>
 </view>
 </view>
@@ -55,14 +57,14 @@
     <view class="splash-skip" style="height: {{splashSkipHeight}}px;">跳过 {{seconds}}</view>
   </view>
 </view>
-<view class="mask" wx:if="{{showAnnounce && !showSplash}}">
+<view class="mask" wx:if="{{announcement && showAnnounce && !showSplash && !showPrivacy}}">
   <view class="dialog">
-    <view class="dialog-title">公告</view>
-    <view class="dialog-body">每月 2 日和 16 日更新片单索引。免费用户可看 ≥180 天低清记录。</view>
-    <view class="btn" bindtap="closeAnnounce">我知道了</view>
+    <view class="dialog-title">{{announcement.title}}</view>
+    <view class="dialog-body">{{announcement.body}}</view>
+    <view class="btn" bindtap="closeAnnounce">{{announcement.buttonText}}</view>
   </view>
 </view>
-<view class="mask" wx:if="{{showDone && !showAnnounce && !showSplash}}">
+<view class="mask" wx:if="{{showDone && !showAnnounce && !showSplash && !announcement}}">
   <view class="dialog">
     <view class="dialog-title">查询完成</view>
     <block wx:if="{{doneSingle}}">

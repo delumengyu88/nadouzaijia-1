@@ -2,6 +2,23 @@ var api = require('../../api/index')
 var nav = require('../../utils/nav')
 var splash = require('../../api/splash')
 var layoutSplash = require('./splash-layout').layoutSplash
+var config = require('../../config')
+var httpApi = require('../../api/http')
+
+var seenAnnounce = Object.create(null)
+var MOCK_ANNOUNCE = {
+  title: '公告',
+  body: '每月 2 日和 16 日更新片单索引。免费用户可看 ≥180 天低清记录。',
+  buttonText: '我知道了'
+}
+
+function mockMode() {
+  return (config.mode || 'mock') === 'mock'
+}
+
+function announceKey(item) {
+  return String(item.id || '') + '\n' + String(item.title || '') + '\n' + String(item.body || '')
+}
 
 function splashFrame() {
   var sys = {}
@@ -14,7 +31,7 @@ function splashFrame() {
 }
 
 Page({
-  data: { showBrand: true, title: '', examples: [], taps: 0, showSplash: false, seconds: 5, splashFailed: false },
+  data: { showBrand: true, title: '', examples: [], taps: 0, showSplash: false, seconds: 5, splashFailed: false, showPlatformTotal: false, announcement: null },
   splashVisible: function () {
     if (!splash.shouldShow(this.splashEnabled)) return false
     if (this._splashLive) return true
@@ -34,6 +51,7 @@ Page({
     } else if (this._tabHeld) {
       this.releaseTabBar()
     }
+    if (!mockMode()) this.loadHome()
   },
   onUnload: function () {
     this.clearSplashTimers()
@@ -53,8 +71,45 @@ Page({
       var frame = splashFrame()
       Object.keys(frame).forEach(function (key) { data[key] = frame[key] })
     }
+    if (mockMode()) {
+      data.showPlatformTotal = typeof home.platformTotal === 'number' && home.platformTotal > 0
+      data.announcement = home.showAnnounce ? MOCK_ANNOUNCE : null
+    } else {
+      var pub = this._public
+      data.examplesError = false
+      data.announcement = null
+      data.showAnnounce = false
+      if (!pub) {
+        data.examples = []
+        data.showPlatformTotal = false
+        data.platformTotal = ''
+      } else {
+        data.examples = pub.examples || []
+        data.showPlatformTotal = !!pub.showPlatformTotal
+        data.platformTotal = pub.showPlatformTotal ? pub.platformTotal : ''
+        var first = (pub.announcements || [])[0]
+        if (first && !seenAnnounce[announceKey(first)]) {
+          data.announcement = first
+          data.showAnnounce = true
+        }
+      }
+    }
     this.setData(data)
     nav.selectTab(this, 0)
+  },
+  loadHome: function () {
+    var self = this
+    var seq = (this._homeSeq || 0) + 1
+    this._homeSeq = seq
+    httpApi.homeContent().then(function (content) {
+      if (self._homeSeq !== seq) return
+      self._public = content
+      self.paint()
+    }, function () {
+      if (self._homeSeq !== seq) return
+      self._public = { examples: [], announcements: [], showPlatformTotal: false, platformTotal: null }
+      self.paint()
+    })
   },
   // 自定义 tabBar 画在页面之上，页内遮罩盖不住，开屏期间先藏起。
   holdTabBar: function () {
@@ -123,8 +178,13 @@ Page({
     this.paint()
   },
   closeAnnounce: function () {
-    api.markAnnounceSeen()
-    this.onShow()
+    if (mockMode()) {
+      api.markAnnounceSeen()
+      this.onShow()
+      return
+    }
+    if (this.data.announcement) seenAnnounce[announceKey(this.data.announcement)] = true
+    this.setData({ announcement: null, showAnnounce: false })
   },
   openDone: function () {
     var id = this.data.doneQueryId

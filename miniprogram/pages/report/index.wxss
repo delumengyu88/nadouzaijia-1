@@ -1,3 +1,6 @@
 /* local */
 
 .evidence-link { color: #1D4E9E; font-size: 26rpx; margin-left: 20rpx; padding: 20rpx 0; }
+.thumb.thumb-plain { background: #d5dde8; }
+.age-tag { margin-left: 12rpx; color: #1D4E9E; background: #e7f0ff; border-radius: 6rpx; padding: 0 8rpx; font-size: 20rpx; }
+.example-empty { color: #9aa3af; font-size: 26rpx; line-height: 1.6; }

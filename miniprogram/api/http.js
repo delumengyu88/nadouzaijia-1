@@ -6,6 +6,95 @@ function notReady() {
   return Promise.resolve({ ok: false, message: '服务暂不可用，请改用本地数据' })
 }
 
+function homePlatformTotal(value) {
+  if (typeof value !== 'number' || !isFinite(value) || value <= 0) return null
+  return value
+}
+
+function homeExamples(list) {
+  if (!Array.isArray(list)) return []
+  var out = []
+  list.forEach(function (item) {
+    if (!item || item.name == null || !String(item.name).trim()) return
+    out.push({
+      name: String(item.name),
+      line: item.line == null ? '' : String(item.line),
+      sub: item.sub == null ? '' : String(item.sub)
+    })
+  })
+  return out
+}
+
+function homeAnnouncements(list) {
+  if (!Array.isArray(list)) return []
+  var out = []
+  list.forEach(function (item) {
+    if (!item) return
+    var title = item.title == null ? '' : String(item.title)
+    var body = item.body == null ? '' : String(item.body)
+    if (!title && !body) return
+    var button = item.button_text == null ? '' : String(item.button_text).trim()
+    out.push({
+      id: item.id == null ? '' : String(item.id),
+      title: title,
+      body: body,
+      buttonText: button || '知道了'
+    })
+  })
+  return out
+}
+
+function emptyToNull(value) {
+  if (value == null || value === '') return null
+  return value
+}
+
+function adaptRecord(rec) {
+  if (!rec) return null
+  return {
+    record_id: rec.record_id == null ? '' : String(rec.record_id),
+    platform: rec.platform == null ? '' : String(rec.platform),
+    platform_subtype: rec.platform_subtype == null ? '' : String(rec.platform_subtype),
+    network_type: rec.network_type == null ? '' : String(rec.network_type),
+    category: rec.category == null ? '' : String(rec.category),
+    frame_count: typeof rec.frame_count === 'number' ? rec.frame_count : undefined,
+    timestamps: Array.isArray(rec.timestamps) ? rec.timestamps.map(String) : [],
+    checked_at: emptyToNull(rec.checked_at) == null ? null : String(rec.checked_at),
+    age_bucket: emptyToNull(rec.age_bucket) == null ? null : String(rec.age_bucket),
+    thumbnail_url: emptyToNull(rec.thumbnail_url) == null ? null : String(rec.thumbnail_url),
+    hd_url: emptyToNull(rec.hd_url) == null ? null : String(rec.hd_url),
+    access: emptyToNull(rec.access),
+    can_download_report: rec.can_download_report == null ? null : !!rec.can_download_report,
+    can_download_screenshot: rec.can_download_screenshot == null ? null : !!rec.can_download_screenshot,
+    locked: rec.locked == null ? null : !!rec.locked
+  }
+}
+
+function adaptExample(body) {
+  var src = body || {}
+  var records = []
+  ;(src.records || []).forEach(function (rec) {
+    var row = adaptRecord(rec)
+    if (row) records.push(row)
+  })
+  return {
+    name: src.name == null ? '' : String(src.name),
+    program_name: src.program_name == null ? '' : String(src.program_name),
+    example: true,
+    publicExample: true,
+    outcome: src.outcome || (records.length ? 'hit' : 'miss'),
+    platform_count: typeof src.platform_count === 'number' ? src.platform_count : 0,
+    unverified_source_count: typeof src.unverified_source_count === 'number' ? src.unverified_source_count : 0,
+    line: src.line == null ? '' : String(src.line),
+    sub: src.sub == null ? '' : String(src.sub),
+    records: records,
+    evidence_program_name: '',
+    evidence_platforms: [],
+    locked_summary: shape.emptySummary(),
+    locked_window: { count: 0, start: '', end: '' }
+  }
+}
+
 module.exports = {
   bootstrap: function () { state.load() },
   reset: function () { state.reset() },
@@ -49,7 +138,25 @@ module.exports = {
       return shape.sanitizeSearch(body)
     })
   },
-  exampleReport: function () { return null },
+  homeContent: function () {
+    return request('/api/v1/app/home', {}, { public: true }).then(function (body) {
+      var src = body || {}
+      var total = homePlatformTotal(src.platformTotal)
+      return {
+        platformTotal: total,
+        showPlatformTotal: total !== null,
+        examples: homeExamples(src.examples),
+        announcements: homeAnnouncements(src.announcements)
+      }
+    })
+  },
+  exampleReport: function (name) {
+    var title = String(name || '').trim()
+    if (!title) return Promise.resolve(null)
+    return request('/api/v1/app/examples/' + encodeURIComponent(title), {}, { public: true }).then(function (body) {
+      return adaptExample(body)
+    })
+  },
   programMeta: function (name) { return { name: name, type: '', year: '' } },
   tierOfAccount: function () { return state.userId() ? 'free' : 'guest' },
   checkout: function () { return notReady() },
