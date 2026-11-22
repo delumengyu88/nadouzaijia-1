@@ -14,6 +14,14 @@ function textOf(value) {
   return String(value).trim()
 }
 
+function presentLine(line, statusText) {
+  var text = line == null ? '' : String(line)
+  if (!statusText || statusText === '—') return text
+  var prefix = statusText + ' · '
+  if (text.indexOf(prefix) === 0) return text.slice(prefix.length)
+  return text
+}
+
 function presentOrder(item) {
   var source = item || {}
   var title = textOf(source.title) || '会员订单'
@@ -26,7 +34,7 @@ function presentOrder(item) {
   return {
     orderNo: source.orderNo,
     title: title,
-    line: source.line == null ? '' : String(source.line),
+    line: presentLine(source.line, statusText),
     status: source.status,
     statusText: statusText,
     isTest: source.isTest === true,

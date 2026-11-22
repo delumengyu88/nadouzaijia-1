@@ -26,8 +26,9 @@
       </view>
     </view>
   </block>
-  <view class="center-box" wx:elif="{{failed}}" bindtap="retry">
-    <view class="center-title">加载失败，点击重试</view>
+  <view class="center-box" wx:elif="{{failed}}">
+    <view class="center-title">网络异常，请重试</view>
+    <button class="btn slim" bindtap="retry">重试</button>
   </view>
   <view class="center-box" wx:elif="{{empty && live}}">
     <view class="center-title">还没有订单</view>

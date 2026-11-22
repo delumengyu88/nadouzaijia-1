@@ -74,7 +74,9 @@ var FIXTURE = [
   { orderNo: 'ND-F', title: null, line: '已结清 · ¥0 · 2026-11-19', status: null, statusText: '已结清', product: 'membership_dev', isTest: true },
   { orderNo: 'ND-G', title: null, line: ' · ¥0 · 2026-11-18', status: null, statusText: '', product: null, isTest: false },
   { orderNo: 'ND-H', title: 'VIP', line: '已发放 · ¥599 · 2026-11-21', status: 'granted', statusText: '自定义文案', product: 'membership_vip', isTest: false },
-  { orderNo: 'ND-I', title: '   ', line: '已支付 · ¥599 · 2026-11-21', status: 'paid', statusText: '已支付', product: 'membership_vip', isTest: false }
+  { orderNo: 'ND-I', title: '   ', line: '已支付 · ¥599 · 2026-11-21', status: 'paid', statusText: '已支付', product: 'membership_vip', isTest: false },
+  { orderNo: 'ND-J', title: 'VIP', line: '已发放 · 尾部不是价格', status: 'granted', statusText: '已发放', product: 'membership_vip', isTest: false },
+  { orderNo: 'ND-K', title: 'VIP', line: '请原样保留这段说明', status: 'paid', statusText: '已支付', product: 'membership_vip', isTest: false }
 ]
 
 function row(list, no) {
@@ -93,7 +95,9 @@ async function main() {
   var source = fs.readFileSync(path.join(root, 'index.js'), 'utf8')
   assert(wxml.indexOf('还没有订单') !== -1)
   assert(wxml.indexOf('去开通会员') !== -1)
-  assert(wxml.indexOf('加载失败，点击重试') !== -1)
+  assert(wxml.indexOf('网络异常，请重试') !== -1)
+  assert(/<button\b[^>]*bindtap="retry"[^>]*>重试<\/button>/.test(wxml), 'retry is a button')
+  assert(wxml.indexOf('加载失败，点击重试') === -1)
   assert(wxml.indexOf('暂无订单') !== -1)
   assert(wxml.indexOf('>测试<') !== -1)
   assert(wxml.indexOf('联系客服') !== -1)
@@ -150,12 +154,12 @@ async function main() {
   assert.strictEqual(orders.data.failed, false)
   assert.strictEqual(orders.data.empty, false)
   assert.deepStrictEqual(orders.data.rows.map(function (item) { return item.orderNo }), [
-    'ND-A', 'ND-B', 'ND-C', 'ND-D', 'ND-E', 'ND-F', 'ND-G', 'ND-H', 'ND-I'
+    'ND-A', 'ND-B', 'ND-C', 'ND-D', 'ND-E', 'ND-F', 'ND-G', 'ND-H', 'ND-I', 'ND-J', 'ND-K'
   ])
 
   var pendingRow = row(orders.data.rows, 'ND-A')
   assert.strictEqual(pendingRow.title, '支付测试')
-  assert.strictEqual(pendingRow.line, '待支付 · ¥0.01 · 2026-11-22')
+  assert.strictEqual(pendingRow.line, '¥0.01 · 2026-11-22')
   assert.strictEqual(pendingRow.status, 'pending')
   assert.strictEqual(pendingRow.statusText, '待支付')
   assert.strictEqual(pendingRow.statusKind, 'pending')
@@ -164,28 +168,33 @@ async function main() {
 
   var paid = row(orders.data.rows, 'ND-B')
   assert.strictEqual(paid.title, LONG)
+  assert.strictEqual(paid.line, '¥599 · 2026-11-21')
   assert.strictEqual(paid.status, 'paid')
   assert.strictEqual(paid.statusText, '已支付')
   assert.strictEqual(paid.statusKind, '')
   assert.strictEqual(paid.isTest, false)
 
   var granted = row(orders.data.rows, 'ND-C')
+  assert.strictEqual(granted.line, '¥599 · 2026-11-21')
   assert.strictEqual(granted.status, 'granted')
   assert.strictEqual(granted.statusText, '已发放')
   assert.strictEqual(granted.statusKind, 'granted')
 
   var broken = row(orders.data.rows, 'ND-D')
+  assert.strictEqual(broken.line, '¥599 · 2026-11-21')
   assert.strictEqual(broken.status, 'grant_error')
   assert.strictEqual(broken.statusText, '发放异常')
   assert.strictEqual(broken.statusKind, 'error')
   assert.strictEqual(broken.service, true)
 
   var refunded = row(orders.data.rows, 'ND-E')
+  assert.strictEqual(refunded.line, '¥299 · 2026-11-20')
   assert.strictEqual(refunded.status, 'refunded')
   assert.strictEqual(refunded.statusText, '已退款')
   assert.strictEqual(refunded.statusKind, 'refunded')
 
   var missingTitle = row(orders.data.rows, 'ND-F')
+  assert.strictEqual(missingTitle.line, '¥0 · 2026-11-19')
   assert.strictEqual(missingTitle.title, '会员订单')
   assert.strictEqual(missingTitle.status, null)
   assert.strictEqual(missingTitle.statusText, '已结清')
@@ -194,6 +203,7 @@ async function main() {
   assert(JSON.stringify(missingTitle).indexOf('membership_dev') === -1)
 
   var unknown = row(orders.data.rows, 'ND-G')
+  assert.strictEqual(unknown.line, ' · ¥0 · 2026-11-18')
   assert.strictEqual(unknown.title, '会员订单')
   assert.strictEqual(unknown.status, null)
   assert.strictEqual(unknown.statusText, '—')
@@ -201,12 +211,16 @@ async function main() {
   assert.strictEqual(unknown.isTest, false)
 
   var custom = row(orders.data.rows, 'ND-H')
+  assert.strictEqual(custom.line, '已发放 · ¥599 · 2026-11-21')
   assert.strictEqual(custom.status, 'granted')
   assert.strictEqual(custom.statusText, '自定义文案')
   assert.strictEqual(custom.statusKind, 'granted')
 
   var blankTitle = row(orders.data.rows, 'ND-I')
+  assert.strictEqual(blankTitle.line, '¥599 · 2026-11-21')
   assert.strictEqual(blankTitle.title, '会员订单')
+  assert.strictEqual(row(orders.data.rows, 'ND-J').line, '尾部不是价格')
+  assert.strictEqual(row(orders.data.rows, 'ND-K').line, '请原样保留这段说明')
   assert.strictEqual(orders.data.rows.filter(function (item) { return item.isTest }).length, 2)
   orders.open({ currentTarget: { dataset: { id: 'ND-A' } } })
   assert.strictEqual(navigated.length, 0, 'live list does not open the pay page')
