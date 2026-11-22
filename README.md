@@ -99,6 +99,32 @@ NADOU_TASK_EXPORT_PATH=./export.csv python -m nadou index-run
 
 `NADOU_TASK_EXPORT_PATH` is a local CSV. DingTalk alerts use `NADOU_DINGTALK_WEBHOOK_URL` and `NADOU_DINGTALK_WEBHOOK_SECRET` when both are set. Leave them empty to disable alerts. Do not commit real values.
 
+## 创建第一个工作台管理员
+
+生产库的 `staff_accounts` 一开始是空的。数据库迁移完成之后，在服务器上创建管理员。连接用已经配置好的 `DATABASE_URL`。这个命令不读取 `NADOU_ALLOW_DEV_SEED`，也不写入演示账号。
+
+交互式输入密码两次，输入时不会回显：
+
+```bash
+python -m nadou create-admin <用户名>
+```
+
+脚本从标准输入读一行密码。不要把密码写在命令行参数里：
+
+```bash
+python -m nadou create-admin <用户名> < /path/to/password-file
+```
+
+生成随机密码，并且只在终端打印一次：
+
+```bash
+python -m nadou create-admin <用户名> --generate
+```
+
+密码至少 12 个字符，最长 128 个字符。用户名已存在时命令失败退出，不会改掉原来的密码。只有加上 `--reset-password` 才会重置这个管理员的密码，旧密码随即不能登录。账号还不存在时，`--reset-password` 同样失败，不会顺便新建。同名的客服账号不会被这个命令改掉。审计记录只写下账号名和角色。
+
+不要把真实用户名、密码、地址或数据库连接写进仓库。
+
 ## Tests
 
 ```bash

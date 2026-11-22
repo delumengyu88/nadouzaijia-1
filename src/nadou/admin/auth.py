@@ -94,6 +94,20 @@ class StaffDirectory:
         return account
 
     @staticmethod
+    def reset_password(session: Session, username: str, password: str) -> StaffAccount:
+        name = username.strip()
+        if not name or len(name) > 64 or any(char.isspace() for char in name):
+            raise WorkbenchError(400, "username is required")
+        if len(password) < 8 or len(password) > 128:
+            raise WorkbenchError(400, "password must be 8 to 128 characters")
+        account = session.scalar(select(StaffAccount).where(StaffAccount.username == name))
+        if account is None:
+            raise WorkbenchError(404, "username not found")
+        account.password_hash = PasswordHasher.hash(password)
+        session.flush()
+        return account
+
+    @staticmethod
     def active_locks(session: Session, now: datetime) -> list[dict]:
         rows = list(
             session.scalars(
