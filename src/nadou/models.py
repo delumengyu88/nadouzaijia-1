@@ -145,6 +145,7 @@ class Task(Base):
     platform_subtype: Mapped[str | None] = mapped_column(String(32))
     source_unverified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    approved_hitlist_sha256: Mapped[str | None] = mapped_column(String(64))
 
 
 class ReviewProgramTitle(Base):
@@ -175,6 +176,7 @@ class IndexRecord(Base):
     program_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     program_name_raw: Mapped[str] = mapped_column(String(200), nullable=False)
     hit_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    hitlist_sha256: Mapped[str | None] = mapped_column(String(64))
     category: Mapped[str | None] = mapped_column(String(64))
     frame_count: Mapped[int] = mapped_column(Integer, nullable=False)
     timestamps: Mapped[list[str]] = mapped_column(JSON, nullable=False)
@@ -422,7 +424,7 @@ class QueryProgram(Base):
     __table_args__ = (
         UniqueConstraint("query_id", "position", name="uq_query_program_position"),
         CheckConstraint(
-            "resolution IN ('exact', 'alias', 'manual', 'miss', 'pending', 'failed')",
+            "resolution IN ('exact', 'alias', 'manual', 'miss', 'pending', 'failed', 'unverified')",
             name="ck_query_program_resolution",
         ),
     )

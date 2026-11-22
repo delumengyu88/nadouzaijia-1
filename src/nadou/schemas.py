@@ -74,7 +74,7 @@ class PlatformGroupOut(BaseModel):
 
 class SearchOut(BaseModel):
     program_name: str
-    outcome: Literal["hit", "miss", "recent_only"]
+    outcome: Literal["hit", "miss", "recent_only", "unverified"]
     platform_count: int
     unverified_source_count: int
     locked_summary: LockedSummaryOut

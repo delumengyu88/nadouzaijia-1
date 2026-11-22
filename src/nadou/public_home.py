@@ -8,7 +8,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from nadou.config import get_settings
 from nadou.entitlements import EntitlementPolicy
+from nadou.importer import TestTaskFilter
 from nadou.models import Announcement, HomepageExample, IndexRecord, Task
 from nadou.normalize import ProgramNormalizer
 from nadou.search import ProgramSearch
@@ -62,7 +64,10 @@ class PublicHome:
     def examples(session: Session, now: datetime) -> list[dict]:
         cards = []
         for row in PublicHome._online_examples(session):
-            summary = PublicHome._summary(PublicHome._reportable(session, row.program_name), now)
+            records = PublicHome._reportable(session, row.program_name)
+            if not get_settings().demo_data and not records:
+                continue
+            summary = PublicHome._summary(records, now)
             cards.append({"name": row.program_name, "line": summary["line"], "sub": summary["sub"]})
         return cards
 
@@ -72,6 +77,8 @@ class PublicHome:
         if chosen is None:
             return None
         rows = PublicHome._reportable(session, chosen.program_name)
+        if not get_settings().demo_data and not rows:
+            return None
         summary = PublicHome._summary(rows, now)
         # Same rows as line/sub. Under 30 days is the forensic bucket: no grant
         # reveals it, so a public report omits the row instead of listing it.
@@ -106,15 +113,23 @@ class PublicHome:
         date_generated are not part of this census; those filters apply only
         when a date is shown on an example.
         """
-        tasks = session.scalars(
-            select(Task).where(
-                Task.task_id.in_(
-                    select(IndexRecord.task_id).where(IndexRecord.hit_type == "consensus")
-                )
-            )
-        ).all()
+        matching = select(IndexRecord.task_id).where(IndexRecord.hit_type == "consensus")
+        if not get_settings().demo_data:
+            matching = matching.where(
+                IndexRecord.task_id == Task.task_id,
+                IndexRecord.hitlist_sha256 == Task.approved_hitlist_sha256,
+                IndexRecord.date_generated.is_(False),
+                (
+                    Task.created_at.is_not(None)
+                    | Task.file_uploaded_at.is_not(None)
+                    | IndexRecord.uploaded_at.is_not(None)
+                ),
+            ).correlate(Task)
+        tasks = session.scalars(select(Task).where(Task.task_id.in_(matching))).all()
         keys = set()
         for task in tasks:
+            if not get_settings().demo_data and not TestTaskFilter.commercial_task(task):
+                continue
             key = PublicHome.countable_platform(task)
             if key is not None:
                 keys.add(key)
@@ -180,7 +195,7 @@ class PublicHome:
         kept: list[tuple[IndexRecord, Task | None]] = []
         for record in records:
             task = tasks.get(record.task_id)
-            if not ProgramSearch.confirmed(record) or not ProgramSearch.included(task):
+            if not ProgramSearch.visible(record, task):
                 continue
             if not ProgramSearch.reportable(record):
                 continue

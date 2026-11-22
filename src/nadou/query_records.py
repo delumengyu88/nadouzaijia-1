@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from nadou.auth import UserSessions
+from nadou.config import get_settings
 from nadou.entitlements import EntitlementPolicy
 from nadou.models import Entitlement, IndexRecord, MemberQuery, QueryProgram, Task, User
 from nadou.normalize import ProgramNormalizer
@@ -59,6 +60,7 @@ class ResultSummary:
     MISS_LINE = "当前索引未收录该节目名。"
     RECENT_LINE = "有最新记录，可委托取证"
     FAIL_LINE = "查询失败"
+    UNVERIFIED_LINE = "数据待核验"
     PENDING_LINE = "查询中"
     MAX_NAMES = 500
     NAME_LIMIT = 200
@@ -106,6 +108,8 @@ class ResultSummary:
         """
         canonical = ProgramNormalizer.canonical(raw_name)
         if not canonical or not ProgramTitleGuard.is_billable(canonical):
+            if ProgramSearch.empty_outcome() == "unverified":
+                return "unverified", ResultSummary.UNVERIFIED_LINE, canonical
             return "miss", ResultSummary.MISS_LINE, canonical
         records = list(
             session.scalars(select(IndexRecord).where(IndexRecord.program_name == canonical)).all()
@@ -117,7 +121,7 @@ class ResultSummary:
         platforms: set[tuple[str, str]] = set()
         for record in records:
             task = tasks.get(record.task_id)
-            if not ProgramSearch.included(task) or not ProgramSearch.confirmed(record):
+            if not ProgramSearch.visible(record, task):
                 continue
             if not ProgramSearch.reportable(record):
                 continue
@@ -138,7 +142,16 @@ class ResultSummary:
             return "exact", detail, canonical
         if any_recent:
             return "exact", ResultSummary.RECENT_LINE, canonical
+        if ProgramSearch.empty_outcome() == "unverified":
+            return "unverified", ResultSummary.UNVERIFIED_LINE, canonical
         return "miss", ResultSummary.MISS_LINE, canonical
+
+    @staticmethod
+    def display_status(session: Session, program: QueryProgram, now) -> tuple[str, str | None]:
+        if not get_settings().demo_data and program.resolution not in {"pending", "failed"}:
+            resolution, detail, _ = ResultSummary.assess(session, program.uploaded_name, now)
+            return resolution, detail
+        return program.resolution, program.detail
 
     @staticmethod
     def _tasks(session: Session, task_ids: set[str]) -> dict[str, Task]:
@@ -162,7 +175,7 @@ class ResultSummary:
         kept: list[tuple[IndexRecord, Task | None]] = []
         for record in records:
             task = tasks.get(record.task_id)
-            if not ProgramSearch.included(task) or not ProgramSearch.confirmed(record):
+            if not ProgramSearch.visible(record, task):
                 continue
             if not ProgramSearch.reportable(record):
                 continue
@@ -203,6 +216,8 @@ class ResultSummary:
     def flags(resolution: str) -> tuple[str, str, bool, bool, bool]:
         if resolution == "pending":
             return ResultSummary.PENDING_LINE, "bad", False, False, False
+        if resolution == "unverified":
+            return "待核验", "muted", False, False, False
         if resolution == "failed":
             return "失败", "bad", False, False, True
         if resolution in ResultSummary.HIT_RESOLUTIONS:
@@ -213,6 +228,8 @@ class ResultSummary:
     def item_line(resolution: str, detail: str | None) -> str:
         if resolution == "pending":
             return ResultSummary.PENDING_LINE
+        if resolution == "unverified":
+            return ResultSummary.UNVERIFIED_LINE
         if resolution == "failed":
             return detail or ResultSummary.FAIL_LINE
         if resolution == "miss":
@@ -265,7 +282,7 @@ class QueryRecords:
             limit: int = Query(default=QueryRecords.DEFAULT_LIMIT, ge=1, le=QueryRecords.MAX_LIMIT),
             offset: int = Query(default=0, ge=0),
         ):
-            return QueryRecords.list_for(session, user, limit, offset)
+            return QueryRecords.list_for(session, user, limit, offset, clock())
 
         @app.get("/api/v1/queries/{query_id}")
         def get_query(
@@ -321,7 +338,7 @@ class QueryRecords:
         return QueryRecords._detail(session, user, query, now)
 
     @staticmethod
-    def list_for(session: Session, user: User, limit: int, offset: int) -> dict:
+    def list_for(session: Session, user: User, limit: int, offset: int, now) -> dict:
         owned = MemberQuery.user_id == user.id
         total = session.scalar(
             select(func.count())
@@ -343,16 +360,15 @@ class QueryRecords:
         ).all()
         items = []
         for program, query in rows:
-            badge, badge_cls, _hit, _missed, _failed = ResultSummary.flags(program.resolution)
+            resolution, detail = ResultSummary.display_status(session, program, now)
+            badge, badge_cls, _hit, _missed, _failed = ResultSummary.flags(resolution)
             items.append(
                 {
                     "id": query.id,
                     "name": program.uploaded_name,
                     "badge": badge,
                     "badgeCls": badge_cls,
-                    "line": ResultSummary.list_line(
-                        query.created_at, program.resolution, program.detail
-                    ),
+                    "line": ResultSummary.list_line(query.created_at, resolution, detail),
                 }
             )
         return {"items": items, "total": int(total or 0), "limit": limit, "offset": offset}
@@ -438,6 +454,9 @@ class QueryRecords:
             head = ""
         elif not finished:
             head = f"已完成 {done_count} / {total}"
+        elif any(item["unverified"] for item in items):
+            unverified = sum(1 for item in items if item["unverified"])
+            head = f"共 {total} 个｜命中 {hits}｜未命中 {misses}｜待核验 {unverified}｜失败 {fails}"
         elif fails == 0 and hits == 0:
             head = f"共 {total} 条，均未命中。"
         else:
@@ -470,11 +489,14 @@ class QueryRecords:
 
     @staticmethod
     def _item(session: Session, user_id: str, program: QueryProgram, now) -> dict:
-        badge, badge_cls, hit, missed, failed = ResultSummary.flags(program.resolution)
+        resolution, detail = ResultSummary.display_status(session, program, now)
+        badge, badge_cls, hit, missed, failed = ResultSummary.flags(resolution)
         evidence_name = None
         evidence_platform = None
-        if program.resolution in ResultSummary.HIT_RESOLUTIONS:
-            canonical = program.matched_name or ProgramNormalizer.canonical(program.uploaded_name)
+        if resolution in ResultSummary.HIT_RESOLUTIONS:
+            canonical = ProgramNormalizer.canonical(program.uploaded_name)
+            if get_settings().demo_data:
+                canonical = program.matched_name or canonical
             evidence_name, evidence_platform = ResultSummary.evidence(
                 session, user_id, canonical, now
             )
@@ -482,9 +504,10 @@ class QueryRecords:
             "name": program.uploaded_name,
             "badge": badge,
             "badgeCls": badge_cls,
-            "line": ResultSummary.item_line(program.resolution, program.detail),
+            "line": ResultSummary.item_line(resolution, detail),
             "hit": hit,
             "missed": missed,
+            "unverified": resolution == "unverified",
             "failed": failed,
             "evidenceName": evidence_name,
             "evidencePlatform": evidence_platform,
