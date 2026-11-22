@@ -11,11 +11,18 @@ class QueryGuard {
   static now() { return Date.now() }
   static timeoutMs() { return 60000 }
   static timeoutText() { return '查询超时，请重试' }
+  static networkText() { return '网络异常，请重试' }
   static expire(job) {
     var pending = job && job.pending
     if (!pending || QueryGuard.now() - pending.sentAt < QueryGuard.timeoutMs()) return
-    pending.item.error = QueryGuard.timeoutText()
-    pending.item.timedOut = true
+    // Stop the whole queue. Marking only the in-flight row would let the next
+    // tick start another title, so the timeout banner would never appear.
+    job.items.forEach(function (item) {
+      if (item.body || item.error) return
+      item.error = QueryGuard.timeoutText()
+      item.timedOut = true
+      item.network = false
+    })
     job.pending = null
   }
   static send(name) {
@@ -53,37 +60,63 @@ function view(job) {
   var misses = rows.filter(function (r) { return r.missed }).length
   var fails = rows.filter(function (r) { return r.failed }).length
   var timedOut = job.items.some(function (item) { return item.timedOut })
+  var network = job.items.some(function (item) { return item.network })
+  var progressed = job.items.filter(function (item) { return item.body }).length
+  // Network failures still settle the row, so calibration and retries can see a
+  // finished job, but they do not count as progress and do not open the results list.
   var done = finished === rows.length
-  return { id: job.id, queued: !job.started, running: !!job.started && !done, done: done,
-    percent: Math.round(finished / rows.length * 100), items: rows,
-    head: done ? '共 ' + rows.length + ' 个｜命中 ' + hits + '｜未命中 ' + misses + '｜失败 ' + fails : '已完成 ' + finished + ' / ' + rows.length,
+  var count = network ? progressed : finished
+  return { id: job.id, queued: !job.started && !network, running: !!job.started && !done && !network, done: done,
+    networkError: network, showNetworkRetry: network,
+    percent: rows.length ? Math.round(count / rows.length * 100) : 0, items: rows,
+    head: done && !network ? '共 ' + rows.length + ' 个｜命中 ' + hits + '｜未命中 ' + misses + '｜失败 ' + fails : '已完成 ' + count + ' / ' + rows.length,
     allFail: done && fails === rows.length, showFailBanner: done && fails > 0,
-    failBanner: timedOut ? QueryGuard.timeoutText() : fails === rows.length ? '全部查询失败，请重试。' : '部分查询失败，请重试。',
+    failBanner: network ? QueryGuard.networkText() : timedOut ? QueryGuard.timeoutText() : fails === rows.length ? '全部查询失败，请重试。' : '部分查询失败，请重试。',
     showRetryAll: done && fails > 0, itemRetry: true }
+}
+function networkHeld(job) {
+  return !!(job && job.items.some(function (item) { return item.network }))
+}
+function applyFailure(item, error) {
+  var message = (error && error.message) || '查询失败，请重试'
+  item.error = message
+  item.network = message === QueryGuard.networkText()
+  item.timedOut = false
 }
 function advance(id) {
   var job = currentJobs()[id]
   QueryGuard.expire(job)
-  if (!job || job.pending) return view(job)
+  if (!job || job.pending || networkHeld(job)) return view(job)
   var item = job.items.filter(function (row) { return !row.body && !row.error })[0]
   if (!item) return view(job)
   job.started = true
   var pending = { item: item, sentAt: QueryGuard.now() }
   job.pending = pending
   // Capture the caller before awaiting; account changes never share results.
-  // A late answer from a timed-out attempt is dropped, so a retry never runs twice.
+  // A late answer is applied only while this attempt is still the active one,
+  // so a timed-out or retried request cannot run twice or overwrite the new one.
   QueryGuard.send(item.name).then(function (body) {
-    if (job.pending === pending) item.body = body
+    if (job.pending !== pending) return
+    if (body) {
+      item.body = body
+      item.error = ''
+      item.network = false
+      item.timedOut = false
+    } else applyFailure(item, new Error('查询失败，请重试'))
   }, function (error) {
-    if (job.pending === pending) item.error = (error && error.message) || '查询失败，请重试'
+    if (job.pending === pending) applyFailure(item, error)
   }).then(function () { if (job.pending === pending) job.pending = null })
   return view(job)
 }
 function retry(id, name) {
   var job = currentJobs()[id]
-  if (!job) return null
+  if (!job || job.pending) return view(job)
   job.items.forEach(function (item) {
-    if (item.error && (!name || item.name === name)) { item.error = ''; item.timedOut = false }
+    if (item.error && (!name || item.name === name)) {
+      item.error = ''
+      item.timedOut = false
+      item.network = false
+    }
   })
   return advance(id)
 }

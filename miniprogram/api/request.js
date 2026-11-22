@@ -24,10 +24,12 @@ module.exports = function (path, data, options) {
             reject(new Error(res.statusCode === 401 ? '请先登录' : '服务暂不可用'))
           }
         },
-        fail: function () { reject(new Error('网络异常，请稍后再试')) }
+        // Keep this sentence identical to QueryGuard.networkText(); the results page
+        // matches it to stop on the current progress and offer retry.
+        fail: function () { reject(new Error('网络异常，请重试')) }
       })
     } catch (error) {
-      reject(new Error('网络异常，请稍后再试'))
+      reject(new Error('网络异常，请重试'))
     }
   })
 }

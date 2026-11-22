@@ -44,18 +44,18 @@ Page({
   },
   refresh: function () {
     var current = api.getQuery(this.id)
-    this.finished = !current || current.done
+    this.finished = !current || current.done || current.networkError
     if (this.finished) this.stop()
     if (current && current.done) api.markQuerySeen(this.id)
     if (config.calibrating) {
       this.setData({ calibrating: true, title: '数据校准中', head: '', items: [],
-        queued: false, running: false, done: true, percent: 0,
-        showFailBanner: false, showRetryAll: false, allFail: false })
+        queued: false, running: false, done: true, percent: 0, networkError: false,
+        showFailBanner: false, showRetryAll: false, allFail: false, showNetworkRetry: false })
       return
     }
     this.setData({ calibrating: false, title: '查询结果' })
     if (!current) {
-      this.setData({ done: true, queued: false, running: false, items: [], head: '查询记录不可用，请重新查询。' })
+      this.setData({ done: true, queued: false, running: false, networkError: false, showNetworkRetry: false, items: [], head: '查询记录不可用，请重新查询。' })
       this.stop()
       return
     }
