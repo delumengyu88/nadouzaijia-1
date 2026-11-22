@@ -286,6 +286,7 @@ class EvidenceRequest(Base):
     platform_label: Mapped[str | None] = mapped_column(String(200))
     record_ref: Mapped[str | None] = mapped_column(String(64))
     contact_name: Mapped[str | None] = mapped_column(String(64))
+    contact_phone: Mapped[str | None] = mapped_column(String(32))
     organization: Mapped[str | None] = mapped_column(String(200))
     requirement: Mapped[str | None] = mapped_column(String(500))
     notes: Mapped[list["EvidenceNote"]] = relationship(back_populates="request")
@@ -323,7 +324,7 @@ class Order(Base):
         ),
         CheckConstraint(
             "product IS NULL OR product IN "
-            "('membership_regular', 'membership_vip', 'membership_test')",
+            "('membership_regular', 'membership_vip', 'membership_test', 'membership_dev')",
             name="ck_orders_product",
         ),
         UniqueConstraint("wechat_transaction_id", name="uq_orders_wechat_transaction_id"),

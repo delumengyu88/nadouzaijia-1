@@ -1,4 +1,5 @@
 import hashlib
+import ipaddress
 import secrets
 from datetime import datetime, timedelta
 from uuid import uuid4
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 from nadou.admin.audit import AuditWriter
 from nadou.admin.errors import WorkbenchError
 from nadou.admin.passwords import PasswordHasher
+from nadou.config import TrustedProxies, get_settings
 from nadou.models import StaffAccount, StaffLoginLock, StaffSession
 
 
@@ -310,9 +312,39 @@ class RequestToken:
 
 
 class ClientAddress:
+    """Direct peer, or X-Forwarded-For when that peer is a configured trusted proxy."""
+
     @staticmethod
     def of(request) -> str:
         client = request.client
         if client is None or not client.host:
             return "unknown"
-        return client.host
+        peer = client.host
+        if not ClientAddress._trusted(peer):
+            return peer
+        forwarded = ClientAddress._forwarded(request.headers.get("x-forwarded-for"))
+        if forwarded is None:
+            return peer
+        return forwarded
+
+    @staticmethod
+    def _trusted(peer: str) -> bool:
+        try:
+            address = ipaddress.ip_address(peer)
+        except ValueError:
+            return False
+        networks = TrustedProxies.parse(get_settings().trusted_proxies)
+        return any(address in network for network in networks)
+
+    @staticmethod
+    def _forwarded(header: str | None) -> str | None:
+        if not header:
+            return None
+        rightmost = header.split(",")[-1].strip()
+        if not rightmost:
+            return None
+        try:
+            ipaddress.ip_address(rightmost)
+        except ValueError:
+            return None
+        return rightmost
