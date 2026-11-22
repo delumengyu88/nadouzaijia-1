@@ -10,20 +10,22 @@ function findRow(id) {
   return found
 }
 
-function toRow(rec, programName) {
-  var extra = findRow(rec.record_id) || {}
+function toRow(rec, programName, mock) {
+  var extra = mock ? (findRow(rec.record_id) || {}) : {}
   var platform = rec.platform || extra.platform
   var unknown = !platform || platform === '平台未识别'
   return {
     id: rec.record_id,
+    mock: mock,
+    image: /^https:\/\//.test(rec.thumbnail_url || '') ? rec.thumbnail_url : '',
     title: extra.title || programName,
     platform: unknown ? '平台未识别' : platform,
     unknown: unknown,
     sub: unknown ? '' : (rec.platform_subtype || extra.sub || ''),
     category: rec.category || '',
-    time: extra.time || '',
-    clock: extra.clock || '14:22',
-    date: extra.date || '',
+    time: (rec.timestamps || [])[0] || extra.time || '',
+    clock: rec.checked_at ? rec.checked_at.slice(11, 16) : extra.clock || '',
+    date: rec.checked_at ? rec.checked_at.slice(0, 10) : extra.date || '',
     badge: extra.low || rec.access === 'lowres' ? '低清' : '高清',
     low: !!(extra.low || rec.access === 'lowres'),
     canSave: !!rec.can_download_screenshot && rec.access !== 'lowres' && !extra.low
@@ -53,16 +55,16 @@ function present(search, meta) {
       else locked += 1
       return
     }
-    opens.push(toRow(rec, name))
+    opens.push(toRow(rec, name, !!search.example || require('../config').mode === 'mock'))
   })
   var window = search.locked_window || {}
   var lockedCount = window.count || locked
   var range = window.start && window.end ? window.start + ' 至 ' + window.end : ''
   var showOpen = opens.length > 0 && !info.forceLocked
-  var showLocked = !showOpen && search.outcome === 'hit'
+  var showLocked = lockedCount > 0 && !info.forceOpen
   var header = ''
   if (showOpen) {
-    header = '命中 ' + opens.length + ' 条 · 涉及 ' + search.platform_count + ' 个平台'
+    header = '命中 ' + (opens.length + lockedCount) + ' 条 · 涉及 ' + search.platform_count + ' 个平台'
   } else if (info.queried) {
     header = '查询于 ' + info.queried
   }

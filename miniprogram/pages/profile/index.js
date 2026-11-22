@@ -2,7 +2,7 @@ var api = require('../../api/index')
 var nav = require('../../utils/nav')
 
 Page({
-  data: { useMock: require('../../config').useMock, title: '个人中心', showSheet: false },
+  data: { useMock: require('../../config').mode !== 'live', title: '个人中心', showSheet: false },
   onShow: function () {
     var data = nav.layout()
     var info = api.profile()

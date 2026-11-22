@@ -13,6 +13,7 @@ function request(path, data) {
     wx.request({
       url: base + path,
       method: 'GET',
+      timeout: 15000,
       data: data || {},
       header: { 'X-User-Id': state.userId() },
       success: function (res) {

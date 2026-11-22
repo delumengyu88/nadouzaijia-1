@@ -29,11 +29,12 @@ Page({
         if (!rec.locked && rec.record_id === query.id) row = rec
       })
     }
-    var extra = present.findRow(query.id) || {}
+    var real = api.isLive && query.example !== '1'
+    var extra = real ? {} : present.findRow(query.id) || {}
     var prof = api.profile()
-    var low = !!(extra.low || (row && row.access === 'lowres') || prof.tier === 'free' || prof.tier === 'guest')
+    var low = !!(extra.low || (row && row.access === 'lowres') || (!real && (prof.tier === 'free' || prof.tier === 'guest')))
     var canSave = !!(row && row.can_download_screenshot && !low && query.example !== '1')
-    var programOnly = prof.tier === 'free' && row && row.access === 'full' && !row.can_download_screenshot
+    var programOnly = row && row.access === 'full' && !row.can_download_screenshot
     if (query.view === 'free') { low = true; canSave = false; programOnly = false }
     if (query.view === 'nodl') { low = false; canSave = false; programOnly = true }
     var layout = nav.layout()
@@ -44,9 +45,11 @@ Page({
       showBack: true,
       platform: (row && row.platform) || extra.platform || '平台未识别',
       category: row ? (row.category || '') : '',
-      unknown: !extra.platform,
-      date: (extra.date || '') + ' ' + (extra.clock || ''),
-      time: extra.time || '',
+      unknown: !(row && row.platform) && !extra.platform,
+      mock: !real,
+      image: real && row && /^https:\/\//.test(row.hd_url || row.thumbnail_url || '') ? (row.hd_url || row.thumbnail_url) : '',
+      date: real ? (row && row.checked_at || '').replace('T', ' ').slice(0, 16) : (extra.date || '') + ' ' + (extra.clock || ''),
+      time: real ? (row && row.timestamps || []).join('、') : extra.time || '',
       low: low,
       canSave: canSave,
       programOnly: programOnly,
@@ -58,6 +61,15 @@ Page({
     else wx.switchTab({ url: '/pages/home/index' })
   },
   save: function () {
+    if (!this.data.canSave) return
+    if (!this.data.mock) {
+      if (!this.data.image) { wx.showToast({ title: '截图暂不可用', icon: 'none' }); return }
+      wx.downloadFile({ url: this.data.image, success: function (res) {
+        if (res.statusCode === 200) wx.saveImageToPhotosAlbum({ filePath: res.tempFilePath })
+        else wx.showToast({ title: '截图下载失败', icon: 'none' })
+      }, fail: function () { wx.showToast({ title: '截图下载失败', icon: 'none' }) } })
+      return
+    }
     wx.saveImageToPhotosAlbum({
       filePath: '/assets/frame.png',
       success: function () { wx.showToast({ title: '已保存到相册', icon: 'none' }) },

@@ -238,6 +238,8 @@ global.App = function (def) { global.__app = def }
 global.Component = function (def) { global.__component = def }
 global.getCurrentPages = function () { return [{}, {}] }
 
+// Baseline state coverage is explicitly mock; live routing has separate async checks.
+require(path.join(root, 'config')).mode = 'mock'
 var defs = {}
 var currentRel = ''
 global.Page = function (def) { defs[currentRel] = def }
@@ -738,5 +740,8 @@ if (missing.length) {
 }
 if (names.length !== 79) fail('expected 79 screens, mapped ' + names.length)
 
+var liveCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-live.js')], { encoding: 'utf8' })
+console.log(liveCheck.stdout || '')
+if (liveCheck.status !== 0) fail(liveCheck.stderr || 'hybrid check failed')
 if (failed) process.exit(1)
 console.log('miniprogram check ok')

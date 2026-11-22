@@ -10,6 +10,7 @@ function decode(value) {
 Page({
   data: { title: '', showBack: true, phase: 'loading' },
   onLoad: function (query) {
+    if (api.isLive) query.view = ''
     this.query = query || {}
     this.setData(Object.assign(nav.layout(), { showBack: true, phase: 'loading', title: decode(query.name) }))
     if (query.view === 'loading') return
@@ -42,10 +43,21 @@ Page({
     if (query.example === '1') search = api.exampleReport(name)
     else if (query.view === 'expired' || query.view === 'locked') search = api.searchProgram(name, { locked: true })
     else search = api.searchProgram(name)
-    if (!search) {
-      this.setData({ phase: 'fail', title: name })
-      return
+    var self = this
+    var userId = require('../../api/state').userId()
+    function apply(result) {
+      if (userId !== require('../../api/state').userId()) return
+      self.applySearch(result, name, query)
     }
+    if (search && typeof search.then === 'function') {
+      this.setData({ phase: 'loading' })
+      search.then(apply).catch(function (error) {
+        self.setData({ phase: 'fail', error: error.message || '加载失败' })
+      })
+    } else apply(search)
+  },
+  applySearch: function (search, name, query) {
+    if (!search) { this.setData({ phase: 'fail', title: name }); return }
     if (query.view === 'empty' || search.outcome === 'miss') {
       this.setData({ phase: 'empty', title: name, name: name })
       return
@@ -55,7 +67,7 @@ Page({
     var view = present(search, {
       name: meta.name,
       queried: '2026-11-20',
-      canExport: prof.tier === 'vip' || prof.tier === 'regular',
+      canExport: api.isLive && !search.example ? search.records.some(function (r) { return !r.locked && r.can_download_report }) : prof.tier === 'vip' || prof.tier === 'regular',
       expired: query.view === 'expired'
     })
     view.phase = 'ready'
@@ -100,6 +112,16 @@ Page({
   },
   download: function () {
     var book = api.exportBook(this.data.name)
+    var self = this
+    if (book && typeof book.then === 'function') {
+      book.then(function (result) { self.saveBook(result) }).catch(function (error) {
+        wx.showToast({ title: error.message || '导出失败', icon: 'none' })
+      })
+      return
+    }
+    this.saveBook(book)
+  },
+  saveBook: function (book) {
     if (!book.ok) {
       wx.showToast({ title: book.message, icon: 'none' })
       return

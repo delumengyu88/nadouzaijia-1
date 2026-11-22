@@ -1,3 +1,4 @@
 var config = require('../config')
-
-module.exports = config.useMock ? require('./mock') : require('./http')
+var mode = config.mode || (config.useMock === false ? 'live' : 'mock')
+var api = mode === 'live' ? require('./http') : require('./mock')
+module.exports = mode === 'mock' ? api : Object.assign({}, api, require('./live'))

@@ -204,8 +204,8 @@ function account() {
 
 function userId() {
   var id = currentId()
-  if (id === 'member') return 'u-member'
-  if (id === 'free') return 'u-free'
+  var ids = require('../config').testUserIds || {}
+  if (id === 'member' || id === 'free') return ids[id] || ''
   return ''
 }
 

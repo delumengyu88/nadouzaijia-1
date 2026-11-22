@@ -5,7 +5,7 @@ Page({
   data: { title: '查询结果', showBack: true },
   onLoad: function (query) {
     this.id = query.id || ''
-    this.view = query.view || ''
+    this.view = api.isLive ? '' : query.view || ''
     this.setData(Object.assign(nav.layout(), { title: '查询结果', showBack: true }))
     if (this.view === 'queued' || this.view === 'running' || this.view === 'allfail' || this.view === 'allmiss') {
       this.renderSpecial(this.view)
@@ -17,6 +17,7 @@ Page({
     if (this.view) return
     var self = this
     this.tick()
+    this.stop()
     this.timer = setInterval(function () { self.tick() }, 700)
   },
   onHide: function () { this.stop() },
@@ -37,7 +38,11 @@ Page({
   },
   refresh: function () {
     var current = api.getQuery(this.id)
-    if (!current) return
+    if (!current) {
+      this.setData({ done: true, queued: false, running: false, items: [], head: '查询记录不可用，请重新查询。' })
+      this.stop()
+      return
+    }
     if (current.done) {
       api.markQuerySeen(this.id)
       this.stop()
@@ -88,10 +93,12 @@ Page({
   },
   retry: function (e) {
     api.retryItem(this.id, e.currentTarget.dataset.name)
+    this.onShow()
     this.refresh()
   },
   retryAll: function () {
     api.retryAll(this.id)
+    this.onShow()
     this.refresh()
   }
 })
