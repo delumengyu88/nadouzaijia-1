@@ -8,16 +8,16 @@ function decode(value) {
 }
 
 Page({
-  data: { title: '截图', showBack: true },
+  data: { title: '截图', showBack: true, loading: true, missing: false },
   onLoad: function (query) {
     this.query = query
     var name = decode(query.name)
     var search = query.example === '1' ? api.exampleReport(name) : api.searchProgram(name)
     var self = this
     if (search && typeof search.then === 'function') {
-      this.setData(Object.assign(nav.layout('viewer', this.query), { missing: true }))
+      this.setData(Object.assign(nav.layout('viewer', this.query), { loading: true, missing: false }))
       search.then(function (result) { self.applySearch(result, query) }).catch(function () {
-        self.setData({ missing: true })
+        self.setData({ loading: false, missing: true })
       })
       return
     }
@@ -54,6 +54,7 @@ Page({
       low: low,
       canSave: canSave,
       programOnly: programOnly,
+      loading: false,
       missing: !row && query.view !== 'free' && query.view !== 'nodl'
     })
   },
