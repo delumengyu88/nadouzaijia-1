@@ -1,5 +1,6 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
+var calibration = require('../../utils/calibration')
 var present = require('../../utils/present').present
 
 function decode(value) {
@@ -10,6 +11,7 @@ function decode(value) {
 Page({
   data: { title: '', showBack: true, phase: 'loading' },
   onLoad: function (query) {
+    if (calibration.blockReport(query)) return
     if (api.isLive) query.view = ''
     this.query = query || {}
     this.setData(Object.assign(nav.layout('report', this.query), { showBack: true, phase: 'loading', title: decode(query.name) }))
@@ -33,6 +35,7 @@ Page({
     else wx.switchTab({ url: '/pages/home/index' })
   },
   load: function () {
+    if (calibration.blockReport(this.query)) return
     var query = this.query || {}
     var name = decode(query.name)
     if (!name) {
@@ -57,6 +60,7 @@ Page({
     } else apply(search)
   },
   applySearch: function (search, name, query) {
+    if (calibration.blockReport(query)) return
     if (!search) { this.setData({ phase: 'fail', title: name }); return }
     if (query.view === 'empty' || search.outcome === 'miss') {
       this.setData({ phase: 'empty', title: name, name: name })
@@ -124,6 +128,7 @@ Page({
     this.saveBook(book)
   },
   saveBook: function (book) {
+    if (calibration.blockReport(this.query)) return
     if (!book.ok) {
       wx.showToast({ title: book.message, icon: 'none' })
       return

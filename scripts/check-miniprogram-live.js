@@ -1,5 +1,6 @@
 var assert = require('assert')
 var config = require('../miniprogram/config')
+config.calibrating = false
 assert.strictEqual(config.mode, 'hybrid')
 assert.strictEqual(config.apiBase, '')
 config.apiBase = '/test-api'

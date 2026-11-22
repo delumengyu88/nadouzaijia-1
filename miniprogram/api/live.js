@@ -75,6 +75,7 @@ module.exports = {
   exportBook: function (name) {
     // Refresh permissions at export time instead of trusting a mock profile or stale report.
     return http.searchProgram(name).then(function (body) {
+      if (require('../config').calibrating) return require('../utils/calibration').blockedResult()
       var rows = body.records.filter(function (r) { return !r.locked && r.can_download_report }).map(function (r) {
         return { platform: r.platform || '平台未识别', subtype: r.platform_subtype || '', category: r.category || '',
           type: '', uploaded: name, matched: body.program_name, date: (r.checked_at || '').slice(0, 10) }

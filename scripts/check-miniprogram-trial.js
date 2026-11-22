@@ -1,5 +1,6 @@
 var assert = require('assert')
 var config = require('../miniprogram/config')
+config.calibrating = false
 var trial = require('../miniprogram/utils/trial')
 assert.strictEqual(config.trialMode, true)
 var modals = 0

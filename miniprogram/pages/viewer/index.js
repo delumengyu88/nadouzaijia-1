@@ -1,5 +1,6 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
+var calibration = require('../../utils/calibration')
 var present = require('../../utils/present')
 
 function decode(value) {
@@ -10,6 +11,7 @@ function decode(value) {
 Page({
   data: { title: '截图', showBack: true, loading: true, missing: false },
   onLoad: function (query) {
+    if (calibration.blockReport(query)) return
     this.query = query
     var name = decode(query.name)
     var search = query.example === '1' ? api.exampleReport(name) : api.searchProgram(name)
@@ -24,6 +26,7 @@ Page({
     this.applySearch(search, query)
   },
   applySearch: function (search, query) {
+    if (calibration.blockReport(query)) return
     var row = null
     if (search) {
       search.records.forEach(function (rec) {

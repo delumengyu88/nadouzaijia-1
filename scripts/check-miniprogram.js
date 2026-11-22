@@ -247,6 +247,7 @@ global.getCurrentPages = function () { return [{}, {}] }
 // Baseline state coverage is explicitly mock; live routing has separate async checks.
 require(path.join(root, 'config')).mode = 'mock'
 require(path.join(root, 'config')).trialMode = false
+require(path.join(root, 'config')).calibrating = false
 var defs = {}
 var currentRel = ''
 global.Page = function (def) { defs[currentRel] = def }
@@ -641,6 +642,12 @@ try {
   expect(rate.data.phase === 'rate', 'rate limit')
   cover('P16-rate')
 
+  require(path.join(root, 'config')).calibrating = true
+  query = open('pages/query/index', { id: 'qmiss' }, 'load')
+  expect(query.data.calibrating && query.data.title === '数据校准中' && !query.data.head && !query.data.items.length, 'calibrating results')
+  cover('P07-calibrating')
+  require(path.join(root, 'config')).calibrating = false
+
   app.pages.forEach(function (rel) {
     var page = instantiate(rel)
     if (page.onLoad) page.onLoad({ id: '1', name: encodeURIComponent('星河旧梦'), product: 'membership_vip' })
@@ -671,6 +678,7 @@ var screens = {
   'P05-limit': 'pages/input/index phase limit',
   'P05-preview': 'pages/input/index phase preview',
   'P05-recognizing': 'pages/input/index phase recognizing',
+  'P07-calibrating': 'pages/query/index calibrating',
   'P07-allfail': 'pages/query/index allFail',
   'P07-allmiss': 'pages/query/index all miss',
   'P07-querying': 'pages/query/index running',
@@ -745,7 +753,7 @@ if (missing.length) {
   console.error('not covered: ' + missing.join(', '))
   failed = true
 }
-if (names.length !== 79) fail('expected 79 screens, mapped ' + names.length)
+if (names.length !== 80) fail('expected 80 screens, mapped ' + names.length)
 
 var trialCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-trial.js')], { encoding: 'utf8' })
 console.log(trialCheck.stdout || '')
@@ -753,5 +761,10 @@ if (trialCheck.status !== 0) fail(trialCheck.stderr || 'trial check failed')
 var liveCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-live.js')], { encoding: 'utf8' })
 console.log(liveCheck.stdout || '')
 if (liveCheck.status !== 0) fail(liveCheck.stderr || 'hybrid check failed')
+;['mock', 'hybrid', 'live'].forEach(function (mode) {
+  var calibrationCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-calibrating.js'), mode], { encoding: 'utf8' })
+  console.log(calibrationCheck.stdout || '')
+  if (calibrationCheck.status !== 0) fail(calibrationCheck.stderr || 'calibration check failed: ' + mode)
+})
 if (failed) process.exit(1)
 console.log('miniprogram check ok')
