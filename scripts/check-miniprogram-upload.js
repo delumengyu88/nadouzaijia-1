@@ -61,17 +61,17 @@ assert.deepStrictEqual(p.data.items.map(function (i) { return [i.name, i.owner] 
 p = page()
 load(p, put('/tmp/none.xlsx', [['片名', '出品方'], ['星河旧梦', '云豆传媒']]))
 assert.strictEqual(p.data.phase, 'fail')
-assert.strictEqual(p.data.failText, '缺少「节目名称」列')
+assert.strictEqual(p.data.failText, '未找到「节目名称」列，请检查表头后重试。')
 
 // 只有版权方没有节目名称，同样提示缺「节目名称」列。
 p = page()
 load(p, put('/tmp/owner-only.xlsx', [['版权方'], ['云豆传媒']]))
-assert.strictEqual(p.data.failText, '缺少「节目名称」列')
+assert.strictEqual(p.data.failText, '未找到「节目名称」列，请检查表头后重试。')
 
 // 读取失败的其他原因：不是 zip、文件读不到、超过 500 行、只有表头。
 files['/tmp/broken.xlsx'] = new Uint8Array([1, 2, 3, 4]).buffer
 p = page(); load(p, { name: 'broken.xlsx', size: 4, path: '/tmp/broken.xlsx' })
-assert.strictEqual(p.data.failText, '文件读取失败，请稍后重试。')
+assert.strictEqual(p.data.failText, '文件读取失败，请重新选择文件。')
 p = page(); load(p, { name: 'gone.xlsx', size: 10, path: '/tmp/gone.xlsx' })
 assert.strictEqual(p.data.phase, 'fail')
 var many = [['节目名称']]
@@ -107,10 +107,15 @@ assert.strictEqual(p.data.items[0].name, '雾港来信')
 load(p, put('/tmp/none3.xlsx', [['片名'], ['x']]))
 p.upload()
 assert.strictEqual(p.data.phase, 'fail')
-// 粘贴文字识别失败时，按钮回到输入框。
+// 「---」是有效片名，会进预览；预览也必须把 fromFile 写成 false，不能留成 undefined。
 p = page()
 p.onInput({ detail: { value: '   ' } })
 p.showParsed('---')
+assert.strictEqual(p.data.phase, 'preview')
+assert.strictEqual(p.data.fromFile, false)
+// 粘贴内容没有有效节目名时，失败页回到输入框，不走重新选文件。
+p.showParsed('123')
+assert.strictEqual(p.data.phase, 'fail')
 assert.strictEqual(p.data.fromFile, false)
 
 // 页面模板：文件失败时「重新选择」绑定 upload。

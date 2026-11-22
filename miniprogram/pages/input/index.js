@@ -6,9 +6,9 @@ var FAIL = {
   xlsx: '仅支持 .xlsx，请另存后再上传。',
   empty: '文件为空，请重新选择。',
   size: '文件超过 5MB，请拆分后再上传。',
-  col: '缺少「节目名称」列',
+  col: '未找到「节目名称」列，请检查表头后重试。',
   rows: '超过 500 行，请删减后再上传。',
-  read: '文件读取失败，请稍后重试。',
+  read: '文件读取失败，请重新选择文件。',
   limit: '已超过 500 个节目名，仅保留前 500 个。'
 }
 
@@ -22,6 +22,8 @@ Page({
     data.raw = api.getDraft()
     data.failText = ''
     data.box = ''
+    data.fromFile = false
+    this.fromFile = false
     this.setData(data)
     var self = this
     if (query.fail && FAIL[query.fail]) {
@@ -70,9 +72,11 @@ Page({
     if (owners) {
       parsed.items.forEach(function (item) { item.owner = owners[item.name] || '' })
     }
+    var fromFile = !!self.fromFile
     if (parsed.truncated) {
       self.setData({
         phase: 'limit',
+        fromFile: fromFile,
         failText: FAIL.limit,
         raw: parsed.items.map(function (item) { return item.name }).join('\n'),
         count: parsed.items.length,
@@ -84,7 +88,7 @@ Page({
     if (!parsed.filtered.length) summary += '，无空行。'
     else summary += '，已过滤 ' + parsed.filtered.length + ' 条。'
     if (parsed.merged) summary += '已合并 ' + parsed.merged + ' 个重复。'
-    self.setData({ phase: 'preview', items: parsed.items, summary: summary, raw: raw })
+    self.setData({ phase: 'preview', fromFile: fromFile, items: parsed.items, summary: summary, raw: raw })
   },
   recognizeFile: function (name, size, path) {
     this.fromFile = true

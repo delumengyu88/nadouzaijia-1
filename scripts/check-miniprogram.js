@@ -447,20 +447,42 @@ try {
   expect(retainedQuery.length === 500 && retainedQuery[499].name === limits[499],
     'truncated query can start')
   cover('P05-limit')
-  ;[
-    ['a.xls', 20, 'xlsx', 'P05-fail-xlsx'],
-    ['a.xlsx', 0, 'empty', 'P05-fail-emptyfile'],
-    ['a.xlsx', 6 * 1024 * 1024, 'size', 'P05-fail-size'],
-    ['nocol.xlsx', 100, 'col', 'P05-fail-col'],
-    ['manyrows.xlsx', 100, 'rows', 'P05-fail-rows'],
-    ['plain.xlsx', 100, 'read', 'P05-fail-read']
-  ].forEach(function (row) {
+  var XlsxFixture = require(path.join(__dirname, 'xlsx-fixture'))
+  var uploadedSheets = {}
+  var writeUpload = wx.getFileSystemManager().writeFile
+  wx.getFileSystemManager = function () {
+    return {
+      writeFile: writeUpload,
+      readFile: function (opt) {
+        if (Object.prototype.hasOwnProperty.call(uploadedSheets, opt.filePath)) opt.success({ data: uploadedSheets[opt.filePath] })
+        else if (opt.fail) opt.fail({ errMsg: 'readFile:fail' })
+      }
+    }
+  }
+  function workbook(name, rows) {
+    var bytes = XlsxFixture.build(rows)
+    var filePath = '/tmp/p05-' + name
+    uploadedSheets[filePath] = bytes
+    return { name: name, size: bytes.byteLength, path: filePath }
+  }
+  function expectUploadFail(file, text, screen) {
     input = open('pages/input/index', {}, 'load')
-    input.recognizeFile(row[0], row[1])
+    input.recognizeFile(file.name, file.size, file.path || '')
     flush()
-    expect(input.data.phase === 'fail', row[3])
-    cover(row[3])
-  })
+    expect(input.data.phase === 'fail', screen)
+    expect(input.data.failText === text, screen + ' message')
+    expect(input.data.fromFile === true, screen + ' keeps the file flow')
+    cover(screen)
+  }
+  expectUploadFail({ name: 'a.xls', size: 20 }, '仅支持 .xlsx，请另存后再上传。', 'P05-fail-xlsx')
+  expectUploadFail(workbook('empty.xlsx', [['节目名称']]), '文件为空，请重新选择。', 'P05-fail-emptyfile')
+  expectUploadFail({ name: 'big.xlsx', size: 6 * 1024 * 1024, path: '/tmp/p05-big.xlsx' }, '文件超过 5MB，请拆分后再上传。', 'P05-fail-size')
+  expectUploadFail(workbook('nocol.xlsx', [['片名', '出品方'], ['星河旧梦', '云豆传媒']]), '未找到「节目名称」列，请检查表头后重试。', 'P05-fail-col')
+  var manyRows = [['节目名称']]
+  for (var rowIndex = 0; rowIndex < 501; rowIndex++) manyRows.push(['节目' + rowIndex])
+  expectUploadFail(workbook('many.xlsx', manyRows), '超过 500 行，请删减后再上传。', 'P05-fail-rows')
+  uploadedSheets['/tmp/p05-plain.xlsx'] = new Uint8Array([1, 2, 3, 4]).buffer
+  expectUploadFail({ name: 'plain.xlsx', size: 4, path: '/tmp/p05-plain.xlsx' }, '文件读取失败，请重新选择文件。', 'P05-fail-read')
 
   var pay = open('pages/pay/index', { product: 'membership_vip' }, 'load')
   expect(pay.data.phase === 'pending' && pay.data.showPay, 'checkout')
@@ -797,6 +819,9 @@ if (liveCheck.status !== 0) fail(liveCheck.stderr || 'hybrid check failed')
   console.log(loginCheck.stdout || '')
   if (loginCheck.status !== 0) fail(loginCheck.stderr || 'login check failed: ' + mode)
 })
+var uploadCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-upload.js')], { encoding: 'utf8' })
+console.log(uploadCheck.stdout || '')
+if (uploadCheck.status !== 0) fail(uploadCheck.stderr || uploadCheck.stdout || 'upload check failed')
 if (failed) process.exit(1)
 console.log('miniprogram check ok')
 
