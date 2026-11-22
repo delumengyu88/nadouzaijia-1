@@ -26,6 +26,7 @@ This PR is the smallest backend later PRs can build on: import the hourly task e
 | `nadou.search` | `ProgramSearch` |
 | `nadou.query_export` | `QueryExport` workbook |
 | `nadou.main` | FastAPI app |
+| `nadou.public_config` | `PublicConfig`, the unauthenticated splash switch |
 | `nadou.payments` | WeChat Pay JSAPI orders, notification, and grant |
 | `nadou.seed` | Synthetic CSV + index rows through the importer |
 
@@ -55,8 +56,21 @@ The API shows `其他平台` (`PlatformNames.OTHER`) only on records the caller 
 1. `GET /health` — process up.
 2. `GET /api/v1/programs/search?name=` — canonicalize `name`, return that program's counted records filtered for the caller.
 3. `GET /api/v1/queries/{query_id}/export` — workbook for one saved query. See below. Same `X-User-Id` stand-in.
+4. `GET /api/v1/app/config` — public splash switch for the mini program. No login. See below.
 
 Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is local-only until WeChat login lands.** Do not expose this header as account authentication on a shared or deployed API. There is no import endpoint; import is `TaskExportImporter`, used by the seed script and tests. Workbench upload can call the same class later.
+
+### 小程序公开配置
+
+`GET /api/v1/app/config` 不需要 `Authorization`，未登录也可以读。它只读 `splash_config` 里 id 为 1 的那一行（和工作台 `SplashBook` 同一行），不插入、不更新。不要复用工作台的 `SplashBook.get()`：那个方法在没有行时会写入一条默认记录，而且默认 `enabled` 是 false。
+
+响应只有开屏开关和标语。不返回图片名、跳转文案、更新时间、主键，也不返回任何存储路径：
+
+```json
+{"splash_enabled": true, "slogan": "片单检索"}
+```
+
+表里没有这一行时返回 `splash_enabled: true`、`slogan: ""`，表的行数不变。工作台 `PUT /api/v1/admin/content/splash` 改过 `enabled` 之后，下一次这个 GET 按库里的当前值返回。服务端不做缓存；响应带 `Cache-Control: public, max-age=60`，给调用方自己缓存。
 
 ## Import
 
