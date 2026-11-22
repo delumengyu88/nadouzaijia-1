@@ -2,7 +2,13 @@ var api = require('../../api/index')
 var nav = require('../../utils/nav')
 var calibration = require('../../utils/calibration')
 var present = require('../../utils/present')
+var config = require('../../config')
+var httpApi = require('../../api/http')
 var member = require('../../utils/member')
+
+function mockMode() {
+  return (config.mode || 'mock') === 'mock'
+}
 
 function decode(value) {
   if (!value) return ''
@@ -15,7 +21,7 @@ Page({
     if (calibration.blockReport(query)) return
     this.query = query
     var name = decode(query.name)
-    var search = query.example === '1' ? api.exampleReport(name) : api.searchProgram(name)
+    var search = query.example === '1' && !mockMode() ? httpApi.exampleReport(name) : (query.example === '1' ? api.exampleReport(name) : api.searchProgram(name))
     var self = this
     if (search && typeof search.then === 'function') {
       this.setData(Object.assign(nav.layout('viewer', this.query), { loading: true, missing: false }))
@@ -28,6 +34,37 @@ Page({
   },
   applySearch: function (search, query) {
     if (calibration.blockReport(query)) return
+    if (search && search.publicExample) {
+      var picked = null
+      ;(search.records || []).forEach(function (rec) {
+        if (rec && rec.locked !== true && rec.record_id === query.id) picked = rec
+      })
+      var image = ''
+      if (picked && /^https:\/\//.test(picked.hd_url || '')) image = picked.hd_url
+      else if (picked && /^https:\/\//.test(picked.thumbnail_url || '')) image = picked.thumbnail_url
+      var checked = picked && picked.checked_at
+      var layout = nav.layout('viewer', this.query)
+      this.setData({
+        statusBarHeight: layout.statusBarHeight,
+        navHeight: layout.navHeight,
+        title: '截图',
+        showBack: true,
+        platform: (picked && picked.platform) || '其他平台',
+        category: picked ? (picked.category || '') : '',
+        unknown: !(picked && picked.platform),
+        mock: false,
+        plainShot: !image,
+        image: image,
+        date: checked ? String(checked).replace('T', ' ').slice(0, 16) : '',
+        time: picked && picked.timestamps ? picked.timestamps.join('、') : '',
+        low: false,
+        canSave: false,
+        programOnly: false,
+        loading: false,
+        missing: !picked
+      })
+      return
+    }
     var row = null
     if (search) {
       search.records.forEach(function (rec) {

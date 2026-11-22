@@ -33,10 +33,19 @@ function page(name) {
   p.onShow()
   return p
 }
+function takeLoginRequest() {
+  // Home loads public content without a session. That request is not the login call.
+  while (requests.length && requests[0].url.indexOf('/api/v1/auth/wechat/login') === -1) {
+    var extra = requests.shift()
+    assert(extra.url.indexOf('/api/v1/app/home') !== -1, 'unexpected request ' + extra.url)
+    extra.success({ statusCode: 200, data: { platformTotal: null, examples: [], announcements: [] } })
+  }
+  return requests.shift()
+}
 function success(id) {
   logins.shift().success({ code: 'test-login-code' })
   return drain().then(function () {
-    var request = requests.shift()
+    var request = takeLoginRequest()
     assert.strictEqual(request.url, '/test-api/api/v1/auth/wechat/login')
     assert.strictEqual(request.method, 'POST')
     assert.deepStrictEqual(request.data, { code: 'test-login-code' })
