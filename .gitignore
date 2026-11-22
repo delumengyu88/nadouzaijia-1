@@ -27,3 +27,6 @@ build/
 
 /.codex-inputs/
 /CODEX_REPORT-trial.md
+
+# Local mini program overrides (apiBase etc.), never committed.
+/miniprogram/config.local.js
