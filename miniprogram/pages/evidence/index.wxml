@@ -1,7 +1,7 @@
 <view class="nav" style="padding-top: {{statusBarHeight}}px;">
   <view class="nav-bar">
     <view class="nav-back" bindtap="back">‹</view>
-    <view class="nav-title">申请取证</view>
+    <view class="nav-title">委托取证</view>
   </view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
@@ -11,6 +11,10 @@
   <view class="field">{{kindText}}</view>
   <view class="field-label">节目名</view>
   <input class="field" value="{{name}}" bindinput="onName" />
+  <block wx:if="{{kind != 'recent'}}">
+    <view class="field-label">平台（选填）</view>
+    <input class="field" value="{{platform}}" bindinput="onPlatform" />
+  </block>
   <view class="field-label">补充说明（可选）</view>
   <textarea class="field" style="min-height:140rpx;" value="{{note}}" bindinput="onNote" />
   <view class="field-label">联系方式</view>

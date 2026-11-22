@@ -14,7 +14,7 @@ var FAIL = {
 Page({
   data: { title: '输入片单', showBack: true, phase: 'edit', raw: '', items: [] },
   onLoad: function (query) {
-    var data = nav.layout()
+    var data = nav.layout('input', this.query)
     data.title = '输入片单'
     data.showBack = true
     data.phase = 'edit'
@@ -100,7 +100,7 @@ Page({
   },
   confirm: function () {
     if (api.accountKind() === 'guest') {
-      api.login()
+      return require('../../utils/login')(this, function () {})
     }
     var names = (this.data.items || []).map(function (item) { return item.name })
     var created = api.createQuery(names)

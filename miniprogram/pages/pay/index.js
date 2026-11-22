@@ -24,8 +24,12 @@ Page({
     this.product = query.product || 'membership_vip'
     this.programName = decode(query.name)
     this.orderNo = query.id || ''
-    var layout = nav.layout()
+    var layout = nav.layout('pay', this.query)
     this.setData({ statusBarHeight: layout.statusBarHeight, navHeight: layout.navHeight, showBack: true })
+    if (require('../../config').trialMode || require('../../config').calibrating) {
+      this.setData({ phase: 'trial', title: '支付', trialMessage: require('../../utils/trial').paymentMessage() })
+      return
+    }
     if (query.view) {
       this.showPreset(query.view)
       return
@@ -88,6 +92,7 @@ Page({
     })
   },
   pay: function () {
+    if (require('../../utils/trial').blockPayment()) return
     var started = api.startPay(this.orderNo)
     if (!started.ok) {
       wx.showToast({ title: started.message, icon: 'none' })
@@ -97,6 +102,7 @@ Page({
     this.apply(started.order)
   },
   settle: function (e) {
+    if (require('../../utils/trial').blockPayment()) return
     var outcome = e.currentTarget.dataset.outcome
     var self = this
     if (outcome === 'success') {
@@ -120,6 +126,7 @@ Page({
     if (order) this.apply(order)
   },
   repay: function () {
+    if (require('../../utils/trial').blockPayment()) return
     var result = api.repay(this.orderNo)
     if (!result.ok) {
       wx.showToast({ title: result.message, icon: 'none' })

@@ -176,7 +176,7 @@ class ProgramSearch:
 
     @staticmethod
     def confirmed(record: IndexRecord) -> bool:
-        """Only a confirmed hit is user-facing. Dispute rows stay internal."""
+        """Only a confirmed hit is user-facing. Review and dispute rows stay internal."""
         return record.hit_type == "consensus"
 
     @staticmethod

@@ -1,5 +1,6 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
+var calibration = require('../../utils/calibration')
 var present = require('../../utils/present').present
 
 function decode(value) {
@@ -10,8 +11,10 @@ function decode(value) {
 Page({
   data: { title: '', showBack: true, phase: 'loading' },
   onLoad: function (query) {
+    if (calibration.blockReport(query)) return
+    if (api.isLive) query.view = ''
     this.query = query || {}
-    this.setData(Object.assign(nav.layout(), { showBack: true, phase: 'loading', title: decode(query.name) }))
+    this.setData(Object.assign(nav.layout('report', this.query), { showBack: true, phase: 'loading', title: decode(query.name) }))
     if (query.view === 'loading') return
     if (query.view === 'loadfail') {
       this.setData({ phase: 'fail' })
@@ -20,11 +23,19 @@ Page({
     var self = this
     nav.later(280, function () { self.load() })
   },
+  onShow: function () { this.refreshApplication() },
+  refreshApplication: function () {
+    var name = this.data.name
+    var normalize = require('../../utils/text').foldKey
+    var found = api.listEvidence().filter(function (item) { return normalize(item.name) === normalize(name || '') })[0]
+    this.setData({ appliedId: found ? found.id : '' })
+  },
   back: function () {
     if (getCurrentPages().length > 1) wx.navigateBack()
     else wx.switchTab({ url: '/pages/home/index' })
   },
   load: function () {
+    if (calibration.blockReport(this.query)) return
     var query = this.query || {}
     var name = decode(query.name)
     if (!name) {
@@ -35,10 +46,22 @@ Page({
     if (query.example === '1') search = api.exampleReport(name)
     else if (query.view === 'expired' || query.view === 'locked') search = api.searchProgram(name, { locked: true })
     else search = api.searchProgram(name)
-    if (!search) {
-      this.setData({ phase: 'fail', title: name })
-      return
+    var self = this
+    var userId = require('../../api/state').userId()
+    function apply(result) {
+      if (userId !== require('../../api/state').userId()) return
+      self.applySearch(result, name, query)
     }
+    if (search && typeof search.then === 'function') {
+      this.setData({ phase: 'loading' })
+      search.then(apply).catch(function (error) {
+        self.setData({ phase: 'fail', error: error.message || '加载失败' })
+      })
+    } else apply(search)
+  },
+  applySearch: function (search, name, query) {
+    if (calibration.blockReport(query)) return
+    if (!search) { this.setData({ phase: 'fail', title: name }); return }
     if (query.view === 'empty' || search.outcome === 'miss') {
       this.setData({ phase: 'empty', title: name, name: name })
       return
@@ -48,16 +71,17 @@ Page({
     var view = present(search, {
       name: meta.name,
       queried: '2026-11-20',
-      canExport: prof.tier === 'vip' || prof.tier === 'regular',
+      canExport: api.isLive && !search.example ? search.records.some(function (r) { return !r.locked && r.can_download_report }) : prof.tier === 'vip' || prof.tier === 'regular',
       expired: query.view === 'expired'
     })
     view.phase = 'ready'
     view.title = meta.name
     view.showBack = true
-    var layout = nav.layout()
+    var layout = nav.layout('report', this.query)
     view.statusBarHeight = layout.statusBarHeight
     view.navHeight = layout.navHeight
     this.setData(view)
+    this.refreshApplication()
   },
   retry: function () { this.load() },
   ask: function () {
@@ -74,16 +98,37 @@ Page({
     wx.navigateTo({ url: '/pages/viewer/index?id=' + id + '&name=' + encodeURIComponent(this.data.name) + '&example=' + example })
   },
   buyMember: function () {
+    if (require('../../utils/trial').blockPayment()) return
     wx.navigateTo({ url: '/pages/pay/index?product=membership_regular&name=' + encodeURIComponent(this.data.name) })
   },
   buySingle: function () {
+    if (require('../../utils/trial').blockPayment()) return
     wx.navigateTo({ url: '/pages/pay/index?product=single_program_30d&name=' + encodeURIComponent(this.data.name) })
+  },
+  applyEvidence: function () {
+    if (this.data.appliedId) {
+      wx.navigateTo({ url: '/pages/evidence-detail/index?id=' + encodeURIComponent(this.data.appliedId) })
+      return
+    }
+    var platforms = (this.data.groups || []).filter(function (group) { return !group.unknown }).map(function (group) { return group.platform })
+    wx.navigateTo({ url: '/pages/evidence/index?kind=normal&name=' + encodeURIComponent(this.data.name) + '&platform=' + encodeURIComponent(platforms.join('、')) })
   },
   evidence: function () {
     wx.navigateTo({ url: '/pages/evidence/index?name=' + encodeURIComponent(this.data.name) + '&kind=recent' })
   },
   download: function () {
     var book = api.exportBook(this.data.name)
+    var self = this
+    if (book && typeof book.then === 'function') {
+      book.then(function (result) { self.saveBook(result) }).catch(function (error) {
+        wx.showToast({ title: error.message || '导出失败', icon: 'none' })
+      })
+      return
+    }
+    this.saveBook(book)
+  },
+  saveBook: function (book) {
+    if (calibration.blockReport(this.query)) return
     if (!book.ok) {
       wx.showToast({ title: book.message, icon: 'none' })
       return

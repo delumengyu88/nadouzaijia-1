@@ -1,12 +1,13 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
+var config = require('../../config')
 
 Page({
-  data: { title: '查询结果', showBack: true },
+  data: { title: '查询结果', showBack: true, calibrating: config.calibrating, items: [], head: '' },
   onLoad: function (query) {
     this.id = query.id || ''
-    this.view = query.view || ''
-    this.setData(Object.assign(nav.layout(), { title: '查询结果', showBack: true }))
+    this.view = config.calibrating || api.isLive ? '' : query.view || ''
+    this.setData(Object.assign(nav.layout('query', this.query), { title: config.calibrating ? '数据校准中' : '查询结果', showBack: true }))
     if (this.view === 'queued' || this.view === 'running' || this.view === 'allfail' || this.view === 'allmiss') {
       this.renderSpecial(this.view)
       return
@@ -16,7 +17,9 @@ Page({
   onShow: function () {
     if (this.view) return
     var self = this
+    this.stop()
     this.tick()
+    if (!this.id || this.finished) return
     this.timer = setInterval(function () { self.tick() }, 700)
   },
   onHide: function () { this.stop() },
@@ -29,6 +32,10 @@ Page({
     if (getCurrentPages().length > 1) wx.navigateBack()
     else wx.switchTab({ url: '/pages/home/index' })
   },
+  home: function () {
+    this.stop()
+    wx.switchTab({ url: '/pages/home/index' })
+  },
   tick: function () {
     if (!this.id) return
     var current = api.getQuery(this.id)
@@ -37,10 +44,20 @@ Page({
   },
   refresh: function () {
     var current = api.getQuery(this.id)
-    if (!current) return
-    if (current.done) {
-      api.markQuerySeen(this.id)
+    this.finished = !current || current.done
+    if (this.finished) this.stop()
+    if (current && current.done) api.markQuerySeen(this.id)
+    if (config.calibrating) {
+      this.setData({ calibrating: true, title: '数据校准中', head: '', items: [],
+        queued: false, running: false, done: true, percent: 0,
+        showFailBanner: false, showRetryAll: false, allFail: false })
+      return
+    }
+    this.setData({ calibrating: false, title: '查询结果' })
+    if (!current) {
+      this.setData({ done: true, queued: false, running: false, items: [], head: '查询记录不可用，请重新查询。' })
       this.stop()
+      return
     }
     this.setData(current)
   },
@@ -75,6 +92,8 @@ Page({
     })
   },
   openHit: function (e) {
+    if (config.calibrating) return
+    if (!e.currentTarget.dataset.hit) return
     var name = e.currentTarget.dataset.name
     wx.navigateTo({ url: '/pages/report/index?name=' + encodeURIComponent(name) + '&id=' + (this.id || '') })
   },
@@ -83,14 +102,17 @@ Page({
     wx.navigateTo({ url: '/pages/input/index' })
   },
   evidence: function (e) {
-    wx.navigateTo({ url: '/pages/evidence/index?name=' + encodeURIComponent(e.currentTarget.dataset.name) + '&kind=normal' })
+    if (config.calibrating) return
+    wx.navigateTo({ url: '/pages/evidence/index?name=' + encodeURIComponent(e.currentTarget.dataset.name) + '&kind=normal&platform=' + encodeURIComponent(e.currentTarget.dataset.platform || '') })
   },
   retry: function (e) {
     api.retryItem(this.id, e.currentTarget.dataset.name)
+    this.onShow()
     this.refresh()
   },
   retryAll: function () {
     api.retryAll(this.id)
+    this.onShow()
     this.refresh()
   }
 })

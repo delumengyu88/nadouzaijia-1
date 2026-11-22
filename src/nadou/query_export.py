@@ -106,6 +106,7 @@ class HitColumns:
 
 class RestStatus:
     MISS = "未命中"
+    PENDING = "检索中"
     FAILED = "失败"
 
 
@@ -508,7 +509,7 @@ class QueryExport:
         rest: list[RestRow] = []
         for item in items:
             if item.resolution == "pending":
-                rest.append(RestRow(item.uploaded_name, RestStatus.FAILED, item.detail or ""))
+                rest.append(RestRow(item.uploaded_name, RestStatus.PENDING, item.detail or ""))
                 continue
             if item.resolution == "failed":
                 rest.append(RestRow(item.uploaded_name, RestStatus.FAILED, item.detail or ""))

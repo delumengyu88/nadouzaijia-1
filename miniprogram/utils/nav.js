@@ -1,4 +1,4 @@
-function layout() {
+function layout(page, query) {
   var status = 20
   var nav = 44
   try {

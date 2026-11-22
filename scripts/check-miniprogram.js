@@ -22,7 +22,7 @@ function walk(dir, out) {
 
 var banned = ['待确认', '疑似命中', '确认命中', '别名', '匹配方式', '命中类型', '顺延', 'VIP 结束后生效']
 walk(root, []).forEach(function (file) {
-  if (path.extname(file) === '.png') return
+  if (['.png', '.webp'].indexOf(path.extname(file)) !== -1) return
   var text = fs.readFileSync(file, 'utf8')
   var rel = path.relative(root, file)
   banned.forEach(function (word) {
@@ -41,6 +41,15 @@ function readJson(rel) {
   return JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8'))
 }
 
+var frontendStopWords = readJson('stop-words.json')
+var backendStopWords = JSON.parse(fs.readFileSync(path.join(repo, 'src/nadou/stop_words.json'), 'utf8'))
+if (JSON.stringify(frontendStopWords) !== JSON.stringify(backendStopWords)) {
+  fail('miniprogram stop words must exactly match backend defaults')
+}
+
+var packageBytes = walk(root, []).reduce(function (sum, file) { return sum + fs.statSync(file).size }, 0)
+console.log('Main package source bytes: ' + packageBytes)
+if (packageBytes >= 2 * 1024 * 1024) fail('main package must be below 2 MB')
 var app = readJson('app.json')
 var project = readJson('project.config.json')
 if (project.appid !== 'touristappid') fail('appid is ' + project.appid)
@@ -222,7 +231,11 @@ global.wx = {
   redirectTo: function () {},
   switchTab: function () {},
   navigateBack: function () {},
-  request: function () {},
+  login: function (opts) { opts.success({ code: 'check-code' }) },
+  request: function (opts) { opts.success({ statusCode: 200, data: {
+    token: 'check-token', token_type: 'bearer', expires_at: new Date(Date.now() + 86400000).toISOString(),
+    user: { id: 'check-user', tier: 'free' }
+  } }) },
   chooseMessageFile: function () {},
   getFileSystemManager: function () { return { writeFile: function (opt) { if (opt && opt.success) opt.success() } } },
   env: { USER_DATA_PATH: '/tmp' },
@@ -235,6 +248,16 @@ global.App = function (def) { global.__app = def }
 global.Component = function (def) { global.__component = def }
 global.getCurrentPages = function () { return [{}, {}] }
 
+var defaults = require(path.join(root, 'config'))
+if (defaults.mode !== 'hybrid' || defaults.trialMode !== true || defaults.calibrating !== true) {
+  fail('trial defaults must enable hybrid mode, trialMode and calibrating')
+}
+
+// Baseline state coverage is explicitly mock; live routing has separate async checks.
+require(path.join(root, 'config')).mode = 'mock'
+require(path.join(root, 'config')).trialMode = false
+require(path.join(root, 'config')).calibrating = false
+require(path.join(root, 'config')).apiBase = '/test-api'
 var defs = {}
 var currentRel = ''
 global.Page = function (def) { defs[currentRel] = def }
@@ -282,6 +305,7 @@ function open(rel, query, life) {
   return page
 }
 
+async function main() {
 try {
   var titlesUtil = require(path.join(root, 'utils/text'))
   var approvedWords = require(path.join(root, 'stop-words.json'))
@@ -326,8 +350,10 @@ try {
   home.setData({ draft: '星河旧梦' })
   home.start()
   expect(home.data.needLogin, 'guest query should ask for login')
-  home.login()
-  expect(api.accountKind() === 'free', 'login should enter the free account')
+  await home.login()
+  expect(!api.profile().guest && api.profile().tier === 'free', 'login should enter the free account')
+  // Commerce below is an offline prototype flow, separate from real session membership.
+  api.switchAccount('free')
   home = open('pages/home/index', {}, 'show')
   expect(home.data.banner === 'free', 'free home banner')
   cover('P04-nomember')
@@ -571,6 +597,18 @@ try {
   form.submit()
   expect(form.data.phase === 'duplicate', 'duplicate evidence')
   cover('P11-duplicate')
+  report = open('pages/report/index', { name: encodeURIComponent('星河旧梦') }, 'load')
+  flush()
+  expect(report.data.appliedId === form.data.newId, 'submitted program shows applied link')
+  var navigated = ''
+  wx.navigateTo = function (opts) { navigated = opts.url }
+  report.applyEvidence()
+  expect(navigated === '/pages/evidence-detail/index?id=' + form.data.newId, 'applied link opens P12')
+  cover('P08-applied')
+  form = open('pages/evidence/index', { name: encodeURIComponent('测试片'), platform: encodeURIComponent('测试平台') }, 'load')
+  expect(form.data.name === '测试片' && form.data.platform === '测试平台', 'evidence prefills name and platform')
+  query.evidence({ currentTarget: { dataset: { name: '测试片', platform: '测试平台' } } })
+  expect(navigated.indexOf('&platform=' + encodeURIComponent('测试平台')) !== -1, 'P07 passes permitted platform')
 
   invite = open('pages/invite/index', {}, 'load')
   expect(invite.data.phase === 'bound', 'bound invite')
@@ -581,7 +619,7 @@ try {
   expect(profile.data.guest, 'guest profile')
   cover('P13-guest')
   memberPage = open('pages/member/index', {}, 'show')
-  expect(memberPage.data.guest && memberPage.data.payLabel === '登录后开通', 'guest member center')
+  expect(memberPage.data.guest && memberPage.data.payLabel === '微信登录', 'guest member center')
   cover('P18-guest')
 
   boot('free')
@@ -617,6 +655,12 @@ try {
   expect(rate.data.phase === 'rate', 'rate limit')
   cover('P16-rate')
 
+  require(path.join(root, 'config')).calibrating = true
+  query = open('pages/query/index', { id: 'qmiss' }, 'load')
+  expect(query.data.calibrating && query.data.title === '数据校准中' && !query.data.head && !query.data.items.length, 'calibrating results')
+  cover('P07-calibrating')
+  require(path.join(root, 'config')).calibrating = false
+
   app.pages.forEach(function (rel) {
     var page = instantiate(rel)
     if (page.onLoad) page.onLoad({ id: '1', name: encodeURIComponent('星河旧梦'), product: 'membership_vip' })
@@ -647,12 +691,14 @@ var screens = {
   'P05-limit': 'pages/input/index phase limit',
   'P05-preview': 'pages/input/index phase preview',
   'P05-recognizing': 'pages/input/index phase recognizing',
+  'P07-calibrating': 'pages/query/index calibrating',
   'P07-allfail': 'pages/query/index allFail',
   'P07-allmiss': 'pages/query/index all miss',
   'P07-querying': 'pages/query/index running',
   'P07-queued': 'pages/query/index queued',
   'P07-results': 'pages/query/index done mixed',
   'P07-retry': 'pages/query/index partial failure retry',
+  'P08-applied': 'pages/report/index applied link',
   'P08-empty': 'pages/report/index phase empty',
   'P08-expired': 'pages/report/index expired locked',
   'P08-loadfail': 'pages/report/index phase fail',
@@ -720,7 +766,26 @@ if (missing.length) {
   console.error('not covered: ' + missing.join(', '))
   failed = true
 }
-if (names.length !== 78) fail('expected 78 screens, mapped ' + names.length)
+if (names.length !== 80) fail('expected 80 screens, mapped ' + names.length)
 
+var trialCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-trial.js')], { encoding: 'utf8' })
+console.log(trialCheck.stdout || '')
+if (trialCheck.status !== 0) fail(trialCheck.stderr || 'trial check failed')
+var liveCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-live.js')], { encoding: 'utf8' })
+console.log(liveCheck.stdout || '')
+if (liveCheck.status !== 0) fail(liveCheck.stderr || 'hybrid check failed')
+;['mock', 'hybrid', 'live'].forEach(function (mode) {
+  var calibrationCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-calibrating.js'), mode], { encoding: 'utf8' })
+  console.log(calibrationCheck.stdout || '')
+  if (calibrationCheck.status !== 0) fail(calibrationCheck.stderr || 'calibration check failed: ' + mode)
+})
+;['mock', 'hybrid', 'live'].forEach(function (mode) {
+  var loginCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-login.js'), mode], { encoding: 'utf8' })
+  console.log(loginCheck.stdout || '')
+  if (loginCheck.status !== 0) fail(loginCheck.stderr || 'login check failed: ' + mode)
+})
 if (failed) process.exit(1)
 console.log('miniprogram check ok')
+
+}
+main().catch(function (error) { console.error(error); process.exitCode = 1 })

@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 
 from nadou.models import IndexRecord
 from nadou.normalize import ProgramNormalizer
+from nadou.review import ReviewTitles
 
 _NAMESPACE = uuid.UUID("6f9c0b2e-1c0a-4f3e-9a77-3a1e0a9b7c21")
-_HIT_TYPES = frozenset({"consensus", "dispute"})
+_HIT_TYPES = frozenset({"consensus", "dispute", "review"})
 
 
 class IndexRecordStore:
@@ -16,6 +17,7 @@ class IndexRecordStore:
 
     def __init__(self, session: Session) -> None:
         self.session = session
+        self.review_titles = ReviewTitles.load(session)
 
     @staticmethod
     def public_id(task_id: str, program_name: str) -> str:
@@ -41,6 +43,8 @@ class IndexRecordStore:
         canonical = ProgramNormalizer().canonical(program_name)
         if not canonical:
             raise ValueError("program_name is empty")
+        if hit_type == "consensus" and canonical in self.review_titles:
+            hit_type = "review"
         existing = self.session.scalar(
             select(IndexRecord).where(
                 IndexRecord.task_id == task_id,

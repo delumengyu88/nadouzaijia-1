@@ -9,9 +9,10 @@ Page({
   },
   onUnload: function () {
     if (this.splashTimer) clearInterval(this.splashTimer)
+    if (this.splashLoadTimer) clearTimeout(this.splashLoadTimer)
   },
   paint: function () {
-    var data = nav.layout()
+    var data = nav.layout('home', this.query)
     var home = api.homeState()
     data.showBrand = true
     data.title = ''
@@ -25,7 +26,13 @@ Page({
   armSplash: function () {
     if (this.splashTimer) return
     var self = this
-    this.setData({ showSplash: true, seconds: 5 })
+    var sys = wx.getSystemInfoSync()
+    var menu = wx.getMenuButtonBoundingClientRect && wx.getMenuButtonBoundingClientRect()
+    var width = sys.windowWidth || 375
+    this.setData({ showSplash: true, seconds: 5, splashFailed: false,
+      splashSkipTop: menu && menu.top ? menu.top : (sys.statusBarHeight || 20) + 8,
+      splashSkipRight: menu && menu.left ? width - menu.left + 8 : 102 })
+    this.splashLoadTimer = setTimeout(function () { self.splashFailed() }, 1000)
     this.splashTimer = setInterval(function () {
       var next = self.data.seconds - 1
       if (next <= 0) {
@@ -35,8 +42,17 @@ Page({
       self.setData({ seconds: next })
     }, 1000)
   },
+  splashLoaded: function () {
+    if (this.splashLoadTimer) clearTimeout(this.splashLoadTimer)
+    this.splashLoadTimer = 0
+  },
+  splashFailed: function () {
+    this.setData({ splashFailed: true })
+    this.finishSplash()
+  },
   finishSplash: function () {
     if (this.splashTimer) clearInterval(this.splashTimer)
+    if (this.splashLoadTimer) clearTimeout(this.splashLoadTimer)
     this.splashTimer = 0
     api.markSplashSeen()
     this.paint()
@@ -75,10 +91,7 @@ Page({
     wx.navigateTo({ url: '/pages/input/index?auto=1' })
   },
   login: function () {
-    api.login()
-    this.setData({ needLogin: false })
-    this.onShow()
-    wx.showToast({ title: '已登录', icon: 'none' })
+    return require('../../utils/login')(this, this.onShow)
   },
   upload: function () {
     var self = this

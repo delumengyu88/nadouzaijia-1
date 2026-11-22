@@ -85,6 +85,15 @@ class User(Base):
     entitlements: Mapped[list["Entitlement"]] = relationship(back_populates="user")
 
 
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False, index=True)
+
+
 class Entitlement(Base):
     __tablename__ = "entitlements"
     __table_args__ = (
@@ -136,12 +145,20 @@ class Task(Base):
     is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
+class ReviewProgramTitle(Base):
+    """Program titles whose newly imported hits need review before inclusion."""
+
+    __tablename__ = "review_program_titles"
+
+    program_name: Mapped[str] = mapped_column(String(200), primary_key=True)
+
+
 class IndexRecord(Base):
     __tablename__ = "index_records"
     __table_args__ = (
         UniqueConstraint("task_id", "program_name", name="uq_index_task_program"),
         CheckConstraint(
-            "hit_type IN ('consensus', 'dispute')",
+            "hit_type IN ('consensus', 'dispute', 'review')",
             name="ck_index_hit_type",
         ),
     )

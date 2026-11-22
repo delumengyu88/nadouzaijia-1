@@ -4,7 +4,7 @@ var nav = require('../../utils/nav')
 Page({
   data: { title: '我的订单', showBack: true, rows: [] },
   onShow: function () {
-    var data = nav.layout()
+    var data = nav.layout('orders', this.query)
     data.title = '我的订单'
     data.showBack = true
     data.rows = api.listOrders()

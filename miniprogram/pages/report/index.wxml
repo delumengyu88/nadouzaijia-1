@@ -11,6 +11,7 @@
 <view class="body" wx:elif="{{phase == 'fail'}}">
   <view class="center-box">
     <view class="center-title">加载失败</view>
+    <view class="sub">{{error}}</view>
     <view class="btn slim" bindtap="retry">重试</view>
   </view>
 </view>
@@ -24,7 +25,7 @@
   <view class="pad" style="margin-top:12rpx;">
     <view class="choice-top">
       <text class="h1" style="font-size:40rpx;">{{name}}</text>
-      <text class="tag ok">{{badge}}</text>
+      <view><text class="tag ok">{{badge}}</text><text class="evidence-link" bindtap="applyEvidence">{{appliedId ? '已申请 ›' : '委托取证 ›'}}</text></view>
     </view>
     <view class="sub">{{header}}</view>
     <view class="choice-top" wx:if="{{showLocked}}" style="margin-top:16rpx;">
@@ -38,8 +39,8 @@
     <block wx:for="{{groups}}" wx:for-item="group" wx:key="platform">
       <view class="rec" wx:for="{{group.rows}}" wx:for-item="row" wx:key="id" data-id="{{row.id}}" bindtap="openShot">
         <view class="thumb">
-          <view class="moon"></view>
-          <view class="hill"></view>
+          <image wx:if="{{row.image}}" src="{{row.image}}" mode="aspectFill" style="width:100%;height:100%;" />
+          <block wx:elif="{{row.mock}}"><view class="moon"></view><view class="hill"></view></block>
           <text class="thumb-badge">{{row.badge}}</text>
           <text class="thumb-wm">那豆在架</text>
           <text class="thumb-time">{{row.time}}</text>

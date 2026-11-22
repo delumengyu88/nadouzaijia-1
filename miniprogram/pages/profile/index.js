@@ -2,20 +2,19 @@ var api = require('../../api/index')
 var nav = require('../../utils/nav')
 
 Page({
-  data: { useMock: require('../../config').useMock, title: '个人中心', showSheet: false },
+  data: { useMock: require('../../config').mode !== 'live', title: '个人中心', showSheet: false },
   onShow: function () {
-    var data = nav.layout()
+    var data = nav.layout('profile', this.query)
     var info = api.profile()
     data.title = '个人中心'
     data.showSheet = false
+    data.useMock = require('../../config').mode === 'mock'
     Object.keys(info).forEach(function (key) { data[key] = info[key] })
     this.setData(data)
     nav.selectTab(this, 2)
   },
   login: function () {
-    api.login()
-    this.onShow()
-    wx.showToast({ title: '已登录', icon: 'none' })
+    return require('../../utils/login')(this, this.onShow)
   },
   go: function (e) {
     wx.navigateTo({ url: e.currentTarget.dataset.url })

@@ -64,6 +64,7 @@ function sanitizeSearch(body) {
     if (network) open.network_type = network
     if (typeof rec.frame_count === 'number') open.frame_count = rec.frame_count
     if (checked) open.checked_at = checked
+    if (Array.isArray(rec.timestamps)) open.timestamps = rec.timestamps.map(String)
     if (thumb) open.thumbnail_url = thumb
     if (hd) open.hd_url = hd
     records.push(open)

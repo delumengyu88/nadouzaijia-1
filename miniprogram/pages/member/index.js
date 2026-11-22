@@ -2,7 +2,7 @@ var api = require('../../api/index')
 var nav = require('../../utils/nav')
 
 function labelFor(tier, selected, guest) {
-  if (guest) return '登录后开通'
+  if (guest) return '微信登录'
   if (selected === 'membership_regular') return '开通普通会员 · ¥299'
   if (tier === 'vip') return '续费 VIP · ¥599'
   return '开通 VIP · ¥599'
@@ -11,7 +11,7 @@ function labelFor(tier, selected, guest) {
 Page({
   data: { title: '会员中心', selected: 'membership_vip' },
   onShow: function () {
-    var data = nav.layout()
+    var data = nav.layout('member', this.query)
     var info = api.memberCenter()
     data.title = '会员中心'
     data.selected = this.data.selected || 'membership_vip'
@@ -28,12 +28,8 @@ Page({
     })
   },
   go: function () {
-    if (this.data.guest) {
-      api.login()
-      this.onShow()
-      wx.showToast({ title: '已登录', icon: 'none' })
-      return
-    }
+    if (this.data.guest) return require('../../utils/login')(this, this.onShow)
+    if (require('../../utils/trial').blockPayment()) return
     wx.navigateTo({ url: '/pages/pay/index?product=' + this.data.selected })
   }
 })

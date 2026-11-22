@@ -6,7 +6,7 @@
 <view class="body">
   <view class="card choice-top" wx:if="{{guest}}">
     <text class="row-title">未登录</text>
-    <text class="link" bindtap="login">登录</text>
+    <view><button class="login-link" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">微信登录</button><view class="login-error" wx:if="{{loginError}}">{{loginError}}</view></view>
   </view>
   <view class="card" wx:else>
     <view class="choice-top">

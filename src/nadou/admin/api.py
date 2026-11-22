@@ -109,7 +109,7 @@ class AdminApi:
 
         def current_staff(
             request: Request,
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ) -> StaffAccount:
             account = StaffSessions.resolve(session, RequestToken.read(request), clock())
             if account is None:
@@ -130,7 +130,7 @@ class AdminApi:
             payload: LoginIn,
             request: Request,
             response: Response,
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             now = clock()
             audit = AuditWriter(session, now, None, ClientAddress.of(request))
@@ -165,7 +165,7 @@ class AdminApi:
             request: Request,
             response: Response,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             now = clock()
             StaffSessions.revoke(session, RequestToken.read(request), now)
@@ -188,7 +188,7 @@ class AdminApi:
             payload: StaffCreateIn,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 created = StaffDirectory.create(
@@ -212,7 +212,7 @@ class AdminApi:
         @app.get("/api/v1/admin/staff")
         def list_staff(
             _account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             rows = session.scalars(select(StaffAccount).order_by(StaffAccount.username)).all()
             return [AdminApi._staff(row) for row in rows]
@@ -222,7 +222,7 @@ class AdminApi:
             account_id: str,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 audit = writer(session, account, request)
@@ -244,7 +244,7 @@ class AdminApi:
             offset: int = Query(default=0, ge=0),
             paged: bool = False,
             _account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             opened, closed = AdminApi._days(day_from, day_to)
             rows, total = AuditQuery.latest(
@@ -272,7 +272,7 @@ class AdminApi:
             day_to: str | None = None,
             vip_first: bool = True,
             _account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             now = clock()
             opened, closed = AdminApi._days(day_from, day_to)
@@ -292,7 +292,7 @@ class AdminApi:
             payload: EvidenceCreateIn,
             request: Request,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 now = clock()
@@ -310,7 +310,7 @@ class AdminApi:
         def evidence_by_number(
             application_number: str,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             row = EvidenceLookup.by_application_number(session, application_number)
             if row is None:
@@ -321,7 +321,7 @@ class AdminApi:
         def evidence_detail(
             request_id: str,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             found = session.get(EvidenceRequest, request_id)
             if found is None:
@@ -333,7 +333,7 @@ class AdminApi:
             request_id: str,
             request: Request,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 now = clock()
@@ -350,7 +350,7 @@ class AdminApi:
             payload: AmountIn,
             request: Request,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 now = clock()
@@ -367,7 +367,7 @@ class AdminApi:
             payload: AmountIn,
             request: Request,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 now = clock()
@@ -383,7 +383,7 @@ class AdminApi:
             payload: DeliveryIn,
             request: Request,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 now = clock()
@@ -399,7 +399,7 @@ class AdminApi:
             payload: FailIn,
             request: Request,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 now = clock()
@@ -423,7 +423,7 @@ class AdminApi:
             request_id: str,
             request: Request,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 now = clock()
@@ -438,7 +438,7 @@ class AdminApi:
             request_id: str,
             request: Request,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 now = clock()
@@ -453,7 +453,7 @@ class AdminApi:
             request_id: str,
             request: Request,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 now = clock()
@@ -469,7 +469,7 @@ class AdminApi:
             payload: NoteIn,
             request: Request,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 now = clock()
@@ -484,7 +484,7 @@ class AdminApi:
             phone: str | None = None,
             q: str | None = None,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             query = (q or phone or "").strip()
             if not query:
@@ -500,7 +500,7 @@ class AdminApi:
         def get_user(
             user_id: str,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 user = MemberDirectory(session).get(user_id)
@@ -519,7 +519,7 @@ class AdminApi:
             payload: BanIn,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 now = clock()
@@ -539,7 +539,7 @@ class AdminApi:
             user_id: str,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 user = MemberAdmin(session, writer(session, account, request)).unban(user_id)
@@ -553,7 +553,7 @@ class AdminApi:
             payload: MembershipIn,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 grant = MemberAdmin(session, writer(session, account, request)).grant(
@@ -576,7 +576,7 @@ class AdminApi:
         @app.get("/api/v1/admin/orders")
         def list_orders(
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             reveal = account.role == "admin"
             return [
@@ -587,7 +587,7 @@ class AdminApi:
         @app.get("/api/v1/admin/orders/export")
         def export_orders(
             _account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             rows = [
                 OrderView.render(order, phone, reveal_phone=True, issuance=issuance)
@@ -603,7 +603,7 @@ class AdminApi:
         def order_by_number(
             order_number: str,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             order = OrderLookup.by_order_number(session, order_number)
             if order is None:
@@ -617,7 +617,7 @@ class AdminApi:
         def get_order(
             order_id: str,
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 order = OrderLookup.by_id(session, order_id)
@@ -634,7 +634,7 @@ class AdminApi:
             request: Request,
             payload: ReissueIn | None = Body(default=None),
             account: StaffAccount = Depends(current_staff),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             del payload
 
@@ -665,7 +665,7 @@ class AdminApi:
             payload: RefundIn,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 order = OrderLookup.by_id(session, order_id)
@@ -680,21 +680,21 @@ class AdminApi:
         @app.get("/api/v1/admin/staff/locks")
         def staff_locks(
             _account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             return StaffDirectory.active_locks(session, clock())
 
         @app.get("/api/v1/admin/invite-codes/stats")
         def invite_stats(
             _account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             return InviteStats.channels(session, clock())
 
         @app.get("/api/v1/admin/invite-codes/export")
         def export_invites(
             _account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             rows = InviteBook(session, writer(session, _account, None), clock()).list_codes(
                 status=None, channel=None, query=None
@@ -711,7 +711,7 @@ class AdminApi:
             channel: str | None = None,
             q: str | None = None,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             return InviteBook(session, writer(session, account, None), clock()).list_codes(
                 status=status, channel=channel, query=q
@@ -722,7 +722,7 @@ class AdminApi:
             payload: InviteBatchIn,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 now = clock()
@@ -741,7 +741,7 @@ class AdminApi:
             code_id: str,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 now = clock()
@@ -761,7 +761,7 @@ class AdminApi:
         @app.get("/api/v1/admin/content/splash")
         def get_splash(
             _account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             book = SplashBook(session, writer(session, _account, None), clock())
             return SplashView.render(book.get())
@@ -771,7 +771,7 @@ class AdminApi:
             payload: SplashIn,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 row = SplashBook(session, writer(session, account, request), clock()).save(
@@ -787,7 +787,7 @@ class AdminApi:
         @app.get("/api/v1/admin/content/announcements")
         def list_announcements(
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             return AnnouncementBook(session, writer(session, account, None), clock()).list_rows()
 
@@ -796,7 +796,7 @@ class AdminApi:
             payload: AnnouncementIn,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 row = AnnouncementBook(session, writer(session, account, request), clock()).save(
@@ -820,7 +820,7 @@ class AdminApi:
             payload: OnlineIn,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 book = AnnouncementBook(session, writer(session, account, request), clock())
@@ -832,14 +832,14 @@ class AdminApi:
         @app.get("/api/v1/admin/content/examples")
         def list_examples(
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             return ExampleBook(session, writer(session, account, None), clock()).list_rows()
 
         @app.get("/api/v1/admin/content/programs")
         def list_programs(
             _account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             return ProgramCatalog.list_programs(session)
 
@@ -848,7 +848,7 @@ class AdminApi:
             payload: ExampleIn,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 row = ExampleBook(session, writer(session, account, request), clock()).add(
@@ -864,7 +864,7 @@ class AdminApi:
             payload: OnlineIn,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 row = ExampleBook(session, writer(session, account, request), clock()).set_online(
@@ -880,7 +880,7 @@ class AdminApi:
             payload: ExampleMoveIn,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 row = ExampleBook(session, writer(session, account, request), clock()).move(
@@ -893,7 +893,7 @@ class AdminApi:
         @app.get("/api/v1/admin/index/status")
         def index_status(
             _account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             return IndexStatus.payload(session, clock())
 
@@ -902,7 +902,7 @@ class AdminApi:
             payload: ImportIn,
             request: Request,
             account: StaffAccount = Depends(require_admin),
-            session: Session = Depends(get_session),
+            session: Session = Depends(get_session, scope="function"),
         ):
             def action():
                 try:

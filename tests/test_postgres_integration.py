@@ -297,3 +297,127 @@ def test_concurrent_invite_redemption_is_atomic(same_user):
             session.execute(delete(User).where(User.id.in_(user_ids)))
             session.execute(delete(StaffAccount).where(StaffAccount.id == staff_id))
         engine.dispose()
+
+
+def test_review_constraints_and_defaults_on_postgres(pg_session):
+    from sqlalchemy import select
+
+    from nadou.models import ReviewProgramTitle
+
+    assert set(pg_session.scalars(select(ReviewProgramTitle.program_name))) >= {
+        "家庭",
+        "远方",
+        "狗",
+    }
+    record = IndexRecordStore(pg_session).upsert(
+        task_id="pg-review",
+        program_name="　家庭 ",
+        program_name_raw="　家庭 ",
+        hit_type="consensus",
+        frame_count=2,
+        timestamps=["00:00:01"],
+    )
+    pg_session.flush()
+    assert record.hit_type == "review"
+    pg_session.expire_all()
+    assert pg_session.get(IndexRecord, record.id).hit_type == "review"
+
+
+def test_review_migration_backfills_existing_rows(monkeypatch):
+    """Exercise 0006 -> 0007 in an isolated schema, leaving the suite database intact."""
+    import uuid
+
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import text
+    from sqlalchemy.engine import make_url
+
+    from nadou.config import get_settings
+
+    original_url = _database_url()
+    schema = "trial_review_" + uuid.uuid4().hex
+    engine = create_engine_for(original_url)
+    url = make_url(original_url).update_query_dict({"options": f"-csearch_path={schema}"})
+    isolated = create_engine_for(url.render_as_string(hide_password=False))
+    with engine.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    monkeypatch.setenv("DATABASE_URL", url.render_as_string(hide_password=False))
+    get_settings.cache_clear()
+    try:
+        command.upgrade(Config("alembic.ini"), "20261122_0006")
+        with isolated.begin() as connection:
+            for name, status in [
+                ("家庭", "consensus"),
+                ("远方", "consensus"),
+                ("狗", "consensus"),
+                ("父亲", "consensus"),
+                ("家庭", "dispute"),
+            ]:
+                connection.execute(
+                    text(
+                        "INSERT INTO index_records "
+                        "(id, task_id, program_name, program_name_raw, "
+                        "hit_type, frame_count, timestamps) "
+                        "VALUES (:id, :id, :name, :name, :status, 1, '[]')"
+                    ),
+                    {"id": uuid.uuid4().hex, "name": name, "status": status},
+                )
+        command.upgrade(Config("alembic.ini"), "head")
+        with isolated.connect() as connection:
+            states = set(
+                connection.execute(text("SELECT program_name, hit_type FROM index_records"))
+            )
+            assert states == {
+                ("家庭", "review"),
+                ("远方", "review"),
+                ("狗", "review"),
+                ("父亲", "consensus"),
+                ("家庭", "dispute"),
+            }
+            assert connection.scalar(text("SELECT count(*) FROM review_program_titles")) == 3
+        command.downgrade(Config("alembic.ini"), "20261122_0006")
+        with isolated.connect() as connection:
+            assert (
+                connection.scalar(
+                    text("SELECT count(*) FROM index_records WHERE hit_type = 'review'")
+                )
+                == 0
+            )
+            assert (
+                connection.scalar(
+                    text("SELECT count(*) FROM index_records WHERE hit_type = 'consensus'")
+                )
+                == 1
+            )
+        command.upgrade(Config("alembic.ini"), "head")
+    finally:
+        isolated.dispose()
+        monkeypatch.setenv("DATABASE_URL", original_url)
+        get_settings.cache_clear()
+        with engine.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        engine.dispose()
+
+
+def test_user_session_round_trip_and_expiry(pg_session):
+    from datetime import timedelta
+
+    from fastapi import HTTPException
+    from sqlalchemy import select
+
+    from nadou.auth import UserSessions
+    from nadou.models import User, UserSession
+
+    now = datetime(2026, 11, 22, 12, 0, tzinfo=RecordAge.TZ)
+    user = User(id="pg-login-user", created_at=now)
+    pg_session.add(user)
+    pg_session.flush()
+    token = UserSessions.issue(pg_session, user, now)
+    pg_session.expire_all()
+    stored = pg_session.scalar(select(UserSession).where(UserSession.user_id == user.id))
+    assert stored.expires_at == now + timedelta(days=7)
+    assert stored.token_hash != token
+    assert UserSessions.resolve(pg_session, "Bearer " + token, now).id == user.id
+    with pytest.raises(HTTPException) as error:
+        UserSessions.resolve(pg_session, "Bearer " + token, stored.expires_at)
+    assert error.value.status_code == 401

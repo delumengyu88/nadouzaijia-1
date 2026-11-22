@@ -1,11 +1,18 @@
 <view class="nav" style="padding-top: {{statusBarHeight}}px;">
   <view class="nav-bar">
     <view class="nav-back" bindtap="back">‹</view>
-    <view class="nav-title">查询结果</view>
+    <view class="nav-title">{{title}}</view>
   </view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
-<view class="body" wx:if="{{queued}}">
+<view class="body" wx:if="{{calibrating}}">
+  <view class="center-box">
+    <view class="center-title">数据校准中</view>
+    <view class="center-sub">校准完成后可查看结果</view>
+    <view class="btn block" bindtap="home">返回首页</view>
+  </view>
+</view>
+<view class="body" wx:elif="{{queued}}">
   <view class="center-box">
     <view class="center-title">排队中</view>
     <view class="center-sub">{{head}}</view>
@@ -21,16 +28,16 @@
 <view class="body" wx:else>
   <view class="err-box" wx:if="{{showFailBanner}}">{{failBanner}}</view>
   <view class="note" wx:if="{{!showFailBanner}}">{{head}}</view>
-  <view class="card" wx:for="{{items}}" wx:key="name">
+  <view class="card" wx:for="{{items}}" wx:key="name" data-name="{{item.name}}" data-hit="{{item.hit}}" bindtap="openHit">
     <view class="choice-top">
       <text class="row-title">{{item.name}}</text>
       <text class="tag {{item.badgeCls}}">{{item.badge}}</text>
     </view>
     <view class="ex-line">{{item.line}}</view>
-    <view wx:if="{{item.hit}}" data-name="{{item.name}}" bindtap="openHit" class="link" style="text-align:left;">查看报告</view>
+    <view wx:if="{{item.hit}}" class="evidence-link" data-name="{{item.name}}" data-platform="{{item.evidencePlatform}}" catchtap="evidence">委托取证 ›</view>
     <view class="choice-top" wx:if="{{item.missed}}" style="margin-top:16rpx;">
       <view class="btn ghost" style="width:48%;margin-top:0;" data-name="{{item.name}}" bindtap="requery">修改后重查</view>
-      <view class="btn plain" style="width:48%;margin-top:0;" data-name="{{item.name}}" bindtap="evidence">申请取证</view>
+      <view class="btn plain" style="width:48%;margin-top:0;" data-name="{{item.name}}" bindtap="evidence">委托取证</view>
     </view>
     <view class="btn" wx:if="{{item.failed && itemRetry}}" data-name="{{item.name}}" bindtap="retry">重试</view>
   </view>

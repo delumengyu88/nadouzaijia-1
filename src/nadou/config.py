@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,6 +28,8 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("NADOU_TASK_EXPORT_PATH"),
     )
+    wx_appid: str = Field(default="", validation_alias="NADOU_WX_APPID")
+    wx_appsecret: SecretStr = Field(default=SecretStr(""), validation_alias="NADOU_WX_APPSECRET")
     data_source: str = Field(
         default="demo",
         validation_alias=AliasChoices("NADOU_DATA_SOURCE"),

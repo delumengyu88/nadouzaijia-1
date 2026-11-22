@@ -5,7 +5,7 @@ Page({
   data: { title: '协议', showBack: true, paragraphs: [] },
   onLoad: function (query) {
     var doc = api.agreement(query.id)
-    var layout = nav.layout()
+    var layout = nav.layout('legal-doc', this.query)
     this.setData({
       statusBarHeight: layout.statusBarHeight,
       navHeight: layout.navHeight,
