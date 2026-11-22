@@ -98,13 +98,14 @@ Page({
     wx.chooseMessageFile({
       count: 1,
       type: 'file',
-      extension: ['xlsx', 'xls', 'csv'],
+      extension: ['xlsx'],
       success: function (res) {
         var file = res.tempFiles && res.tempFiles[0]
         if (!file) return
         api.setDraft('')
         wx.navigateTo({
-          url: '/pages/input/index?file=1&name=' + encodeURIComponent(file.name) + '&size=' + file.size
+          url: '/pages/input/index?file=1&name=' + encodeURIComponent(file.name) + '&size=' + file.size +
+            '&path=' + encodeURIComponent(file.path || '')
         })
       }
     })
