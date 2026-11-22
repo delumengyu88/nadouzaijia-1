@@ -67,7 +67,9 @@ def clean_queries(database: Database, now: datetime, *, apply: bool, batch_size:
 def run(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m nadou query-retention")
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--dry-run", action="store_true", help="only count eligible history (default)")
+    mode.add_argument(
+        "--dry-run", action="store_true", help="only count eligible history (default)"
+    )
     mode.add_argument("--apply", action="store_true", help="remove expired owned history")
     parser.add_argument("--daily", action="store_true", help="repeat every 24 hours")
     args = parser.parse_args(argv)
