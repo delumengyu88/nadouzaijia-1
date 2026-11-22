@@ -26,6 +26,7 @@ This PR is the smallest backend later PRs can build on: import the hourly task e
 | `nadou.search` | `ProgramSearch` |
 | `nadou.query_export` | `QueryExport` workbook |
 | `nadou.main` | FastAPI app |
+| `nadou.payments` | WeChat Pay JSAPI orders, notification, and grant |
 | `nadou.seed` | Synthetic CSV + index rows through the importer |
 
 Normalization and parsing are classes. `SignedUrlProvider` is the seam the real CDN signer will replace; the API calls only that.
@@ -148,7 +149,7 @@ Login is `POST /api/v1/admin/auth/login` with username and password. Passwords a
 
 The browser transport is the httpOnly cookie `nadou_admin_session` (`SameSite=Lax`, `Path=/api/v1/admin`, `Secure` outside local/test). The login JSON also returns the token so a non-browser client can send `Authorization: Bearer`. If both are present, the bearer token is the one that is used. Logout revokes that session by setting `revoked_at`. Sessions last 12 hours. `python -m nadou create-admin --reset-password` sets `revoked_at` on every unexpired session for that admin and clears that account's login locks, in the same transaction as the new password hash. The audit row records how many locks were cleared and does not contain the password. Other accounts' sessions are left alone.
 
-Five consecutive failures lock that account from that client IP for 30 minutes. Failures from another IP do not lock the account, and failures against one account do not lock a different account on the same IP. The client address is the direct peer, unless `NADOU_TRUSTED_PROXIES` (default `127.0.0.1`) allows that peer to supply `X-Forwarded-For`. When uvicorn is started with `--proxy-headers`, it trusts `127.0.0.1` by default and rewrites the peer address once, so do not also pass `--proxy-headers` when running the backend directly on the machine, or the address is handled twice. An admin unlocks with `POST /api/v1/admin/staff/{id}/unlock`, which clears every lock for that account and writes an audit row. The first admin account is created on the server with `python -m nadou create-admin` (see the README). The command reuses the Argon2id hasher, refuses passwords shorter than 12 characters, and writes an audit row that does not contain the password. It does not load demo data and does not read `NADOU_ALLOW_DEV_SEED`. Later accounts are created by an admin.
+Five consecutive failures lock that account from that client IP for 30 minutes. Failures from another IP do not lock the account, and failures against one account do not lock a different account on the same IP. The client address is the direct connection address; a forwarded header is not trusted. An admin unlocks with `POST /api/v1/admin/staff/{id}/unlock`, which clears every lock for that account and writes an audit row. The first admin account is created on the server with `python -m nadou create-admin` (see the README). The command reuses the Argon2id hasher, refuses passwords shorter than 12 characters, and writes an audit row that does not contain the password. It does not load demo data and does not read `NADOU_ALLOW_DEV_SEED`. Later accounts are created by an admin.
 
 ### Audit log
 
@@ -170,11 +171,11 @@ Marking `取证中` failed requires a reason and a refund method. The refund amo
 
 Support lookup returns the phone masked to the last four digits (`90000001234` → `*******1234`). Admin sees the full phone. Ban requires a reason. `temporary` requires an end time; `permanent` rejects one. Unban clears the ban fields. Every change is audited.
 
-Manual grant or extend takes `regular` or `vip`, a day count, and a reason. The resulting row has `entitlements.source = manual`. `EntitlementBook.counts_for_revenue` is false for that source, which is how invite-code conversion and order revenue leave the grant out. An order issuance uses `source = order`.
+Manual grant or extend takes `regular` or `vip`, a day count, and a reason. The resulting row has `entitlements.source = manual`. `EntitlementBook.counts_for_revenue` is false for that source, which is how invite-code conversion and order revenue leave the grant out. An order issuance uses `source = order`. Orders whose `product` is in `TEST_PRODUCTS` (currently `membership_test`) are left out of invite-code conversion and that revenue set. Add `membership_dev` to the same set when that SKU exists.
 
 ### Orders and reissue
 
-The order table is a read model until payment exists. `OrderLookup.by_order_number` and `GET /api/v1/admin/orders/by-number/{order_number}` find an order by its public number. Export is `GET /api/v1/admin/orders/export` (CSV, admin only).
+The workbench still reads orders; it does not take payment. `OrderLookup.by_order_number` and `GET /api/v1/admin/orders/by-number/{order_number}` find an order by its public number. Export is `GET /api/v1/admin/orders/export` (CSV, admin only). Mini program JSAPI payment is specified in [PAYMENTS.md](PAYMENTS.md). The server prices each tier. A verified WeChat notification, or a server-side order query, grants that order's original tier and duration through `EntitlementIssuer` and `OrderGrantWriter`. `amount` stays the yuan integer the workbench already shows. `amount_fen` is the WeChat charge in 分.
 
 `EntitlementIssuer.issue` grants the order's original tier and duration. `order_issuances.order_id` is unique, so a second call returns the existing grant instead of creating another entitlement. The issuer tries three times, then sets the order and the issuance to `发放异常` and notifies once. `POST /api/v1/admin/orders/{id}/reissue` (support or admin) runs that same path only for `发放异常`. The body cannot carry a tier or a duration; the issuance row keeps the snapshot taken on the first attempt. A repeated reissue returns the entitlement already issued.
 

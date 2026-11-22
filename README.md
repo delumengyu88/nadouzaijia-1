@@ -97,7 +97,7 @@ Hourly index import, after the database has been migrated:
 NADOU_TASK_EXPORT_PATH=./export.csv python -m nadou index-run
 ```
 
-`NADOU_TASK_EXPORT_PATH` is a local CSV. DingTalk alerts use `NADOU_DINGTALK_WEBHOOK_URL` and `NADOU_DINGTALK_WEBHOOK_SECRET` when both are set. Leave them empty to disable alerts. Do not commit real values. `NADOU_TRUSTED_PROXIES` defaults to `127.0.0.1`. When uvicorn is started with `--proxy-headers`, it trusts `127.0.0.1` by default and rewrites the peer address once, so do not also pass `--proxy-headers` when running the backend directly on the machine, or the address is handled twice.
+`NADOU_TASK_EXPORT_PATH` is a local CSV. DingTalk alerts use `NADOU_DINGTALK_WEBHOOK_URL` and `NADOU_DINGTALK_WEBHOOK_SECRET` when both are set. Leave them empty to disable alerts. Do not commit real values. `NADOU_TRUSTED_PROXIES` defaults to `127.0.0.1`. The recorded client address is the direct peer, unless that peer is allowed by this setting to supply `X-Forwarded-For`. When uvicorn is started with `--proxy-headers`, it trusts `127.0.0.1` by default and rewrites the peer address once, so do not also pass `--proxy-headers` when running the backend directly on the machine, or the address is handled twice.
 
 ## 创建第一个工作台管理员
 
