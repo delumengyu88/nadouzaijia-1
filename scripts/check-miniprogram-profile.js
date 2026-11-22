@@ -332,6 +332,22 @@ async function main() {
   assert.strictEqual(denied.data.statusLine, '未登录')
   assert.strictEqual(denied.data.loading, false)
 
+  login(paidBody())
+  var changing = open('profile')
+  state.setSession({ token: 'replacement', expires_at: new Date(Date.now() + 60000).toISOString(), user: freeBody() })
+  requests.shift().success({ statusCode: 200, data: paidBody() })
+  await drain()
+  assert.strictEqual(state.userId(), freeBody().id)
+  assert.strictEqual(requests[0].header.Authorization, 'Bearer replacement')
+  requests.shift().success({statusCode: 200, data: freeBody()})
+  await drain()
+  assert.strictEqual(changing.data.tier, 'free')
+  var expiring = open('member')
+  state.load().auth.expires_at = new Date(0).toISOString()
+  requests.shift().success({statusCode: 200, data: paidBody()})
+  await drain()
+  assert.strictEqual(expiring.data.guest, true)
+
   console.log('profile /auth/me: paid, invite, free, missing, failure, guest ok')
 }
 

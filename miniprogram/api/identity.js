@@ -103,12 +103,14 @@ function remember(body) {
 }
 
 function loadMe(guest, map) {
-  if (!state.token()) return guest()
+  var token = state.token()
+  if (!token) return guest()
   return request('/api/v1/auth/me').then(function (body) {
+    if (token !== state.token()) return loadMe(guest, map)
     remember(body)
     return map(body)
   }, function () {
-    if (!state.token()) return guest()
+    if (token !== state.token()) return loadMe(guest, map)
     return Promise.reject(new Error('加载失败'))
   })
 }
