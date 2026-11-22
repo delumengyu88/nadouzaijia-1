@@ -24,9 +24,13 @@
       <view class="row-main"><view class="row-title">查询记录</view></view>
       <text class="chev">›</text>
     </view>
-    <view class="row" wx:if="{{!inviteLoading}}" data-url="/pages/invite/index" bindtap="go">
+    <view class="row invite-row" wx:if="{{!inviteLoading && bound && !inviteError}}">
+      <view class="row-main"><view class="row-title">邀请码</view></view>
+      <text class="invite-bound">已绑定 {{inviteMask}}</text>
+    </view>
+    <view class="row invite-row" wx:elif="{{!inviteLoading}}" data-url="/pages/invite/index" bindtap="go">
       <view class="row-main"><view class="row-title">{{inviteError || bindText}}</view></view>
-      <text class="chev" wx:if="{{!bound && !inviteError}}">›</text>
+      <text class="chev" wx:if="{{!inviteError}}">›</text>
     </view>
     <view class="row" data-url="/pages/orders/index" bindtap="go">
       <view class="row-main"><view class="row-title">我的订单</view></view>

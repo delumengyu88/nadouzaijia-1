@@ -71,7 +71,14 @@ async function main() {
   assert(inviteWxml.indexOf('phase == \'guest\'') !== -1)
   assert(inviteWxml.indexOf('微信登录') !== -1)
   assert(profileWxml.indexOf('{{inviteError || bindText}}') !== -1)
-  assert(profileWxml.indexOf('wx:if="{{!inviteLoading}}"') !== -1)
+  assert(profileWxml.indexOf('wx:if="{{!inviteLoading && bound && !inviteError}}"') !== -1)
+  assert(profileWxml.indexOf('>邀请码</view>') !== -1)
+  assert(profileWxml.indexOf('已绑定 {{inviteMask}}') !== -1)
+  assert(profileWxml.indexOf('class="invite-bound"') !== -1)
+  var boundRow = profileWxml.split('invite-row').slice(1, 2).join('')
+  assert(boundRow.indexOf('bindtap') === -1, 'bound row does not navigate')
+  assert(fs.readFileSync(path.join(__dirname, '../miniprogram/pages/profile/index.wxss'), 'utf8').indexOf('min-height: 102rpx') !== -1)
+  assert(fs.readFileSync(path.join(__dirname, '../miniprogram/pages/profile/index.wxss'), 'utf8').indexOf('color: #646A73') !== -1)
 
   state.reset()
   var guestPage = page('invite')
@@ -122,6 +129,7 @@ async function main() {
   assert.strictEqual(profile.data.bindText, '')
   await answer({ guest: false, bound: true, bindText: '邀请码 ABCD****' })
   assert.strictEqual(profile.data.bindText, '邀请码 ABCD****')
+  assert.strictEqual(profile.data.inviteMask, 'ABCD****')
   assert.strictEqual(profile.data.bound, true)
   assert.strictEqual(http.profile().tier, 'free')
 

@@ -1,6 +1,12 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
 
+function inviteMask(text) {
+  var value = String(text || '')
+  var prefix = '邀请码 '
+  return value.indexOf(prefix) === 0 ? value.slice(prefix.length) : ''
+}
+
 Page({
   data: { useMock: require('../../config').mode !== 'live', title: '个人中心', showSheet: false },
   onShow: function () {
@@ -11,6 +17,7 @@ Page({
     data.showSheet = false
     data.useMock = require('../../config').mode === 'mock'
     Object.keys(info).forEach(function (key) { data[key] = info[key] })
+    data.inviteMask = inviteMask(info.bindText)
     if (live) {
       data.bindText = ''
       data.inviteError = ''
@@ -47,6 +54,7 @@ Page({
       inviteLoading: false,
       guest: false,
       bindText: state.bindText,
+      inviteMask: inviteMask(state.bindText),
       bound: !!state.bound,
       inviteError: ''
     })
