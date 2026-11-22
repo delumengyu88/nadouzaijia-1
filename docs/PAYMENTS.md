@@ -45,7 +45,7 @@
 | `membership_vip` | VIP `vip` | 30 天 | 59900 分（599.00 元） |
 | `membership_test` | 普通会员 `regular` | 1 天 | 1 分（0.01 元），仅开关打开且用户在白名单内 |
 
-开通走已有的 `OrderGrantWriter`：按订单上的会员档位和天数写入一条 `source=order` 的权益。同一订单重复通知不会再写一条。
+开通走已有的 `OrderGrantWriter`：按订单上的会员档位和天数写入一条 `source=order` 的权益。这条权益的到期时间是 `max(该档当前到期日, 付款时刻) + 天数`。该档当前到期日与 `GET /api/v1/auth/me` 的 `vip_expires_at` 或 `regular_expires_at` 相同，即该档所有未过期权益里最晚的 `expires_at`（订单、手动发放、邀请码、以及 `source` 为空的都算）。到期时刻等于现在的视为已过期，不作为起点。普通会员和 VIP 分开计：购买一档不改另一档，也不把另一档的剩余天数加到这一档上。同一订单重复通知不会再写一条，也不会再顺延。
 
 ## 小程序要调的接口
 
@@ -133,6 +133,8 @@
 
 查单和同步的 200 字段与下单相同，但没有 `timeStamp`、`nonceStr`、`package`、`signType`、`paySign`。
 
+这三处 200 在原有字段之外再带 `orderNo`、`line`、`statusText`、`product`、`isTest`。原有字段不变：`status` 仍是中文库内状态。字段含义和「我的订单」列表相同，见 [DESIGN.md](DESIGN.md) 的「小程序我的订单」。英文 `status` 只出现在列表里。
+
 `status`：`待支付`、`已支付`、`已发放`、`发放异常`、`已退款`。`granted` 只在 `已发放` 时为 `true`。`发放异常` 表示钱已确认但权益写入失败，需要工作台补发，客户端不要再当成未支付去开一笔新的同等订单之前先把这个状态展示给用户。
 
 | HTTP | `detail` | 何时 |
@@ -145,9 +147,22 @@
 | 400 | 金额不符 | 仅 `sync`：微信称支付成功，但金额与本地订单不一致。不开通 |
 | 400 | 支付校验失败 | 仅 `sync`：商户号、AppID、openid 或微信交易号与订单不一致。不开通 |
 
-`GET` 订单不返回 503/502/金额不符，因为它不访问微信。
+`GET` 订单不返回 503/502/金额不符，因为它不访问微信。成功和 404 都带 `Cache-Control: no-store`。下单和同步不带这个头。
 
-### 4. 会员状态
+### 4. 我的订单
+
+`GET /api/v1/pay/orders`
+
+无请求体。登录态与 `GET /api/v1/auth/me` 相同，不是上面支付接口把 401 改写成 `未登录` 的那种。未登录时 `detail` 为 `authentication required`。
+
+200 的正文是数组，没有订单时是 `[]`。只含当前用户的订单，按创建时间倒序。`membership_test` 和 `membership_dev` 会返回，并带 `isTest: true`。响应带 `Cache-Control: no-store`。字段、英文状态码，以及单笔详情仍用上一节的查单接口，见 [DESIGN.md](DESIGN.md) 的「小程序我的订单」。
+
+| HTTP | `detail` | 何时 |
+|---|---|---|
+| 401 | authentication required | 没有、无效或过期的 Bearer |
+| 403 | account is disabled | 账号已封禁 |
+
+### 5. 会员状态
 
 `GET /api/v1/auth/me`
 

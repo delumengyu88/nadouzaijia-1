@@ -1,0 +1,10 @@
+<view class="privacy-mask" wx:if="{{show}}" catchtouchmove="noop">
+  <view class="privacy-panel">
+    <view class="privacy-title">用户隐私保护提示</view>
+    <view class="privacy-desc">使用上传表格、保存图片等功能前，请先阅读并同意<text class="privacy-link" bindtap="openContract">《那豆在架隐私保护指引》</text>。</view>
+    <view class="privacy-actions">
+      <button class="privacy-btn privacy-reject" bindtap="onDisagree">拒绝</button>
+      <button id="agree-btn" class="privacy-btn privacy-agree" open-type="agreePrivacyAuthorization" bindagreeprivacyauthorization="onAgree">同意</button>
+    </view>
+  </view>
+</view>

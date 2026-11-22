@@ -20,7 +20,7 @@ function walk(dir, out) {
   return out
 }
 
-var banned = ['待确认', '疑似命中', '确认命中', '别名', '匹配方式', '命中类型', '顺延', 'VIP 结束后生效']
+var banned = ['待确认', '疑似命中', '确认命中', '别名', '匹配方式', '命中类型', '顺延', 'VIP 结束后生效', '13800002610']
 walk(root, []).forEach(function (file) {
   if (['.png', '.webp'].indexOf(path.extname(file)) !== -1) return
   var text = fs.readFileSync(file, 'utf8')
@@ -123,6 +123,12 @@ var VOID_TAGS = { input: 1, image: 1, import: 1, include: 1, progress: 1, checkb
 
 function checkWxml(file, text) {
   var rel = path.relative(root, file)
+  var known = Object.assign({}, WXML_TAGS)
+  var jsonFile = file.replace(/\.wxml$/, '.json')
+  if (fs.existsSync(jsonFile)) {
+    var conf = JSON.parse(fs.readFileSync(jsonFile, 'utf8'))
+    Object.keys(conf.usingComponents || {}).forEach(function (name) { known[name] = 1 })
+  }
   var i = 0
   var stack = [{ name: '#root', ifChain: false }]
   function tagEnd(from) {
@@ -165,7 +171,7 @@ function checkWxml(file, text) {
     var raw = text.slice(i + 1, endPos).replace(/\/\s*$/, '')
     var self = /\/\s*>$/.test(text.slice(i, endPos + 1))
     var name = raw.trim().split(/\s/)[0]
-    if (!WXML_TAGS[name]) fail(rel + ': unknown tag <' + name + '>')
+    if (!known[name]) fail(rel + ': unknown tag <' + name + '>')
     var attrs = attrsOf(raw.slice(name.length))
     ;['wx:if', 'wx:elif', 'wx:for'].forEach(function (key) {
       if (attrs[key] !== undefined && attrs[key].indexOf('{{') === -1) fail(rel + ': ' + key + ' needs {{ }}')
@@ -254,9 +260,21 @@ global.wx = {
   env: { USER_DATA_PATH: '/tmp' },
   openDocument: function () {},
   saveImageToPhotosAlbum: function (opt) { if (opt && opt.success) opt.success() },
-  stopPullDownRefresh: function () {}
+  stopPullDownRefresh: function () {},
+  hideTabBar: function () {
+    if (!wx._tabBarLog) wx._tabBarLog = []
+    wx._tabBarLog.push('hide')
+  },
+  showTabBar: function () {
+    if (!wx._tabBarLog) wx._tabBarLog = []
+    wx._tabBarLog.push('show')
+  }
 }
-global.getApp = function () { return { globalData: {} } }
+global.getApp = function () {
+  if (!global.__app) global.__app = { globalData: {} }
+  if (!global.__app.globalData) global.__app.globalData = {}
+  return global.__app
+}
 global.App = function (def) { global.__app = def }
 global.Component = function (def) { global.__component = def }
 global.getCurrentPages = function () { return [{}, {}] }
@@ -307,7 +325,7 @@ function expect(cond, message) {
 function boot(account, opts) {
   api.reset()
   api.switchAccount(account)
-  if (!opts || opts.splash !== false) api.markSplashSeen()
+  getApp().globalData.splashShownThisLaunch = !opts || opts.splash !== false
   if (!opts || opts.announce !== false) api.markAnnounceSeen()
 }
 
@@ -318,8 +336,75 @@ function open(rel, query, life) {
   return page
 }
 
+function checkMemberRules() {
+  var member = require(path.join(root, 'utils/member'))
+  var plans = api.membershipPlans()
+  function texts(plan) {
+    return plan.perks.map(function (row) { return (row.ok ? 'y:' : 'n:') + row.text }).join('|')
+  }
+  expect(plans.length === 3 && plans[0].id === 'membership_vip' && plans[1].id === 'membership_regular' && plans[2].id === 'free', 'vip, regular, then free')
+  expect(plans[0].selectable && plans[0].name === 'VIP 会员' && plans[0].price === 599 && plans[0].days === 30, 'vip price from catalog')
+  expect(plans[1].selectable && plans[1].name === '普通会员' && plans[1].price === 299 && plans[1].days === 30, 'regular price from catalog')
+  expect(!plans[2].selectable && plans[2].name === '免费用户' && plans[2].priceText === '免费', 'free card has no purchase price')
+  expect(texts(plans[0]) === 'y:30–89 天记录|y:90 天以上记录|y:高清截图与下载', 'vip perk rows')
+  expect(texts(plans[1]) === 'n:30–89 天记录 · 仅 VIP|y:90 天以上记录|y:高清截图与下载', 'regular perk rows')
+  expect(texts(plans[2]) === 'y:180 天以上记录（低清）|n:高清截图 · 仅会员|n:下载 · 仅会员', 'free perk rows')
+  expect(member.freeCornerLabel('free') === '当前' && member.freeCornerLabel('vip') === '免费' && member.freeCornerLabel('regular') === '免费' && member.freeCornerLabel('guest') === '免费', 'free corner is 当前 only for the free tier')
+  plans.forEach(function (plan) {
+    expect(plan.perks.length === 3, 'three perk rows')
+    plan.perks.forEach(function (row) {
+      expect(row.text.indexOf('\u2014') === -1 && row.text.indexOf('✓') === -1, 'perk copy has no em dash or check mark')
+    })
+  })
+  var blocked = plans[1].perks[0]
+  expect(!blocked.ok && blocked.text.indexOf('\u2013') !== -1 && blocked.text.indexOf('\u00b7') !== -1, 'unavailable perk is gray copy with a reason')
+  expect(member.confirmLabel(plans[0].price) === '确认开通 ¥599', 'vip confirm label')
+  expect(member.confirmLabel(plans[1].price) === '确认开通 ¥299', 'regular confirm label')
+  expect(member.statusLine('guest') === '未登录', 'guest status')
+  expect(member.statusLine('free') === '免费 · 可看 180 天以上低清记录', 'free status names the low-res window')
+  expect(member.statusLine('vip', '2026-12-18') === 'VIP 至 2026-12-18', 'vip status')
+  expect(member.statusLine('regular', '2026-12-18') === '普通会员 至 2026-12-18', 'regular status')
+  var fit = member.screenUsage()
+  expect(member.LAYOUT.cardCount === 3 && member.LAYOUT.payBlock === 56 && fit.used === 614, 'free card keeps the confirm slot, used ' + fit.used)
+  var css = fs.readFileSync(path.join(root, 'pages/member/index.wxss'), 'utf8')
+  expect(css.indexOf('overflow: hidden') === -1, 'member page can scroll')
+  expect(css.indexOf('background: #e8ecf1') !== -1 && css.indexOf('box-shadow: none') !== -1, 'free card is flat gray')
+  expect(css.indexOf('border: 2px solid transparent') !== -1, 'selection border is reserved at 2px')
+  expect(css.indexOf('border-color: #1D4E9E') !== -1 && css.indexOf('background: #E7F0FF') !== -1, 'selected card')
+  expect(css.indexOf('background: #1D4E9E') !== -1 && css.indexOf('visibility: hidden') !== -1, 'confirm button slot')
+  expect(css.indexOf('#e4570e') === -1, 'member card price is not orange')
+  expect(/\.price \{[^}]*color:\s*#1c2430/.test(css) && /\.price \{[^}]*font-weight:\s*700/.test(css), 'member card price is black and bold')
+  expect(css.indexOf('.perk-mark.gap') !== -1, 'gray perks keep a hidden check')
+  expect(css.indexOf('padding-bottom: calc(56px + env(safe-area-inset-bottom))') !== -1, 'tab clearance')
+  var xml = fs.readFileSync(path.join(root, 'pages/member/index.wxml'), 'utf8')
+  expect(xml.indexOf('输入邀请码') !== -1 && xml.indexOf('class="invite-link"') !== -1, 'invite is a text link')
+  expect(xml.indexOf('class="perk-mark {{perk.ok ? \'\' : \'gap\'}}"') !== -1, 'every perk reserves the check width')
+  expect(xml.indexOf('wx:if="{{plan.selectable}}"') !== -1, 'free card has no radio')
+  expect(xml.indexOf('choice static') !== -1 || xml.indexOf("plan.selectable ? '' : 'static'") !== -1, 'free card is marked static')
+  expect(xml.indexOf('\u2014') === -1 && xml.indexOf('¥599') === -1 && xml.indexOf('¥299') === -1, 'page does not hardcode prices or an em dash')
+  expect((xml.match(/class="btn /g) || []).length === 1, 'member page has one solid button')
+  var viewerXml = fs.readFileSync(path.join(root, 'pages/viewer/index.wxml'), 'utf8')
+  expect(viewerXml.indexOf('wx:if="{{downloadEntry}}"') !== -1, 'download entry is conditional')
+  expect(viewerXml.indexOf('{{blockedReason}}') !== -1, 'blocked download writes the reason')
+  expect(viewerXml.indexOf('当前为低清水印图，开通会员可看高清</view>') !== -1, 'free screenshot warning has no period')
+  expect(viewerXml.indexOf('开通会员可看高清。') === -1 && viewerXml.indexOf('不可放大到高清') === -1, 'old low-res warning is gone')
+  var freeOffer = member.downloadOffer({ canSave: false, low: true, tier: 'free' })
+  expect(!freeOffer.downloadEntry && freeOffer.blockedReason === '开通会员后下载', 'free user has no download entry')
+  var guestOffer = member.downloadOffer({ canSave: false, tier: 'guest' })
+  expect(!guestOffer.downloadEntry && guestOffer.blockedReason === '开通会员后下载', 'guest download reason')
+  var regularBlock = member.downloadOffer({ canSave: false, tier: 'regular' })
+  expect(!regularBlock.downloadEntry && regularBlock.blockedReason === '30–89 天记录 · 仅 VIP', 'regular 30-89 download reason')
+  expect(regularBlock.blockedReason === plans[1].perks[0].text, 'download hint matches the gray perk exactly')
+  var paid = member.downloadOffer({ canSave: true, tier: 'vip' })
+  expect(paid.downloadEntry && paid.blockedReason === '', 'paid download entry')
+  var program = member.downloadOffer({ canSave: false, programOnly: true, low: true, tier: 'free' })
+  expect(!program.downloadEntry && program.blockedReason === '', 'program grant is not a download entry')
+}
+
 async function main() {
 try {
+  checkMemberRules()
+
   var titlesUtil = require(path.join(root, 'utils/text'))
   var approvedWords = require(path.join(root, 'stop-words.json'))
   expect(approvedWords.length === 102, '102 approved stop words')
@@ -348,13 +433,196 @@ try {
   expect(bookText.indexOf('C6" t="inlineStr"><is><t>共识类别') !== -1, 'xlsx category value')
   expect(bookText.indexOf('D6" t="inlineStr"><is><t>节目类型值') !== -1, 'xlsx program type independent')
   boot('guest', { splash: false, announce: false })
+  wx._tabBarLog = []
+  var skipAtZero = open('pages/home/index', {}, 'show')
+  var readyAtZero = skipAtZero.data.showSplash && skipAtZero.data.seconds === 5 &&
+    wx._tabBarLog[wx._tabBarLog.length - 1] === 'hide'
+  skipAtZero.finishSplash()
+  expect(readyAtZero && !skipAtZero.data.showSplash && wx._tabBarLog[wx._tabBarLog.length - 1] === 'show',
+    'skip at second 0 closes splash and restores the tab bar')
+  getApp().onShow()
+  skipAtZero.onShow()
+  var shareReturn = open('pages/home/index', {}, 'show')
+  expect(!skipAtZero.data.showSplash && !shareReturn.data.showSplash && getApp().globalData.splashShownThisLaunch,
+    'warm start from background or share card does not show splash')
+
+  boot('guest', { splash: false, announce: false })
+  wx._tabBarLog = []
   var home = open('pages/home/index', {}, 'show')
   expect(home.data.showSplash, 'splash did not cover home')
+  expect(home.data.splashSkipTop === 48 && home.data.splashSkipHeight === 32 && home.data.splashSkipRight === 102,
+    'skip matches the capsule height and sits 8px to its left')
+  expect(home.data.splashSkipHitHeight >= 44 && home.data.splashSkipHitTop <= home.data.splashSkipTop,
+    'skip hit area is at least 44pt without moving the pill')
+  expect(wx._tabBarLog[wx._tabBarLog.length - 1] === 'hide', 'splash hides the custom tab bar')
+  var homeWxml = fs.readFileSync(path.join(root, 'pages/home/index.wxml'), 'utf8')
+  expect(homeWxml.indexOf('showAnnounce && !showSplash') !== -1, 'announcement stays down during splash')
+  expect(homeWxml.indexOf('showDone && !showAnnounce && !showSplash') !== -1, 'done dialog stays down during splash')
+  expect(homeWxml.indexOf('is-text') === -1 && homeWxml.indexOf('那豆在架') !== -1, 'no text-version splash branch')
+  var splashCss = fs.readFileSync(path.join(root, 'app.wxss'), 'utf8')
+  var splashAt = splashCss.indexOf('.splash-cover {')
+  var splashEnd = splashCss.indexOf('.member-status', splashAt)
+  splashCss = splashCss.slice(splashAt, splashEnd)
+  expect(splashCss.indexOf('#1D4E9E') === -1 && splashCss.indexOf('#163E80') === -1, 'splash has no bright blue fallback')
+  expect(splashCss.indexOf('#0a1630') !== -1 && splashCss.indexOf('#050b1a') !== -1, 'image failure uses the dark fallback')
+  expect(homeWxml.indexOf('splash-mark.png') !== -1, 'splash logo is the P01 mark')
+  expect(homeWxml.indexOf('splash-skip-hit') !== -1, 'skip hit target wraps the visible pill')
+  var layoutSplash = require(path.join(root, 'pages/home/splash-layout')).layoutSplash
+  function gapOf(frame) { return frame.splashGlassTop - frame.splashTextBottom }
+  var iphone8 = layoutSplash({ windowWidth: 375, windowHeight: 667, statusBarHeight: 20 },
+    { top: 24, height: 32, left: 281 })
+  expect(gapOf(iphone8) >= 16 && iphone8.splashGlassTop >= 0 && iphone8.splashGlassBottom <= 667,
+    'iPhone 8 keeps 16px above the glass and the glass fully visible')
+  var tiny = layoutSplash({ windowWidth: 360, windowHeight: 640, statusBarHeight: 20 },
+    { top: 24, height: 32, left: 266 })
+  expect(gapOf(tiny) >= 16 && tiny.splashGlassTop >= 0 && tiny.splashGlassBottom <= 640,
+    '360x640 keeps 16px above the glass and the glass fully visible')
+  var iphone14 = layoutSplash({ windowWidth: 390, windowHeight: 844, statusBarHeight: 47 },
+    { top: 51, height: 32, left: 296 })
+  expect(Math.abs(iphone14.splashTitleSize - 96 * 390 / 750) < 1, 'iPhone 14 keeps the P01 title size')
+  var poster = fs.readFileSync(path.join(root, 'assets/p01-splash-bg.webp'))
+  expect(poster.length < 200 * 1024, 'splash artwork stays under 200KB')
+  var vp8 = poster.indexOf('VP8 ')
+  var dim = poster.readUInt16LE(vp8 + 14)
+  var dimH = poster.readUInt16LE(vp8 + 16)
+  expect((dim & 0x3fff) === 750 && (dimH & 0x3fff) === 1624, 'splash artwork is 750x1624')
+  flush()
+  expect(home.data.showSplash && !api.splashSeen(), 'image timeout must not write splashSeen')
+  home.splashFailed()
+  expect(home.data.showSplash && home.data.splashFailed && !api.splashSeen(), 'image error stays on the dark splash')
   cover('P01')
   home.finishSplash()
-  expect(!home.data.showSplash && home.data.showAnnounce, 'announcement did not follow splash')
+  expect(!home.data.showSplash && home.data.showAnnounce && !api.splashSeen(), 'skip ends splash without writing storage')
+  expect(getApp().globalData.splashShownThisLaunch, 'splash counts for this cold start')
+  expect(wx._tabBarLog[wx._tabBarLog.length - 1] === 'show', 'splash end shows the custom tab bar')
+  home.onShow()
+  expect(!home.data.showSplash, 'returning from background does not show splash again')
+  var second = open('pages/home/index', {}, 'show')
+  expect(!second.data.showSplash, 'switching back to home does not show splash again')
+  getApp().onLaunch()
+  expect(!getApp().globalData.splashShownThisLaunch, 'cold start clears the memory flag')
+  var cold = open('pages/home/index', {}, 'show')
+  expect(cold.data.showSplash && !api.splashSeen(), 'next cold start shows splash without storage')
   cover('P02')
   home.closeAnnounce()
+
+  boot('guest', { splash: false, announce: false })
+  var ticks = []
+  var savedInterval = global.setInterval
+  global.setInterval = function (fn, ms) { ticks.push({ fn: fn, ms: ms }); return 1 }
+  try {
+    var timed = open('pages/home/index', {}, 'show')
+    expect(ticks.length === 1 && ticks[0].ms === 1000, 'splash countdown is one second')
+    flush()
+    timed.splashFailed()
+    expect(timed.data.showSplash && timed.data.splashFailed && !api.splashSeen(), 'failed image keeps the countdown')
+    var step
+    for (step = 0; step < 4; step++) ticks[0].fn()
+    expect(timed.data.showSplash && timed.data.seconds === 1 && !api.splashSeen(), 'countdown has not finished early')
+    ticks[0].fn()
+    expect(!timed.data.showSplash && !api.splashSeen() && getApp().globalData.splashShownThisLaunch,
+      'countdown end hides splash without writing storage')
+    var afterCountdown = open('pages/home/index', {}, 'show')
+    expect(!afterCountdown.data.showSplash, 'same launch does not show splash after countdown')
+  } finally {
+    global.setInterval = savedInterval
+  }
+
+  var splashApi = require(path.join(root, 'api/splash'))
+  boot('guest', { splash: false, announce: false })
+  expect(splashApi.shouldShow(true) === true && splashApi.shouldShow(undefined) === true, 'switch on shows splash')
+  expect(splashApi.shouldShow(false) === false, 'switch off does not show')
+  api.markSplashSeen()
+  expect(splashApi.shouldShow(true) === true, 'splashSeen storage is not a display condition')
+  boot('guest', { splash: false, announce: false })
+  var splashSource = fs.readFileSync(path.join(root, 'api/splash.js'), 'utf8')
+  expect(splashSource.indexOf('http://') === -1 && splashSource.indexOf('https://') === -1, 'splash config has no hardcoded host')
+  expect(splashSource.indexOf("'/api/v1/app/config'") !== -1, 'splash config path')
+  function drain() { return new Promise(function (resolve) { setImmediate(resolve) }) }
+  function useSplashRequest(mode, request) {
+    useSplashRequest.prev = { mode: defaults.mode, request: wx.request, base: defaults.apiBase }
+    defaults.mode = mode
+    wx.request = request
+  }
+  function restoreSplashRequest() {
+    defaults.mode = useSplashRequest.prev.mode
+    wx.request = useSplashRequest.prev.request
+    defaults.apiBase = useSplashRequest.prev.base
+  }
+  try {
+    var calls = 0
+    useSplashRequest('mock', function () { calls++ })
+    var mocked = open('pages/home/index', {}, 'show')
+    await drain()
+    expect(calls === 0 && mocked.data.showSplash && !api.splashSeen(), 'mock mode shows splash without a request')
+    restoreSplashRequest()
+
+    var seenReq = {}
+    useSplashRequest('hybrid', function (opts) {
+      seenReq = { url: opts.url, timeout: opts.timeout, auth: opts.header && opts.header.Authorization }
+      opts.fail({ errMsg: 'request:fail' })
+    })
+    var enabled = await splashApi.loadEnabled()
+    expect(seenReq.url === '/test-api/api/v1/app/config', 'config uses apiBase and /api/v1/app/config')
+    expect(seenReq.timeout === 1500, 'config timeout is 1.5s')
+    expect(!seenReq.auth, 'config needs no login')
+    expect(enabled === true, 'config error counts as splash enabled')
+    restoreSplashRequest()
+
+    useSplashRequest('hybrid', function (opts) { opts.success({ statusCode: 503, data: {} }) })
+    expect(await splashApi.loadEnabled() === true, 'config http error counts as splash enabled')
+    restoreSplashRequest()
+
+    useSplashRequest('hybrid', function (opts) { opts.success({ statusCode: 200, data: {} }) })
+    expect(await splashApi.loadEnabled() === true, 'missing splash_enabled counts as enabled')
+    restoreSplashRequest()
+
+    useSplashRequest('hybrid', function (opts) { opts.success({ statusCode: 200, data: { splash_enabled: 'false' } }) })
+    expect(await splashApi.loadEnabled() === true, 'only boolean false disables splash')
+    restoreSplashRequest()
+
+    useSplashRequest('hybrid', function () {})
+    var pendingEnabled = splashApi.loadEnabled()
+    flush()
+    expect(await pendingEnabled === true, 'config timeout counts as splash enabled')
+    restoreSplashRequest()
+
+    var leaked = 0
+    useSplashRequest('hybrid', function () { leaked++ })
+    defaults.apiBase = ''
+    expect(await splashApi.loadEnabled() === true, 'unconfigured base counts as splash enabled')
+    expect(leaked === 0, 'unconfigured base must not request')
+    restoreSplashRequest()
+
+    useSplashRequest('hybrid', function (opts) {
+      opts.success({ statusCode: 200, data: { splash_enabled: false } })
+    })
+    boot('guest', { splash: false, announce: false })
+    var switched = open('pages/home/index', {}, 'show')
+    expect(switched.data.showSplash, 'splash shows before config returns')
+    await drain()
+    expect(!switched.data.showSplash && !api.splashSeen(), 'explicit false hides splash and does not mark seen')
+    var switchedAgain = open('pages/home/index', {}, 'show')
+    await drain()
+    expect(!switchedAgain.data.showSplash && !api.splashSeen(), 'explicit false stays hidden without marking seen')
+    restoreSplashRequest()
+
+    useSplashRequest('hybrid', function (opts) { opts.fail({ errMsg: 'request:fail timeout' }) })
+    boot('guest', { splash: false, announce: false })
+    var errored = open('pages/home/index', {}, 'show')
+    await drain()
+    expect(errored.data.showSplash && !api.splashSeen(), 'config error still shows splash')
+    restoreSplashRequest()
+
+    useSplashRequest('hybrid', function () {})
+    boot('guest', { splash: false, announce: false })
+    var hung = open('pages/home/index', {}, 'show')
+    flush()
+    await drain()
+    expect(hung.data.showSplash && !api.splashSeen(), 'config timeout still shows splash')
+  } finally {
+    if (useSplashRequest.prev) restoreSplashRequest()
+  }
 
   boot('guest')
   home = open('pages/home/index', {}, 'show')
@@ -372,11 +640,18 @@ try {
   cover('P04-nomember')
   cover('P18-empty')
   var memberPage = open('pages/member/index', {}, 'show')
-  expect(memberPage.data.statusLine === '当前免费用户', 'free member center')
-  expect(memberPage.data.payLabel.indexOf('开通 VIP') === 0, 'default tier label')
+  expect(memberPage.data.statusLine === '免费 · 可看 180 天以上低清记录', 'free member center')
+  expect(memberPage.data.plans[2].priceText === '当前' && !memberPage.data.plans[2].selectable, 'free tier shows 当前')
+  expect(memberPage.data.selected === '' && !memberPage.data.showPay && !memberPage.data.payLabel, 'nothing selected')
+  memberPage.pick({ currentTarget: { dataset: { id: 'free' } } })
+  expect(memberPage.data.selected === '' && !memberPage.data.showPay, 'free card ignores taps')
   memberPage.pick({ currentTarget: { dataset: { id: 'membership_regular' } } })
-  expect(memberPage.data.selected === 'membership_regular', 'tier pick')
+  expect(memberPage.data.selected === 'membership_regular' && memberPage.data.showPay, 'tier pick shows confirm')
+  expect(memberPage.data.payLabel === '确认开通 ¥' + memberPage.data.plans[1].price, 'regular confirm amount')
   memberPage.pick({ currentTarget: { dataset: { id: 'membership_vip' } } })
+  expect(memberPage.data.showPay && memberPage.data.payLabel === '确认开通 ¥' + memberPage.data.plans[0].price, 'vip confirm amount')
+  memberPage.pick({ currentTarget: { dataset: { id: 'free' } } })
+  expect(memberPage.data.selected === 'membership_vip' && memberPage.data.showPay, 'free card does not clear a selection')
 
   var freeProfile = open('pages/profile/index', {}, 'show')
   expect(freeProfile.data.tier === 'free' && !freeProfile.data.guest, 'free profile')
@@ -430,6 +705,7 @@ try {
   flush()
   expect(report.data.showLocked && report.data.fakeRows.length === 3, 'locked report')
   expect(!report.data.groups.length, 'locked report must not list real rows')
+  expect(!report.data.showDownload, 'free user has no report download entry')
   cover('P08-locked')
 
   var limits = []
@@ -529,13 +805,14 @@ try {
   expect(report.data.showOpen && !report.data.showLocked, 'unlocked report after vip')
   cover('P08-unlocked')
   var shot = open('pages/viewer/index', { id: 'xh1', name: encodeURIComponent('星河旧梦') }, 'load')
-  expect(shot.data.canSave && !shot.data.low, 'screenshot with download')
+  expect(shot.data.canSave && shot.data.downloadEntry && !shot.data.blockedReason && !shot.data.low, 'screenshot with download')
   cover('P09')
   shot = open('pages/viewer/index', { id: 'xh1', name: encodeURIComponent('星河旧梦'), view: 'nodl' }, 'load')
-  expect(shot.data.programOnly && !shot.data.canSave, 'no download')
+  expect(shot.data.programOnly && !shot.data.canSave && !shot.data.downloadEntry, 'no download')
   cover('P09-nodl')
   shot = open('pages/viewer/index', { id: 'xh1', name: encodeURIComponent('星河旧梦'), view: 'free' }, 'load')
-  expect(shot.data.low && !shot.data.canSave, 'free screenshot')
+  expect(shot.data.low && !shot.data.canSave && !shot.data.downloadEntry, 'free screenshot')
+  expect(shot.data.blockedReason === '开通会员后下载', 'free download states the reason')
   cover('P09-free')
   report = open('pages/report/index', { name: encodeURIComponent('星河旧梦'), view: 'expired' }, 'load')
   flush()
@@ -584,8 +861,11 @@ try {
   cover('P07-allmiss')
 
   memberPage = open('pages/member/index', {}, 'show')
-  expect(memberPage.data.statusLine.indexOf('当前 VIP') === 0, 'vip member center')
-  expect(memberPage.data.payLabel.indexOf('续费 VIP') === 0, 'vip renew label')
+  expect(memberPage.data.statusLine.indexOf('VIP 至 ') === 0, 'vip member center')
+  expect(memberPage.data.plans[2].priceText === '免费', 'vip viewer still sees 免费 on the free card')
+  expect(!memberPage.data.showPay && memberPage.data.selected === '', 'vip page starts unselected')
+  memberPage.pick({ currentTarget: { dataset: { id: 'membership_vip' } } })
+  expect(memberPage.data.payLabel === '确认开通 ¥' + memberPage.data.plans[0].price, 'vip confirm amount')
   cover('P18')
   var profile = open('pages/profile/index', {}, 'show')
   expect(profile.data.tier === 'vip' && !profile.data.guest, 'member profile')
@@ -620,17 +900,20 @@ try {
     if (evidenceIds[id] === 'P12-failed') expect(!detail.data.hasRefund && detail.data.badge === '取证失败', 'failed without refund')
     cover(evidenceIds[id])
   })
+  var blankEvidence = open('pages/evidence/index', {}, 'load')
+  expect(blankEvidence.data.phone === '' && blankEvidence.data.name === '雾港来信', 'mock sample title only, phone stays empty')
   var form = open('pages/evidence/index', { name: encodeURIComponent('星河旧梦'), kind: 'normal' }, 'load')
-  expect(form.data.phase === 'form' && form.data.kind === 'normal', 'evidence form')
+  expect(form.data.phase === 'form' && form.data.kind === 'normal' && form.data.phone === '', 'evidence form')
   cover('P11')
   var recent = open('pages/evidence/index', { name: encodeURIComponent('雾港来信'), kind: 'recent' }, 'load')
   expect(recent.data.kindText === '近期取证', 'recent evidence')
   cover('P11-recent')
+  form.onPhone({ detail: { value: '13912345678' } })
   form.submit()
   expect(form.data.phase === 'submitted', 'submitted evidence')
   cover('P11-submitted')
   form.submit()
-  expect(form.data.phase === 'duplicate', 'duplicate evidence')
+  expect(form.data.showDuplicate && form.data.dupId, 'duplicate evidence')
   cover('P11-duplicate')
   report = open('pages/report/index', { name: encodeURIComponent('星河旧梦') }, 'load')
   flush()
@@ -654,7 +937,10 @@ try {
   expect(profile.data.guest, 'guest profile')
   cover('P13-guest')
   memberPage = open('pages/member/index', {}, 'show')
-  expect(memberPage.data.guest && memberPage.data.payLabel === '微信登录', 'guest member center')
+  expect(memberPage.data.guest && memberPage.data.statusLine === '未登录' && !memberPage.data.showPay, 'guest member center')
+  expect(memberPage.data.plans[2].priceText === '免费', 'guest sees 免费, not 当前')
+  memberPage.pick({ currentTarget: { dataset: { id: 'membership_regular' } } })
+  expect(memberPage.data.payLabel === '确认开通 ¥' + memberPage.data.plans[1].price, 'guest confirm uses catalog price')
   cover('P18-guest')
 
   boot('free')
@@ -825,6 +1111,12 @@ if (liveCheck.status !== 0) fail(liveCheck.stderr || 'hybrid check failed')
 var uploadCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-upload.js')], { encoding: 'utf8' })
 console.log(uploadCheck.stdout || '')
 if (uploadCheck.status !== 0) fail(uploadCheck.stderr || uploadCheck.stdout || 'upload check failed')
+var evidenceCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-evidence.js')], { encoding: 'utf8' })
+console.log(evidenceCheck.stdout || '')
+if (evidenceCheck.status !== 0) fail(evidenceCheck.stderr || evidenceCheck.stdout || 'evidence check failed')
+var privacyCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-privacy.js')], { encoding: 'utf8' })
+console.log(privacyCheck.stdout || '')
+if (privacyCheck.status !== 0) fail(privacyCheck.stderr || privacyCheck.stdout || 'privacy check failed')
 if (failed) process.exit(1)
 console.log('miniprogram check ok')
 

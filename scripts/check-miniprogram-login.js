@@ -15,6 +15,8 @@ global.wx = {
   navigateTo: function (opts) { navigation.push(opts.url) },
   switchTab: function (opts) { navigation.push(opts.url) }
 }
+var app = { globalData: { splashShownThisLaunch: true } }
+global.getApp = function () { return app }
 var api = require('../miniprogram/api')
 var state = require('../miniprogram/api/state')
 function drain() { return new Promise(function (resolve) { setImmediate(resolve) }) }
@@ -41,9 +43,11 @@ function success(id) {
 }
 async function main() {
   for (var name of ['home', 'profile', 'member']) {
-    api.reset(); api.markSplashSeen()
+    api.reset()
+    app.globalData.splashShownThisLaunch = true
     var p = page(name)
     var handler = name === 'member' ? 'go' : 'login'
+    if (name === 'member') p.pick({ currentTarget: { dataset: { id: 'membership_vip' } } })
     p[handler]()
     assert.strictEqual(p.data.loginLoading, true, name)
     p[handler]()
@@ -95,7 +99,7 @@ async function main() {
   assert.strictEqual(api.profile().title, 'VIP 至 2026-11-23')
   Date.now = function () { return Date.parse('2026-11-22T21:00:00+00:00') }
   assert.strictEqual(api.profile().tier, 'regular', 'VIP expires at its exact instant')
-  assert.strictEqual(api.memberCenter().statusLine, '当前普通会员，有效至 2026-11-24')
+  assert.strictEqual(api.memberCenter().statusLine, '普通会员 至 2026-11-24')
   Date.now = function () { return Date.parse('2026-11-24T00:00:00+00:00') }
   assert.strictEqual(api.profile().tier, 'free')
   Date.now = realNow

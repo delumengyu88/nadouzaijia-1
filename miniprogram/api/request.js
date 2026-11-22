@@ -13,10 +13,18 @@ module.exports = function (path, data, options) {
       wx.request({
         url: base + path,
         method: options.method || 'GET',
-        timeout: 15000,
+        timeout: options.timeout || 15000,
         data: data || {},
         header: token ? { Authorization: 'Bearer ' + token } : {},
         success: function (res) {
+          // Evidence uses readBody and judges `code`. Redeem uses exposeStatus and judges `detail`.
+          // Keep both options: they are added by different PRs and must survive a merge.
+          if (options.readBody || options.exposeStatus) {
+            if (res.statusCode === 401 && token) state.clearSession(token)
+            if (options.exposeStatus) resolve({ statusCode: res.statusCode, data: res.data })
+            else resolve(res.data === undefined || res.data === null ? {} : res.data)
+            return
+          }
           if (res.statusCode >= 200 && res.statusCode < 300) resolve(res.data || {})
           else {
             // An old in-flight request must not erase a newly logged-in account.
