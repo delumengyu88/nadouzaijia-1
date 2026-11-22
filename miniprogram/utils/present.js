@@ -1,5 +1,20 @@
 var catalog = require('../api/catalog')
 var OTHER = '其他平台'
+var AGE_LABELS = {
+  lt_30: '30天内',
+  d30_89: '30–89天',
+  d90_179: '90–179天',
+  ge_180: '180天以上'
+}
+
+function httpImage(url) {
+  return /^https:\/\//.test(url || '') ? String(url) : ''
+}
+
+function ageLabelOf(bucket, publicExample) {
+  if (!publicExample || bucket == null || bucket === '' || bucket === 'unknown') return ''
+  return AGE_LABELS[bucket] || ''
+}
 
 function findRow(id) {
   var found = null
@@ -11,23 +26,31 @@ function findRow(id) {
   return found
 }
 
-function toRow(rec, programName, mock) {
+function toRow(rec, programName, mock, publicExample) {
   var extra = mock ? (findRow(rec.record_id) || {}) : {}
   var platform = rec.platform || extra.platform
   var unknown = !platform || platform === OTHER || platform === '平台未识别'
+  var image = httpImage(rec.thumbnail_url)
+  var checked = rec.checked_at ? String(rec.checked_at) : ''
+  var badge = ''
+  if (!(publicExample && (rec.access == null || rec.access === ''))) {
+    badge = extra.low || rec.access === 'lowres' ? '低清' : '高清'
+  }
   return {
     id: rec.record_id,
     mock: mock,
-    image: /^https:\/\//.test(rec.thumbnail_url || '') ? rec.thumbnail_url : '',
+    plainThumb: !!publicExample && !image,
+    image: image,
     title: extra.title || programName,
     platform: unknown ? OTHER : platform,
     unknown: unknown,
     sub: unknown ? '' : (rec.platform_subtype || extra.sub || ''),
     category: rec.category || '',
     time: (rec.timestamps || [])[0] || extra.time || '',
-    clock: rec.checked_at ? rec.checked_at.slice(11, 16) : extra.clock || '',
-    date: rec.checked_at ? rec.checked_at.slice(0, 10) : extra.date || '',
-    badge: extra.low || rec.access === 'lowres' ? '低清' : '高清',
+    clock: checked ? checked.slice(11, 16) : (publicExample ? '' : (extra.clock || '')),
+    date: checked ? checked.slice(0, 10) : (publicExample ? '' : (extra.date || '')),
+    ageLabel: ageLabelOf(rec.age_bucket, publicExample),
+    badge: badge,
     low: !!(extra.low || rec.access === 'lowres'),
     canSave: !!rec.can_download_screenshot && rec.access !== 'lowres' && !extra.low
   }
@@ -66,13 +89,15 @@ function present(search, meta) {
   var opens = []
   var evidence = 0
   var locked = 0
+  var publicExample = !!search.publicExample
+  var catalogMock = !publicExample && (!!search.example || require('../config').mode === 'mock')
   ;(search.records || []).forEach(function (rec) {
     if (rec.locked) {
       if (rec.age_bucket === 'lt_30') evidence += 1
       else locked += 1
       return
     }
-    opens.push(toRow(rec, name, !!search.example || require('../config').mode === 'mock'))
+    opens.push(toRow(rec, name, catalogMock, publicExample))
   })
   var window = search.locked_window || {}
   var lockedCount = window.count || locked
@@ -92,6 +117,7 @@ function present(search, meta) {
     name: name,
     example: !!search.example,
     badge: search.outcome === 'miss' ? '未命中' : '已命中',
+    badgeCls: search.outcome === 'miss' ? 'miss' : 'ok',
     hit: search.outcome === 'hit',
     miss: search.outcome === 'miss',
     header: header,
@@ -117,4 +143,22 @@ function present(search, meta) {
   }
 }
 
-module.exports = { present: present, findRow: findRow, otherLast: otherLast, OTHER: OTHER }
+function exampleFacts(records) {
+  var rows = (records || []).filter(function (rec) { return rec && rec.locked !== true })
+  var platforms = []
+  var latest = ''
+  var image = ''
+  rows.forEach(function (rec) {
+    var platform = rec.platform
+    if (platform && platform !== OTHER && platform !== '平台未识别' && platforms.indexOf(platform) === -1) platforms.push(platform)
+    var day = rec.checked_at ? String(rec.checked_at).slice(0, 10) : ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day > latest) latest = day
+    if (!image && /^https:\/\//.test(rec.thumbnail_url || '')) image = String(rec.thumbnail_url)
+    else if (!image && /^https:\/\//.test(rec.hd_url || '')) image = String(rec.hd_url)
+  })
+  var sub = '命中 ' + rows.length + ' 条记录'
+  if (latest) sub += ' · ' + latest
+  return { line: '涉及 ' + platforms.length + ' 个平台', sub: sub, hit: rows.length > 0, image: image }
+}
+
+module.exports = { present: present, findRow: findRow, otherLast: otherLast, exampleFacts: exampleFacts, OTHER: OTHER }

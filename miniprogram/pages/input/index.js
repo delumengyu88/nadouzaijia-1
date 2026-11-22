@@ -135,10 +135,33 @@ Page({
     if (api.accountKind() === 'guest') {
       return require('../../utils/login')(this, function () {})
     }
+    if (this.creating) return
     var names = (this.data.items || []).map(function (item) { return item.name })
     var created = api.createQuery(names)
-    if (!created.ok) {
-      wx.showToast({ title: created.message || '请先登录', icon: 'none' })
+    if (!created || typeof created.then !== 'function') {
+      this.finishCreate(created)
+      return
+    }
+    this.creating = true
+    this.setData({ loginLoading: true })
+    var self = this
+    created.then(function (result) {
+      self.creating = false
+      self.setData({ loginLoading: false })
+      self.finishCreate(result)
+    }, function () {
+      self.creating = false
+      self.setData({ loginLoading: false })
+      self.finishCreate({ ok: false, message: '网络异常，请重试' })
+    })
+  },
+  finishCreate: function (created) {
+    if (created && created.sessionChanged) return
+    if (!created || !created.ok) {
+      if (created && (created.statusCode === 401 || created.message === '请先登录')) {
+        return require('../../utils/login')(this, function () {})
+      }
+      wx.showToast({ title: (created && created.message) || '网络异常，请重试', icon: 'none' })
       return
     }
     wx.redirectTo({ url: '/pages/query/index?id=' + created.id })
