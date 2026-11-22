@@ -87,7 +87,37 @@ class OrderExport:
 
 
 class OrderGrantWriter:
-    """Creates the entitlement captured on the original order. Tier and days are not arguments."""
+    """Creates the entitlement captured on the original order. Tier and days are not arguments.
+
+    The new row ends at max(this tier's live expiry, now) plus the order's days. Another
+    tier is not a base and is not rewritten. A repeated issuance does not call ``write``.
+    """
+
+    @staticmethod
+    def renewal_expiry(now: datetime, days: int, current_expiry: datetime | None) -> datetime:
+        """Add ``days`` to the later of ``current_expiry`` and ``now``."""
+        start = now if current_expiry is None else max(current_expiry, now)
+        return start + timedelta(days=days)
+
+    @staticmethod
+    def live_tier_expiry(
+        session: Session, user_id: str, tier: str, now: datetime
+    ) -> datetime | None:
+        """Latest unexpired expiry of this tier, across every source.
+
+        This is the same instant ``vip_expires_at`` / ``regular_expires_at`` already show.
+        An expiry equal to ``now`` has already lapsed and is not a base.
+        """
+        rows = session.scalars(
+            select(Entitlement.expires_at).where(
+                Entitlement.user_id == user_id,
+                Entitlement.kind == tier,
+                Entitlement.expires_at > now,
+            )
+        ).all()
+        if not rows:
+            return None
+        return max(rows)
 
     def write(
         self, session: Session, user_id: str, tier: str, days: int, now: datetime
@@ -96,12 +126,17 @@ class OrderGrantWriter:
             raise ValueError("order tier is not a membership")
         if days < 1:
             raise ValueError("order duration is invalid")
+        expires_at = OrderGrantWriter.renewal_expiry(
+            now,
+            days,
+            OrderGrantWriter.live_tier_expiry(session, user_id, tier, now),
+        )
         entitlement = Entitlement(
             user_id=user_id,
             kind=tier,
             program_name=None,
             record_id=None,
-            expires_at=now + timedelta(days=days),
+            expires_at=expires_at,
             source=EntitlementBook.ORDER,
         )
         session.add(entitlement)

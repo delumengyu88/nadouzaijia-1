@@ -1,15 +1,43 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
+var splash = require('../../api/splash')
+var layoutSplash = require('./splash-layout').layoutSplash
+
+function splashFrame() {
+  var sys = {}
+  var menu = null
+  try { sys = wx.getSystemInfoSync() || {} } catch (err) {}
+  try {
+    if (wx.getMenuButtonBoundingClientRect) menu = wx.getMenuButtonBoundingClientRect()
+  } catch (err) {}
+  return layoutSplash(sys, menu)
+}
 
 Page({
-  data: { showBrand: true, title: '', examples: [], taps: 0, showSplash: false, seconds: 5 },
+  data: { showBrand: true, title: '', examples: [], taps: 0, showSplash: false, seconds: 5, splashFailed: false },
+  splashVisible: function () {
+    if (!splash.shouldShow(this.splashEnabled)) return false
+    if (this._splashLive) return true
+    return !splash.shownThisLaunch()
+  },
   onShow: function () {
+    var show = this.splashVisible()
+    if (show) {
+      splash.markShownThisLaunch()
+      this._splashLive = true
+      this.holdTabBar()
+    }
     this.paint()
-    if (!api.splashSeen()) this.armSplash()
+    if (show) {
+      this.armSplash()
+      this.watchSplashSwitch()
+    } else if (this._tabHeld) {
+      this.releaseTabBar()
+    }
   },
   onUnload: function () {
-    if (this.splashTimer) clearInterval(this.splashTimer)
-    if (this.splashLoadTimer) clearTimeout(this.splashLoadTimer)
+    this.clearSplashTimers()
+    if (this._tabHeld) this.releaseTabBar()
   },
   paint: function () {
     var data = nav.layout('home', this.query)
@@ -17,44 +45,81 @@ Page({
     data.showBrand = true
     data.title = ''
     data.showBack = false
-    data.showSplash = !api.splashSeen()
-    data.seconds = this.data.seconds || 5
     Object.keys(home).forEach(function (key) { data[key] = home[key] })
+    data.showSplash = this.splashVisible()
+    data.seconds = this.data.seconds || 5
+    data.splashFailed = !!this.data.splashFailed
+    if (data.showSplash) {
+      var frame = splashFrame()
+      Object.keys(frame).forEach(function (key) { data[key] = frame[key] })
+    }
     this.setData(data)
     nav.selectTab(this, 0)
   },
+  // 自定义 tabBar 画在页面之上，页内遮罩盖不住，开屏期间先藏起。
+  holdTabBar: function () {
+    this._tabHeld = true
+    if (typeof wx !== 'undefined' && wx.hideTabBar) wx.hideTabBar({ animation: false, fail: function () {} })
+  },
+  releaseTabBar: function () {
+    this._tabHeld = false
+    if (typeof wx !== 'undefined' && wx.showTabBar) wx.showTabBar({ animation: false, fail: function () {} })
+  },
+  clearSplashTimers: function () {
+    if (this.splashTimer) clearInterval(this.splashTimer)
+    this.splashTimer = 0
+    this._splashArmed = false
+  },
   armSplash: function () {
-    if (this.splashTimer) return
+    if (this._splashArmed || this._splashDone) return
+    this._splashArmed = true
     var self = this
-    var sys = wx.getSystemInfoSync()
-    var menu = wx.getMenuButtonBoundingClientRect && wx.getMenuButtonBoundingClientRect()
-    var width = sys.windowWidth || 375
-    this.setData({ showSplash: true, seconds: 5, splashFailed: false,
-      splashSkipTop: menu && menu.top ? menu.top : (sys.statusBarHeight || 20) + 8,
-      splashSkipRight: menu && menu.left ? width - menu.left + 8 : 102 })
-    this.splashLoadTimer = setTimeout(function () { self.splashFailed() }, 1000)
-    this.splashTimer = setInterval(function () {
-      var next = self.data.seconds - 1
-      if (next <= 0) {
-        self.finishSplash()
-        return
-      }
-      self.setData({ seconds: next })
-    }, 1000)
+    var frame = splashFrame()
+    frame.showSplash = true
+    frame.seconds = 5
+    this.setData(frame)
+    this.splashTimer = setInterval(function () { self.splashTick() }, 1000)
+  },
+  splashTick: function () {
+    if (this._splashDone || !this.data.showSplash) return
+    var next = this.data.seconds - 1
+    if (next <= 0) {
+      this.finishSplash()
+      return
+    }
+    this.setData({ seconds: next })
+  },
+  watchSplashSwitch: function () {
+    var self = this
+    if (this._splashWatchStarted) return
+    this._splashWatchStarted = true
+    splash.loadEnabled().then(function (enabled) {
+      if (enabled !== false || self._splashDone || !self.data.showSplash) return
+      self.dropSplash()
+    })
   },
   splashLoaded: function () {
-    if (this.splashLoadTimer) clearTimeout(this.splashLoadTimer)
-    this.splashLoadTimer = 0
+    if (this._splashDone || !this.data.showSplash) return
+    this.setData({ splashFailed: false })
   },
+  // 图片失败只露出同色调深色底，倒计时继续，不写存储。
   splashFailed: function () {
+    if (this._splashDone || !this.data.showSplash) return
     this.setData({ splashFailed: true })
-    this.finishSplash()
+  },
+  dropSplash: function () {
+    this.splashEnabled = false
+    this._splashLive = false
+    this.clearSplashTimers()
+    this.releaseTabBar()
+    this.paint()
   },
   finishSplash: function () {
-    if (this.splashTimer) clearInterval(this.splashTimer)
-    if (this.splashLoadTimer) clearTimeout(this.splashLoadTimer)
-    this.splashTimer = 0
-    api.markSplashSeen()
+    if (this._splashDone || !this.data.showSplash) return
+    this._splashDone = true
+    this._splashLive = false
+    this.clearSplashTimers()
+    this.releaseTabBar()
     this.paint()
   },
   closeAnnounce: function () {
