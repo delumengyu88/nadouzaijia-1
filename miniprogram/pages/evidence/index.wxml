@@ -26,10 +26,14 @@
 </view>
 <view class="body" wx:elif="{{phase == 'submitted'}}">
   <view class="done">
-    <icon type="success" size="56" color="#1D4E9E" />
+    <icon type="success" size="56" color="#16A34A" />
     <view class="done-title">已提交</view>
-    <view class="done-no" wx:if="{{no}}">申请编号 {{no}}</view>
-    <view class="done-sub">客服会尽快联系您</view>
+    <view class="done-sub">
+      <view wx:if="{{no}}">申请编号 {{no}}</view>
+      <view>客服会尽快联系您</view>
+    </view>
+    <button class="done-primary" bindtap="open">查看工单</button>
+    <button class="done-link" bindtap="back">返回</button>
   </view>
 </view>
 <view class="mask" wx:if="{{showDuplicate}}">

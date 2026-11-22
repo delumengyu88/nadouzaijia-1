@@ -28,31 +28,12 @@ function pad2(value) {
   return value < 10 ? '0' + value : String(value)
 }
 
-// AwareDateTime stores UTC and isoformat() includes an offset, usually +00:00.
-// A Z or numeric offset is converted to Beijing (UTC+8). A string with no zone
-// is not shifted: the live API does not emit that shape.
+// created_at is UTC with an offset such as +00:00. Parse the instant, then add 8 hours.
 function shownTime(value) {
-  if (value === undefined || value === null) return '—'
-  var text = String(value).trim()
-  if (!text) return '—'
-  var match = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/.exec(text)
-  if (!match) return text
-  var year = +match[1]
-  var month = +match[2]
-  var day = +match[3]
-  var hour = +match[4]
-  var minute = +match[5]
-  var zone = match[6]
-  if (!zone) return match[1] + '-' + match[2] + '-' + match[3] + ' ' + match[4] + ':' + match[5]
-  var offsetMinutes = 0
-  if (zone !== 'Z') {
-    var sign = zone.charAt(0) === '-' ? -1 : 1
-    var hours = +zone.slice(1, 3)
-    var mins = +zone.slice(-2)
-    offsetMinutes = sign * (hours * 60 + mins)
-  }
-  var utc = Date.UTC(year, month - 1, day, hour, minute) - offsetMinutes * 60000
-  var beijing = new Date(utc + 8 * 3600000)
+  if (value === undefined || value === null || String(value).trim() === '') return '—'
+  var parsed = Date.parse(String(value).trim())
+  if (parsed !== parsed) return '—'
+  var beijing = new Date(parsed + 8 * 3600000)
   return beijing.getUTCFullYear() + '-' + pad2(beijing.getUTCMonth() + 1) + '-' + pad2(beijing.getUTCDate()) + ' ' + pad2(beijing.getUTCHours()) + ':' + pad2(beijing.getUTCMinutes())
 }
 
