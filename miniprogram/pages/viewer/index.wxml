@@ -21,7 +21,7 @@
     <view class="sub" wx:if="{{category}}">{{category}}</view>
     <view class="sub">排查时间 {{date}}</view>
   </view>
-  <view class="warn-box" wx:if="{{low}}">当前为低清水印图，开通会员可看高清。</view>
+  <view class="warn-box" wx:if="{{low}}">当前为低清水印图，开通会员可看高清</view>
   <view class="center-sub" wx:if="{{programOnly}}">单节目权益可查看高清，不提供下载。</view>
   <view class="btn slim" wx:if="{{downloadEntry}}" bindtap="save">下载到相册</view>
   <view class="btn reason" wx:if="{{blockedReason}}" bindtap="upgrade">{{blockedReason}}</view>

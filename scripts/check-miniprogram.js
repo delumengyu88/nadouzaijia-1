@@ -331,7 +331,7 @@ function checkMemberRules() {
   expect(texts(plans[0]) === 'y:30–89 天记录|y:90 天以上记录|y:高清截图与下载', 'vip perk rows')
   expect(texts(plans[1]) === 'n:30–89 天记录 · 仅 VIP|y:90 天以上记录|y:高清截图与下载', 'regular perk rows')
   expect(texts(plans[2]) === 'y:180 天以上记录（低清）|n:高清截图 · 仅会员|n:下载 · 仅会员', 'free perk rows')
-  expect(member.freeCornerLabel('free') === '当前' && member.freeCornerLabel('vip') === '免费' && member.freeCornerLabel('guest') === '免费', 'free corner replaces 免费 with 当前')
+  expect(member.freeCornerLabel('free') === '当前' && member.freeCornerLabel('vip') === '免费' && member.freeCornerLabel('regular') === '免费' && member.freeCornerLabel('guest') === '免费', 'free corner is 当前 only for the free tier')
   plans.forEach(function (plan) {
     expect(plan.perks.length === 3, 'three perk rows')
     plan.perks.forEach(function (row) {
@@ -368,8 +368,8 @@ function checkMemberRules() {
   var viewerXml = fs.readFileSync(path.join(root, 'pages/viewer/index.wxml'), 'utf8')
   expect(viewerXml.indexOf('wx:if="{{downloadEntry}}"') !== -1, 'download entry is conditional')
   expect(viewerXml.indexOf('{{blockedReason}}') !== -1, 'blocked download writes the reason')
-  expect(viewerXml.indexOf('当前为低清水印图，开通会员可看高清') !== -1, 'free screenshot warning')
-  expect(viewerXml.indexOf('不可放大到高清') === -1, 'old low-res warning is gone')
+  expect(viewerXml.indexOf('当前为低清水印图，开通会员可看高清</view>') !== -1, 'free screenshot warning has no period')
+  expect(viewerXml.indexOf('开通会员可看高清。') === -1 && viewerXml.indexOf('不可放大到高清') === -1, 'old low-res warning is gone')
   var freeOffer = member.downloadOffer({ canSave: false, low: true, tier: 'free' })
   expect(!freeOffer.downloadEntry && freeOffer.blockedReason === '开通会员后下载', 'free user has no download entry')
   var guestOffer = member.downloadOffer({ canSave: false, tier: 'guest' })
