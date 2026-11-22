@@ -328,7 +328,7 @@ button::after {
 .tab-page {
   min-height: 100vh;
   box-sizing: border-box;
-  padding-bottom: 160rpx;
+  padding-bottom: calc(50px + env(safe-area-inset-bottom));
 }
 
 .mask {
