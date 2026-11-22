@@ -32,7 +32,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-nadou = ["static/admin/*", "fonts/*"]
+nadou = ["static/admin/*", "fonts/*", "stop_words.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

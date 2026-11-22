@@ -6,13 +6,12 @@
 </view>
 <view style="height: {{navHeight}}px;"></view>
 <view class="body" wx:if="{{phase == 'edit'}}">
-  <textarea class="area" style="margin:24rpx 32rpx 0;width:auto;display:block;min-height:280rpx;" placeholder="粘贴或输入节目名，一行一个" value="{{raw}}" bindinput="onInput" />
+  <textarea class="area" style="margin:24rpx 32rpx 0;width:auto;display:block;min-height:280rpx;" placeholder="粘贴或输入节目名，一行一个" value="{{raw}}" bindinput="onInput" maxlength="-1" />
   <view class="hint">也可上传 Excel（.xlsx，首行「节目名」，≤500 行）</view>
   <view class="btn block {{raw ? '' : 'off'}}" bindtap="start">开始查询</view>
 </view>
 <view class="body" wx:elif="{{phase == 'recognizing'}}">
   <view class="card"><view class="dialog-body">{{box}}</view></view>
-  <view class="note" style="color:#1f4ed8;">{{hint}}</view>
 </view>
 <view class="body" wx:elif="{{phase == 'preview'}}">
   <view class="pad">
@@ -27,6 +26,12 @@
     </view>
   </view>
   <view class="btn block" bindtap="confirm">确认查询</view>
+</view>
+<view class="body" wx:elif="{{phase == 'limit'}}">
+  <view class="err-box">{{failText}}</view>
+  <textarea class="area" style="margin:24rpx 32rpx 0;width:auto;display:block;min-height:280rpx;" value="{{raw}}" disabled maxlength="-1" />
+  <view class="hint">{{count}}/500</view>
+  <view class="btn block" bindtap="confirm">开始查询</view>
 </view>
 <view class="body" wx:else>
   <view class="err-box">{{failText}}</view>

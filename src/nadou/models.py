@@ -13,6 +13,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from nadou.db import AwareDateTime, Base
+from nadou.legacy_schema import retain_retired_tables
+
+retain_retired_tables(Base.metadata)
 
 
 class AppendOnlyViolation(RuntimeError):
@@ -152,22 +155,6 @@ class IndexRecord(Base):
     frame_count: Mapped[int] = mapped_column(Integer, nullable=False)
     timestamps: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     uploaded_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
-
-
-class PlatformAlias(Base):
-    __tablename__ = "platform_aliases"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    alias: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
-    canonical_name: Mapped[str] = mapped_column(String(200), nullable=False)
-
-
-class ProgramAlias(Base):
-    __tablename__ = "program_aliases"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    alias: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
-    canonical_name: Mapped[str] = mapped_column(String(200), nullable=False)
 
 
 class StaffAccount(Base):

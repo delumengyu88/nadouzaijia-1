@@ -46,17 +46,17 @@ Page({
   },
   renderSpecial: function (view) {
     if (view === 'queued') {
-      this.setData({ queued: true, running: false, done: false, head: '查询已提交，正在等待检索。可先返回，完成后会通知你。' })
+      this.setData({ queued: true, running: false, done: false, head: '' })
       return
     }
     if (view === 'running') {
-      this.setData({ queued: false, running: true, done: false, head: '已完成 2 / 4。可先返回，完成后会通知你。', percent: 50 })
+      this.setData({ queued: false, running: true, done: false, head: '已完成 2 / 4', percent: 50 })
       return
     }
     if (view === 'allfail') {
       this.setData({
         done: true, allFail: true, showFailBanner: true, showRetryAll: true, itemRetry: false,
-        failBanner: '全部查询失败，可重试。失败不扣次数。',
+        failBanner: '全部查询失败，失败不扣次数。',
         head: '共 2 条：命中 0 · 未命中 0 · 失败 2',
         items: [
           { name: '星河旧梦', badge: '失败', badgeCls: 'bad', line: '索引暂时不可用。', failed: true },

@@ -12,13 +12,15 @@ function findRow(id) {
 
 function toRow(rec, programName) {
   var extra = findRow(rec.record_id) || {}
-  var unknown = !extra.platform
+  var platform = rec.platform || extra.platform
+  var unknown = !platform || platform === '平台未识别'
   return {
     id: rec.record_id,
     title: extra.title || programName,
-    platform: unknown ? '平台未识别' : extra.platform,
+    platform: unknown ? '平台未识别' : platform,
     unknown: unknown,
-    sub: unknown ? '' : (extra.sub || ''),
+    sub: unknown ? '' : (rec.platform_subtype || extra.sub || ''),
+    category: rec.category || '',
     time: extra.time || '',
     clock: extra.clock || '14:22',
     date: extra.date || '',
@@ -66,9 +68,7 @@ function present(search, meta) {
   }
   var memberText = info.expired ? '续费会员 · ¥299/30天起' : '开通会员 · ¥299/30天起'
   var note = ''
-  if (showOpen && search.unverified_source_count > 0) {
-    note = '无法解析或不在对照表中的少见记录显示「平台未识别」，计为命中但不计入平台数。'
-  }
+
   return {
     name: name,
     example: !!search.example,

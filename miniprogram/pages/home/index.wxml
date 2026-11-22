@@ -13,7 +13,8 @@
   <view class="banner run" wx:if="{{banner == 'running'}}" bindtap="openRunning">
     <text>{{bannerText}}</text><text class="chev">›</text>
   </view>
-  <view class="banner" wx:elif="{{banner == 'guest' || banner == 'free'}}">{{bannerText}}</view>
+  <view class="banner" wx:elif="{{banner == 'guest'}}"><text>未登录</text><text class="link" bindtap="login">登录</text></view>
+  <view class="banner" wx:elif="{{banner == 'free'}}">{{bannerText}}</view>
   <view class="card">
     <view class="card-title">输入片单</view>
     <textarea class="area" placeholder="粘贴或输入节目名，一行一个" value="{{draft}}" bindinput="onInput" maxlength="20000" />
@@ -23,7 +24,6 @@
   </view>
   <view class="sec-head">
     <text class="sec-title" bindtap="tapExamples">示例报告</text>
-    <text class="sec-more">点开看完整报告</text>
   </view>
   <view class="note" wx:if="{{examplesError}}">示例报告暂时无法加载。</view>
   <view class="ex" wx:for="{{examples}}" wx:key="name" data-name="{{item.name}}" bindtap="openExample">
@@ -55,7 +55,7 @@
 <view class="mask" wx:if="{{showAnnounce && !showSplash}}">
   <view class="dialog">
     <view class="dialog-title">公告</view>
-    <view class="dialog-body">每月 2 日和 16 日更新片单索引。查询完成后，结果按当前权益展示。免费用户可看不少于 180 天前的低清记录。</view>
+    <view class="dialog-body">每月 2 日和 16 日更新片单索引。免费用户可看 ≥180 天低清记录。</view>
     <view class="btn" bindtap="closeAnnounce">我知道了</view>
   </view>
 </view>
@@ -73,7 +73,7 @@
 <view class="mask" wx:if="{{needLogin}}">
   <view class="dialog">
     <view class="dialog-title">登录后继续</view>
-    <view class="dialog-body">登录后可保存查询记录，并可开通会员。</view>
-    <view class="btn" bindtap="login">微信登录</view>
+    
+    <view class="btn" bindtap="login">登录</view>
   </view>
 </view>

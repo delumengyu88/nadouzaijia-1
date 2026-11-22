@@ -283,6 +283,33 @@ function open(rel, query, life) {
 }
 
 try {
+  var titlesUtil = require(path.join(root, 'utils/text'))
+  var approvedWords = require(path.join(root, 'stop-words.json'))
+  expect(approvedWords.length === 102, '102 approved stop words')
+  approvedWords.forEach(function (word) {
+    expect(titlesUtil.isStopped('　' + word + ' '), 'normalized stop word: ' + word)
+    expect(!titlesUtil.isStopped(word + '测试片'), 'whole words only: ' + word)
+  })
+  var protectedTitles = ['家庭', '远方', '狗', '父亲', '母亲', '甲乙', '日期', '名称']
+  expect(titlesUtil.parseTitles(protectedTitles.join('\n')).items.length === protectedTitles.length,
+    'do not filter other short titles')
+  var shape = require(path.join(root, 'api/shape'))
+  var presenter = require(path.join(root, 'utils/present'))
+  var categoryBody = shape.sanitizeSearch({ outcome: 'hit', platform_count: 1,
+    platform_groups: [{ records: [{record_id: 'category-open', locked: false, category: '共识类别'},
+      {record_id: 'category-empty', locked: false, program_type: '不能替代类别'}] }],
+    locked_records: [{record_id: 'category-locked', locked: true, category: '不可泄漏'}] })
+  expect(categoryBody.records[0].category === '共识类别', 'category survives API adapter')
+  expect(!categoryBody.records[1].category, 'blank category has no type fallback')
+  expect(!categoryBody.records[2].category, 'locked category stripped')
+  var categoryView = presenter.present(categoryBody)
+  expect(categoryView.groups[0].rows[0].category === '共识类别', 'report category')
+  var bytes = require(path.join(root, 'utils/xlsx')).build({title: '测试', scope: '', day: '',
+    rows: [{ platform: '测试平台', subtype: '测试子类型', category: '共识类别', type: '节目类型值' }]})
+  var bookText = Buffer.from(bytes).toString('utf8')
+  expect(bookText.indexOf('C5" t="inlineStr"><is><t>类别') !== -1, 'xlsx category header order')
+  expect(bookText.indexOf('C6" t="inlineStr"><is><t>共识类别') !== -1, 'xlsx category value')
+  expect(bookText.indexOf('D6" t="inlineStr"><is><t>节目类型值') !== -1, 'xlsx program type independent')
   boot('guest', { splash: false, announce: false })
   var home = open('pages/home/index', {}, 'show')
   expect(home.data.showSplash, 'splash did not cover home')
@@ -372,7 +399,14 @@ try {
   input.onInput({ detail: { value: limits.join('\n') } })
   input.recognizeText()
   flush()
-  expect(input.data.failText.indexOf('500') !== -1, 'over limit')
+  expect(input.data.phase === 'limit', 'over limit is queryable')
+  expect(input.data.failText === '已超过 500 个节目名，仅保留前 500 个。', 'over limit message')
+  expect(input.data.items.length === 500 && input.data.count === 500, '500/500 count')
+  expect(input.data.raw === limits.slice(0, 500).join('\n'), 'first 500 retained in order')
+  input.confirm()
+  var retainedQuery = api.listRecords().filter(function (row) { return row.id === api.listRecords()[0].id })
+  expect(retainedQuery.length === 500 && retainedQuery[499].name === limits[499],
+    'truncated query can start')
   cover('P05-limit')
   ;[
     ['a.xls', 20, 'xlsx', 'P05-fail-xlsx'],
@@ -610,7 +644,7 @@ var screens = {
   'P05-fail-size': 'pages/input/index fail size',
   'P05-fail-xlsx': 'pages/input/index fail xlsx',
   'P05-input': 'pages/input/index phase edit filled',
-  'P05-limit': 'pages/input/index fail limit',
+  'P05-limit': 'pages/input/index phase limit',
   'P05-preview': 'pages/input/index phase preview',
   'P05-recognizing': 'pages/input/index phase recognizing',
   'P07-allfail': 'pages/query/index allFail',

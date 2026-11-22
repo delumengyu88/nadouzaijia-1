@@ -17,6 +17,7 @@ from nadou.importer import TestTaskFilter
 from nadou.models import Entitlement, IndexRecord, MemberQuery, QueryProgram, Task, User
 from nadou.normalize import ProgramNormalizer
 from nadou.platform_names import PlatformNames
+from nadou.program_titles import ProgramTitleGuard
 from nadou.search import ProgramSearch, UnknownUser
 from nadou.text import RecordAge
 
@@ -97,23 +98,14 @@ class PlatformLabel:
 
 
 class HitColumns:
-    """Hit-sheet columns. 命中类型 is only 确认命中, so it is omitted when uniform."""
+    """Fixed columns for visible confirmed records."""
 
-    LEAD = ("平台", "子类型", "节目类型", "上传节目名", "匹配节目名")
-    TYPE = "命中类型"
+    LEAD = ("平台", "子类型", "类别", "节目类型", "上传节目名", "匹配节目名")
     TAIL = ("检测日期", "命中画面截图")
-    CONFIRMED = "确认命中"
-
-    @staticmethod
-    def for_labels(labels: list[str]) -> tuple[str, ...]:
-        if len(set(labels)) <= 1:
-            return HitColumns.LEAD + HitColumns.TAIL
-        return HitColumns.LEAD + (HitColumns.TYPE,) + HitColumns.TAIL
 
 
 class RestStatus:
     MISS = "未命中"
-    PENDING = "待确认"
     FAILED = "失败"
 
 
@@ -166,6 +158,7 @@ class HitRow:
     image: bytes | None
     image_width: int
     image_height: int
+    category: str | None = None
 
 
 @dataclass(frozen=True)
@@ -318,7 +311,7 @@ class HitWorkbook:
         workbook.properties.title = self.TITLE
         sheet = workbook.active
         sheet.title = self.HITS
-        columns = HitColumns.for_labels([HitColumns.CONFIRMED] * len(hits))
+        columns = HitColumns.LEAD + HitColumns.TAIL
         self._write_hits(sheet, header, hits, part_label, columns)
         if rest is not None:
             self._write_rest(workbook.create_sheet(self.REST), rest)
@@ -366,10 +359,10 @@ class HitWorkbook:
         widths = {
             "平台": 18,
             "子类型": 14,
+            "类别": 14,
             "节目类型": 12,
             "上传节目名": 18,
             "匹配节目名": 18,
-            "命中类型": 22,
             "检测日期": 14,
             "命中画面截图": 28,
         }
@@ -383,10 +376,10 @@ class HitWorkbook:
         fields = {
             "平台": hit.platform,
             "子类型": hit.subtype or None,
+            "类别": hit.category,
             "节目类型": hit.program_type,
             "上传节目名": hit.uploaded_name,
             "匹配节目名": hit.matched_name,
-            "命中类型": HitColumns.CONFIRMED,
             "检测日期": hit.checked_on,
             "命中画面截图": None if hit.image else ShotPlaceholder.TEXT,
         }
@@ -433,6 +426,7 @@ class HitWorkbook:
 class RecordWindow:
     """Same inclusion rules as search, then the membership floor for this export."""
 
+    # Historic resolution values are readable, but never authorize title remapping.
     HIT_RESOLUTIONS = frozenset({"exact", "alias", "manual"})
 
     @staticmethod
@@ -501,20 +495,20 @@ class QueryExport:
         grants: AccessGrants,
         user_id: str | None,
     ) -> tuple[list[HitRow], list[RestRow]]:
-        programs = ProgramNormalizer.from_session(self.session)
+        programs = ProgramNormalizer()
         names: set[str] = set()
         for item in items:
             if item.resolution not in RecordWindow.HIT_RESOLUTIONS:
                 continue
             canonical = self._title(programs, item)
-            if canonical:
+            if canonical and ProgramTitleGuard.is_billable(canonical):
                 names.add(canonical)
         by_program, tasks = self._load(names)
         hits: list[HitRow] = []
         rest: list[RestRow] = []
         for item in items:
             if item.resolution == "pending":
-                rest.append(RestRow(item.uploaded_name, RestStatus.PENDING, item.detail or ""))
+                rest.append(RestRow(item.uploaded_name, RestStatus.FAILED, item.detail or ""))
                 continue
             if item.resolution == "failed":
                 rest.append(RestRow(item.uploaded_name, RestStatus.FAILED, item.detail or ""))
@@ -551,9 +545,7 @@ class QueryExport:
 
     @staticmethod
     def _title(programs: ProgramNormalizer, item: QueryProgram) -> str:
-        """Same title search uses. Several alias targets stay the folded upload."""
-        if item.resolution == "manual" and item.matched_name:
-            return programs.canonical(item.matched_name)
+        """Use the uploaded title, exactly as search does."""
         return programs.canonical(item.uploaded_name)
 
     def _visible(
@@ -593,6 +585,7 @@ class QueryExport:
         return HitRow(
             platform=platform,
             subtype=subtype,
+            category=record.category,
             program_type=item.program_type or "",
             uploaded_name=item.uploaded_name,
             matched_name=canonical,

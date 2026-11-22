@@ -4,13 +4,11 @@
 </view>
 <view style="height: {{navHeight}}px;"></view>
 <view class="body">
-  <view class="card" wx:if="{{guest}}" style="text-align:center;">
-    <view class="center-title">尚未登录</view>
-    <view class="center-sub">登录后查看会员状态、邀请码、取证与订单</view>
-    <view class="btn slim" bindtap="login">微信登录</view>
+  <view class="card choice-top" wx:if="{{guest}}">
+    <text class="row-title">未登录</text>
+    <text class="link" bindtap="login">登录</text>
   </view>
   <view class="card" wx:else>
-    <view class="sub">会员状态</view>
     <view class="choice-top">
       <text class="h1" style="font-size:36rpx;">{{title}}</text>
       <text class="tag vip" wx:if="{{badge}}">{{badge}}</text>
@@ -19,32 +17,32 @@
   </view>
   <block wx:if="{{!guest}}">
     <view class="row" data-url="/pages/evidence-list/index" bindtap="go">
-      <view class="row-main"><view class="row-title">取证申请</view><view class="row-sub">查看进度与交付记录</view></view>
+      <view class="row-main"><view class="row-title">取证申请</view></view>
       <text class="chev">›</text>
     </view>
     <view class="row" data-url="/pages/records/index" bindtap="go">
-      <view class="row-main"><view class="row-title">查询记录</view><view class="row-sub">按当前权益重新查看结果</view></view>
+      <view class="row-main"><view class="row-title">查询记录</view></view>
       <text class="chev">›</text>
     </view>
     <view class="row" data-url="/pages/invite/index" bindtap="go">
-      <view class="row-main"><view class="row-title">{{bindText}}</view><view class="row-sub">{{bindSub}}</view></view>
-      <text class="chev">›</text>
+      <view class="row-main"><view class="row-title">{{bindText}}</view></view>
+      <text class="chev" wx:if="{{!bound}}">›</text>
     </view>
     <view class="row" data-url="/pages/orders/index" bindtap="go">
-      <view class="row-main"><view class="row-title">我的订单</view><view class="row-sub">支付与发放状态</view></view>
+      <view class="row-main"><view class="row-title">我的订单</view></view>
       <text class="chev">›</text>
     </view>
   </block>
   <view class="row" data-url="/pages/legal/index" bindtap="go">
-    <view class="row-main"><view class="row-title">协议与隐私</view><view class="row-sub" wx:if="{{!guest}}">用户协议、隐私指引、会员服务协议</view></view>
+    <view class="row-main"><view class="row-title">协议与隐私</view></view>
     <text class="chev">›</text>
   </view>
   <button class="row" open-type="contact" session-from="profile">
-    <view class="row-main"><view class="row-title">联系客服</view><view class="row-sub" wx:if="{{!guest}}">微信小程序客服</view></view>
+    <view class="row-main"><view class="row-title">联系客服</view></view>
     <text class="chev">›</text>
   </button>
-  <view class="row" bindtap="openSheet">
-    <view class="row-main"><view class="row-title">切换账号</view><view class="row-sub">未登录、免费用户、会员</view></view>
+  <view class="row" wx:if="{{useMock}}" bindtap="openSheet">
+    <view class="row-main"><view class="row-title">切换账号</view></view>
     <text class="chev">›</text>
   </view>
 </view>

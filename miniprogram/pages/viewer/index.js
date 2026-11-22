@@ -12,6 +12,17 @@ Page({
   onLoad: function (query) {
     var name = decode(query.name)
     var search = query.example === '1' ? api.exampleReport(name) : api.searchProgram(name)
+    var self = this
+    if (search && typeof search.then === 'function') {
+      this.setData(Object.assign(nav.layout(), { missing: true }))
+      search.then(function (result) { self.applySearch(result, query) }).catch(function () {
+        self.setData({ missing: true })
+      })
+      return
+    }
+    this.applySearch(search, query)
+  },
+  applySearch: function (search, query) {
     var row = null
     if (search) {
       search.records.forEach(function (rec) {
@@ -31,7 +42,8 @@ Page({
       navHeight: layout.navHeight,
       title: '截图',
       showBack: true,
-      platform: extra.platform || '广东移动',
+      platform: (row && row.platform) || extra.platform || '平台未识别',
+      category: row ? (row.category || '') : '',
       unknown: !extra.platform,
       date: (extra.date || '') + ' ' + (extra.clock || ''),
       time: extra.time || '',

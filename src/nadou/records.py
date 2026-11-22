@@ -38,7 +38,7 @@ class IndexRecordStore:
             raise ValueError(f"unknown hit_type {hit_type!r}")
         if frame_count < 0:
             raise ValueError("frame_count must be >= 0")
-        canonical = ProgramNormalizer.from_session(self.session).canonical(program_name)
+        canonical = ProgramNormalizer().canonical(program_name)
         if not canonical:
             raise ValueError("program_name is empty")
         existing = self.session.scalar(

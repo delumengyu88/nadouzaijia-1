@@ -42,7 +42,7 @@ class ProgramSearch:
         self.now = now
 
     def search(self, raw_name: str, user_id: str | None) -> SearchOut:
-        canonical = ProgramNormalizer.from_session(self.session).canonical(raw_name)
+        canonical = ProgramNormalizer().canonical(raw_name)
         if not canonical:
             raise EmptyQuery(raw_name)
         if not ProgramTitleGuard.is_billable(canonical):

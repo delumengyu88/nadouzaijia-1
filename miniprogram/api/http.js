@@ -39,7 +39,7 @@ module.exports = {
       loggedIn: !!state.userId(),
       tier: 'free',
       banner: state.userId() ? 'free' : 'guest',
-      bannerText: state.userId() ? '尚未开通会员，免费可看不少于 180 天前的低清记录' : '登录后可保存查询记录，并可开通会员。',
+      bannerText: state.userId() ? '尚未开通会员' : '未登录',
       runningId: '',
       showAnnounce: false,
       showDone: false,
@@ -60,7 +60,7 @@ module.exports = {
   accountKind: function () { return state.currentId() },
   profile: function () {
     if (!state.userId()) return { guest: true, tier: 'guest', title: '', badge: '', lines: [] }
-    return { guest: false, tier: 'free', title: '免费用户 · 未开通会员', badge: '', lines: ['权益以服务端返回为准。'] }
+    return { guest: false, tier: 'free', title: '免费用户 · 未开通会员', badge: '', lines: [] }
   },
   memberCenter: function () {
     return { guest: !state.userId(), tier: 'free', button: '去开通', intro: '开通结果以服务端订单为准。', showGuestTip: !state.userId() }

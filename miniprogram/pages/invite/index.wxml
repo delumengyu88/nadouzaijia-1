@@ -9,17 +9,16 @@
   <view class="center-box">
     <view class="tag ok">兑换成功</view>
     <view class="center-title" style="margin-top:28rpx;">{{headline}}</view>
-    <view class="center-sub">{{sub}}</view>
+    <view class="center-sub" wx:if="{{sub}}">{{sub}}</view>
     <view class="btn slim" bindtap="profile">查看个人中心</view>
   </view>
 </view>
 <view class="body" wx:else>
-  <view class="note" wx:if="{{phase == 'form'}}">邀请码为 8 位大写字母或数字，已去掉易混字符。每个账号只能绑定一次。</view>
-  <view class="note" wx:if="{{phase == 'rate'}}">8 位字母或数字。每个账号只能绑定一次。</view>
+  <view class="note" wx:if="{{phase == 'form'}}">8 位字母或数字</view>
+  <view class="note" wx:if="{{phase == 'rate'}}">8 位字母或数字</view>
   <input class="field code-input" value="{{code}}" bindinput="onCode" disabled="{{phase == 'bound' || phase == 'rate' || phase == 'redeeming'}}" maxlength="8" />
   <view class="note" wx:if="{{phase == 'redeeming'}}" style="color:#1f4ed8;text-align:center;">正在兑换…</view>
   <view class="err-box" wx:if="{{phase == 'error' || phase == 'bound' || phase == 'rate'}}">{{message}}</view>
-  <view class="note" wx:if="{{phase == 'bound'}}">每个账号限绑定一次，如有疑问请联系客服。</view>
   <view class="btn block {{phase == 'bound' || phase == 'rate' || phase == 'redeeming' ? 'off' : ''}}" bindtap="submit">兑换</view>
   <view class="btn block plain" wx:if="{{phase == 'error'}}" bindtap="reset">重新输入</view>
 </view>

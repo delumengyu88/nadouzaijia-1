@@ -8,3 +8,19 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# Task instructions and local report must never be committed.
+/CODEX_BRIEF.md
+/CODEX_REPORT.md
+
+# Real data belongs only in data/. Default-deny raw imports, screenshots,
+# exports, archives, logs, local configuration and any unreviewed files.
+/data/**
+!/data/README.md
+!/data/approved/
+# Only reviewed, secret-free tabular data in this directory may be committed.
+!/data/approved/*.csv
+!/data/approved/*.tsv
+!/data/approved/*.xlsx
+# Temporary spreadsheet files are never source data.
+/data/approved/~$*

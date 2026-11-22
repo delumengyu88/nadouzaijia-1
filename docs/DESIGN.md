@@ -39,7 +39,7 @@ Ages use the Beijing calendar date of `tasks.created_at`. If that is null, use `
 | `tasks` | One row per export `task_id`: status, submit time, raw filename, network type, normalized platform. Search ignores `cancelled`, `duplicate`, and `is_test`. |
 | `index_records` | One monitored video hitting one program: canonical program name, `consensus` / `dispute`, frame count, timestamps. This is the search result row. |
 | `platform_aliases` | Unused by search. Platform names come from `PlatformNames` in code, not from this table and not from an admin screen. |
-| `program_aliases` | Same fold-and-map rules for indexed names and the search query. |
+| `program_aliases` | Retired schema only; never read or written by application matching. |
 | `users` | Caller of the search endpoint. `X-User-Id` is a local-only stand-in until WeChat login; it is not production authentication. |
 | `entitlements` | Active grants: `regular` / `vip` (expiry), `program_90` / `program_30` (canonical program + expiry), `screenshot` (one record id + expiry). The policy takes the widest live grant. Payment upgrade rules (suspended 普通 days, 7-day renewals) are not implemented; a grant counts when `expires_at` is in the future. |
 | `member_queries` | One saved lookup. `id` is the workbook 查询编号. |
@@ -70,7 +70,7 @@ CSV header, exact names: `task_id,状态,提交时间,filename,公网/专网,平
 
 `FilenameParser` reads a leading `公网` / `专网` and the next `-` or whitespace field as the platform. `unknown.mp4`, `1905.mp4`, and `VID_...` have no network prefix and stay unknown.
 
-`ProgramNormalizer` uses the same text fold, then the program alias table, and `dedupe` keeps first-seen canonical names.
+`ProgramNormalizer` only folds width, case, and whitespace; `dedupe` keeps first-seen normalized titles. Different folded titles remain different programs.
 
 ## Search filtering
 
@@ -111,7 +111,7 @@ Search returns one program title, then `platform_groups` keyed by province+opera
 
 Outcome is `hit` when any dated record is `≥30`, `recent_only` when the only dated records are `<30`, otherwise `miss` (an unknown-age placeholder can still be listed). Cancelled, duplicate, and `test_` rows are omitted entirely.
 
-`IndexRecordStore.upsert` stores the program name only after `ProgramNormalizer` (the same fold and alias map search uses), so a later importer can pass a raw or full-width name and still match a search. That match is a normal confirmed hit. The search response has no `match_type`, alias, or pending field, and it does not say the hit came from an alias.
+`IndexRecordStore.upsert` stores the program name only after `ProgramNormalizer` (the same text fold search uses), so a later importer can pass a raw or full-width name and still match a search. That match is a normal confirmed hit. The search response has no `match_type`, alias, or pending field, and it does not say the hit came from an alias.
 
 Only `hit_type=consensus` is returned. A `dispute` row (疑似 / not yet confirmed) is not a user hit and is left out of counts. The words 待确认 and 疑似 are not sent to the client.
 
@@ -138,7 +138,7 @@ Routes live under `/api/v1/admin`. Hiding a button is not the control: every rul
 | W05 订单 | read, phone masked, no export; may reissue | full, including CSV export and reissue |
 | W08 操作日志, index status | no | yes |
 
-W03, W06, W07, and the W09 page are not in this slice. Platform names stay on the lookup side. The hourly index job and `GET /api/v1/admin/index/status` are the backend the W09 page will read.
+The workbench now includes W03, W06, and W09. Platform names stay on the lookup side. The hourly index job and `GET /api/v1/admin/index/status` are the backend the W09 page will read.
 
 Search still uses `X-User-Id` as a local stand-in. That header is not workbench authentication.
 
@@ -215,7 +215,7 @@ Header block, then the columns. There is no 客户 field.
 
 Columns, in order: 平台, 子类型, 节目类型, 上传节目名, 匹配节目名, 检测日期, 命中画面截图.
 
-There is no 匹配方式 column, no yellow alias fill, and no 「名称相近，请核对」 note. An `alias` resolution is a confirmed hit through the admin alias table, and it uses the same columns as `exact` or `manual`. The only hit label is `确认命中`. Every exported row would show that same value, so the 命中类型 column is omitted.
+Exports contain only visible consensus hits. Columns are 平台、子类型、类别、节目类型、上传节目名、匹配节目名、检测日期、命中画面截图. Category comes from the index record, independently of query program type. Historic resolution values never remap the uploaded title.
 
 平台 is the province+operator name from `PlatformNames`, such as `山东移动` or `示例视频`. 子类型 is the network and subtype tags joined by a space, such as `专网 OTT`. A name that cannot be parsed is still a hit row: 平台 is `平台未识别` and 子类型 is blank.
 
@@ -236,9 +236,9 @@ Columns: 上传节目名, 状态, 说明. Row order follows the query. This shee
 | Resolution | 状态 | 说明 |
 |---|---|---|
 | `miss`, or `exact` / `alias` / `manual` with no visible record | 未命中 | stored detail, usually blank |
-| `pending` | 待确认 | candidate names |
+| `pending` (legacy unresolved) | 失败 | candidate names |
 | `failed` | 失败 | failure reason |
-An uploaded name is resolved with `ProgramNormalizer.canonical`, the same rule as search. Several alias targets are not collapsed into one of them and are not a separate outcome: the folded title is the program, and only records stored under that title are hits.
+An uploaded name is resolved with `ProgramNormalizer.canonical`, the same rule as search. The folded uploaded title is the program; stored matched names never override it.
 
 A program with at least one visible confirmed hit is not repeated here. Pending programs, failed programs, and unconfirmed `dispute` records do not contribute hit rows.
 
@@ -247,3 +247,27 @@ A program with at least one visible confirmed hit is not repeated here. Pending 
 `HitWorkbook` saves the xlsx and measures those bytes while it packs rows. The limit is 20 MiB (`ExportLimits.MAX_BYTES`). When the next record would cross the limit, the next rows go into `汇总-2.xlsx`, then `汇总-3.xlsx`, and so on. Every part repeats the full header block. When there is more than one part, the header also has `第 n 部分 / 共 N 部分`. 「未命中与待处理」 is written only on the last part. One record is never split; that part may stand alone over the limit only when a single row is already larger than the limit. The sum of hit rows across parts is the member's permitted record count.
 
 One part is the response body `汇总.xlsx` (`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`). Several parts are one `汇总.zip` of those files, not a JSON manifest, so the member downloads a single artifact. This zip is the split workbook only. It is not an evidence package and not a bulk screenshot download. There is still no download-archive table.
+
+## Retired matching schema
+
+The old platform/program mapping tables are represented only in `legacy_schema.py`
+so existing migrations remain reproducible and autogenerate does not propose data deletion.
+There are no ORM entities, seed writes, lookup queries, or management screens for them.
+Only `PlatformNames` in code maintains platform equivalences. Historical query resolution
+values remain readable, but export uses the normalized uploaded title, and unresolved
+historical entries are failures rather than hits. Historical data cleanup is deferred.
+
+## Configurable stop words (first approved batch)
+
+`src/nadou/stop_words.json` contains exactly the 102 approved entries. With no
+configuration, search and workbook export reject these normalized whole titles.
+No substring, one-character length, or fuzzy-title matching rule is introduced.
+家庭、远方、狗、父亲、母亲 remain searchable; other short-title rules are deferred.
+
+For an explicitly reviewed replacement list, set `NADOU_STOP_WORDS_PATH` to a local
+UTF-8 JSON array of strings and restart the process. Missing or malformed files fail
+closed rather than silently disabling filtering. An empty list explicitly disables
+filtering; do not deploy such a list without business approval. There is no editing UI.
+The mini program's bundled `miniprogram/stop-words.json` is the same first batch;
+when an approved list changes, synchronize the bundle and rebuild it. The backend
+remains authoritative. Tests verify the two checked-in lists stay identical.

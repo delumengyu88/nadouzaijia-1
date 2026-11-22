@@ -26,6 +26,12 @@ function sanitizeSearch(body) {
   var src = body || {}
   var records = []
   var list = src.records || []
+  if (!src.records) {
+    ;(src.platform_groups || []).forEach(function (group) {
+      list = list.concat(group.records || [])
+    })
+    list = list.concat(src.locked_records || [])
+  }
   list.forEach(function (rec) {
     if (!rec) return
     if (rec.locked === true || rec.locked === 'true') {
@@ -45,6 +51,10 @@ function sanitizeSearch(body) {
       can_download_report: !!rec.can_download_report,
       can_download_screenshot: !!rec.can_download_screenshot
     }
+    var category = copyText(rec, 'category')
+    var subtype = copyText(rec, 'platform_subtype')
+    if (category) open.category = category
+    if (subtype) open.platform_subtype = subtype
     var platform = copyText(rec, 'platform')
     var network = copyText(rec, 'network_type')
     var checked = copyText(rec, 'checked_at')

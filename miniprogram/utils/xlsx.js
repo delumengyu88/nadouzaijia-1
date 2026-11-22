@@ -112,7 +112,7 @@ function cell(col, row, value) {
 }
 
 function build(table) {
-  var header = ['平台', '节目类型', '上传节目名', '匹配节目名', '检测日期']
+  var header = ['平台', '子类型', '类别', '节目类型', '上传节目名', '匹配节目名', '检测日期', '命中画面截图']
   var lines = []
   lines.push('<row r="1">' + cell('A', 1, table.title) + '</row>')
   lines.push('<row r="2">' + cell('A', 2, '查询范围') + cell('B', 2, table.scope) + '</row>')
@@ -123,7 +123,7 @@ function build(table) {
   lines.push('<row r="5">' + head + '</row>')
   table.rows.forEach(function (row, idx) {
     var r = idx + 6
-    var cols = [row.platform, row.type, row.uploaded, row.matched, row.date]
+    var cols = [row.platform, row.subtype, row.category, row.type, row.uploaded, row.matched, row.date, row.screenshot || '暂无截图']
     var body = cols.map(function (value, i) {
       return cell(String.fromCharCode(65 + i), r, value)
     }).join('')

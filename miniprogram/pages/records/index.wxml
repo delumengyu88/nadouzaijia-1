@@ -8,7 +8,6 @@
 <view class="body">
   <view class="center-box" wx:if="{{empty}}">
     <view class="center-title">暂无查询记录</view>
-    <view class="center-sub">在首页输入片单后，结果会保存在这里。</view>
   </view>
   <view class="row" wx:for="{{rows}}" wx:key="name" data-id="{{item.id}}" bindtap="open">
     <view class="row-main">
