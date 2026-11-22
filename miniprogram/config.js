@@ -3,7 +3,7 @@
 module.exports = {
   mode: 'hybrid',
   trialMode: true,
-  calibrating: false, // 数据校准期间仍提交查询，隐藏结果并停用支付和报告。
+  calibrating: true, // 数据校准期间仍提交查询，隐藏结果并停用支付和报告。
   apiBase: '',
   testUserIds: { free: 'u-free', member: 'u-member' }
 }

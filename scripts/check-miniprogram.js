@@ -244,6 +244,11 @@ global.App = function (def) { global.__app = def }
 global.Component = function (def) { global.__component = def }
 global.getCurrentPages = function () { return [{}, {}] }
 
+var defaults = require(path.join(root, 'config'))
+if (defaults.mode !== 'hybrid' || defaults.trialMode !== true || defaults.calibrating !== true) {
+  fail('trial defaults must enable hybrid mode, trialMode and calibrating')
+}
+
 // Baseline state coverage is explicitly mock; live routing has separate async checks.
 require(path.join(root, 'config')).mode = 'mock'
 require(path.join(root, 'config')).trialMode = false
