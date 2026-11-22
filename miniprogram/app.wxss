@@ -602,4 +602,7 @@ button::after {
 .login-link { margin:0; padding:0; color:#2456a6; background:transparent; font-size:28rpx; line-height:1.6; }
 .login-link::after { border:0; }
 .login-error { margin-top:16rpx; color:#dc2626; font-size:26rpx; line-height:1.5; text-align:center; }
-button.btn[disabled] { opacity:.65; }
+
+/* Disabled (loading) buttons keep their own colours instead of WeChat's grey default. */
+button.btn[disabled]:not([type]) { background:#1f4ed8 !important; color:#fff !important; opacity:.6; }
+button.btn.ghost[disabled]:not([type]), button.btn.plain[disabled]:not([type]) { background:#fff !important; color:#1f4ed8 !important; opacity:.6; }
