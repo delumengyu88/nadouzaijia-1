@@ -20,7 +20,7 @@ services:
       NADOU_ALLOW_DEV_SEED: "1"
       NADOU_DATA_SOURCE: demo
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       db:
         condition: service_healthy

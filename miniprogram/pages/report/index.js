@@ -9,7 +9,7 @@ function decode(value) {
 }
 
 Page({
-  data: { title: '', showBack: true, phase: 'loading' },
+  data: { title: '', showBack: true, phase: 'loading', downloadLoading: false },
   onLoad: function (query) {
     if (calibration.blockReport(query)) return
     if (api.isLive) query.view = ''
@@ -117,19 +117,38 @@ Page({
     wx.navigateTo({ url: '/pages/evidence/index?name=' + encodeURIComponent(this.data.evidenceName || '') + '&kind=recent' })
   },
   download: function () {
+    if (this.data.downloadLoading) return
+    this.setData({ downloadLoading: true })
     var book = api.exportBook(this.data.name)
     var self = this
     if (book && typeof book.then === 'function') {
       book.then(function (result) { self.saveBook(result) }).catch(function (error) {
-        wx.showToast({ title: error.message || '导出失败', icon: 'none' })
+        self.setData({ downloadLoading: false })
+        if (error && error.message === '网络异常，请重试') {
+          wx.showModal({
+            title: '下载失败',
+            content: '网络异常，请重试',
+            cancelText: '取消',
+            confirmText: '重试',
+            confirmColor: '#1D4E9E',
+            success: function (res) {
+              if (res && res.confirm) self.download()
+            }
+          })
+          return
+        }
+        wx.showToast({ title: (error && error.message) || '导出失败', icon: 'none' })
       })
       return
     }
     this.saveBook(book)
   },
   saveBook: function (book) {
-    if (calibration.blockReport(this.query)) return
+    var self = this
+    function stop() { self.setData({ downloadLoading: false }) }
+    if (calibration.blockReport(this.query)) { stop(); return }
     if (!book.ok) {
+      stop()
       wx.showToast({ title: book.message, icon: 'none' })
       return
     }
@@ -139,9 +158,11 @@ Page({
       filePath: path,
       data: book.bytes.buffer,
       success: function () {
+        stop()
         wx.openDocument({ filePath: path, fileType: 'xlsx', showMenu: true })
       },
       fail: function () {
+        stop()
         wx.showToast({ title: '已生成汇总', icon: 'none' })
       }
     })

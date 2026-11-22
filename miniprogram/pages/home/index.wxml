@@ -19,7 +19,7 @@
     <view class="card-title">输入片单</view>
     <textarea class="area" placeholder="粘贴或输入节目名，一行一个" value="{{draft}}" bindinput="onInput" maxlength="20000" />
     <view class="btn ghost" bindtap="upload">上传 Excel</view>
-    <view class="hint">.xlsx，首行为「节目名」，≤500 行</view>
+    <view class="hint">.xlsx，含「节目名称」列，≤500 行</view>
     <view class="btn" bindtap="start">开始查询</view>
   </view>
   <view class="sec-head">
@@ -79,3 +79,4 @@
     <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
   </view>
 </view>
+<privacy-popup />

@@ -72,7 +72,7 @@ docker compose up --build -d
 
 - 正式小程序 AppID
 - 备案
-- 微信支付商户号
+- 微信支付正式商户联调（服务端 JSAPI 已接，见 [docs/PAYMENTS.md](docs/PAYMENTS.md)；0.01 元测试档默认关闭）
 - 大刀的只读索引账号
 - CDN 签名（现在是本地假签名）
 - 一台服务器和已备案的 https 域名
@@ -97,7 +97,33 @@ Hourly index import, after the database has been migrated:
 NADOU_TASK_EXPORT_PATH=./export.csv python -m nadou index-run
 ```
 
-`NADOU_TASK_EXPORT_PATH` is a local CSV. DingTalk alerts use `NADOU_DINGTALK_WEBHOOK_URL` and `NADOU_DINGTALK_WEBHOOK_SECRET` when both are set. Leave them empty to disable alerts. Do not commit real values.
+`NADOU_TASK_EXPORT_PATH` is a local CSV. DingTalk alerts use `NADOU_DINGTALK_WEBHOOK_URL` and `NADOU_DINGTALK_WEBHOOK_SECRET` when both are set. Leave them empty to disable alerts. Do not commit real values. `NADOU_TRUSTED_PROXIES` defaults to `127.0.0.1`. The recorded client address is the direct peer, unless that peer is allowed by this setting to supply `X-Forwarded-For`. When uvicorn is started with `--proxy-headers`, it trusts `127.0.0.1` by default and rewrites the peer address once, so do not also pass `--proxy-headers` when running the backend directly on the machine, or the address is handled twice.
+
+## 创建第一个工作台管理员
+
+生产库的 `staff_accounts` 一开始是空的。数据库迁移完成之后，在服务器上创建管理员。连接用已经配置好的 `DATABASE_URL`。这个命令不读取 `NADOU_ALLOW_DEV_SEED`，也不写入演示账号。
+
+交互式输入密码两次，输入时不会回显：
+
+```bash
+python -m nadou create-admin <用户名>
+```
+
+脚本从标准输入读一行密码。不要把密码写在命令行参数里：
+
+```bash
+python -m nadou create-admin <用户名> < /path/to/password-file
+```
+
+生成随机密码，并且只在终端打印一次：
+
+```bash
+python -m nadou create-admin <用户名> --generate
+```
+
+密码至少 12 个字符，最长 128 个字符。用户名已存在时命令失败退出，不会改掉原来的密码。只有加上 `--reset-password` 才会重置这个管理员的密码。旧密码随即不能登录，这个账号尚未过期的会话一并作废，登录锁定也会清掉。账号还不存在时，`--reset-password` 同样失败，不会顺便新建。同名的客服账号不会被这个命令改掉。审计记录只写下账号名和角色。
+
+不要把真实用户名、密码、地址或数据库连接写进仓库。
 
 ## Tests
 
@@ -135,3 +161,11 @@ The mini program sends `POST /api/v1/auth/wechat/login` with `{ "code": "<wx.log
 Send `Authorization: Bearer <token>` for search/report data, query exports, invite redemption and `/auth/me`. Sessions last seven days; only their SHA-256 digest is stored in the database. Missing, invalid or expired sessions return 401; banned accounts return 403. An invalid/used WeChat code returns 401, malformed input 422, and missing server configuration or upstream failure 503. Staff sessions remain separate and cannot be substituted with a user session.
 
 Keep `touristappid` and an empty `apiBase` in source control. Real WeChat login testing requires the matching mini program identity in local developer settings and a locally configured reachable API; no real credentials or deployment addresses belong in the repository. Python tests mock the WeChat network call, while `node scripts/check-miniprogram.js` includes login state checks for all three adapters. Test identities are minted only by `tests/user_helpers.py`, without a development authentication route.
+
+## 体验版会员档位（正式版提交审核前必须拆除）
+
+`NADOU_TRIAL_TOOLS` 默认 `0`，生产必须保持 `0`。只有它精确等于 `1`，并且 `user_may_use_test_tier` 放行当前用户，`POST /api/v1/dev/tier` 才可用。这个函数和微信支付 0.01 元测试档是同一道门：必须同时打开 `NADOU_WECHAT_PAY_TEST_TIER`，且用户 id 在 `NADOU_WECHAT_PAY_TEST_USERS`（默认空，只认用户 id，不要把真实账号写入仓库，也不要再设第二份名单）。白名单里的人因此也会看到 0.01 元档。服务端不看小程序的 `envVersion`、`Referer` 或任何版本请求头。
+
+切换会立刻把该账号当前仍有效的普通会员和 VIP 改成到期，包括真实付过费的，而且不会按原来的到期时间恢复。白名单里只放测试账号。
+
+正式版提交审核前，运维把 `NADOU_TRIAL_TOOLS` 改回 `0`，并删除该接口、`devtools` 包、相关测试和这段说明。`membership_dev` 留在 `TEST_PRODUCTS` 和 `ck_orders_product` 里，用来标记已经写下的订单，不要删。路径、请求、返回和 404 的含义见 [docs/DESIGN.md](docs/DESIGN.md) 的「体验版会员档位开关」。

@@ -52,7 +52,12 @@ async function main() {
   assert.strictEqual(calls[0].header.Authorization, 'Bearer test-free-token')
   nextError = true; api.advanceQuery(query.id); await drain()
   var results = api.getQuery(query.id)
-  assert(results.done && results.items[0].hit && results.items[1].failed)
+  assert(results.networkError && results.done && results.items[0].hit && results.items[1].failed)
+  assert.strictEqual(results.failBanner, '网络异常，请重试')
+  assert.strictEqual(results.head, '已完成 1 / 2')
+  assert.strictEqual(results.percent, 50)
+  assert(results.showNetworkRetry)
+  assert.strictEqual(calls.length, 2, 'network failure must not start another search')
   assert.strictEqual(results.items[0].evidencePlatform, '真实测试平台')
   api.retryItem(query.id, '失败测试片'); await drain()
   assert(api.getQuery(query.id).items[1].hit)
@@ -78,6 +83,83 @@ async function main() {
   assert(page.data.showDownload)
   nextError = true; page.retry(); await drain()
   assert.strictEqual(page.data.phase, 'fail')
+  var toasts = []
+  var modals = []
+  var opened = []
+  wx.showToast = function (opt) { toasts.push(opt) }
+  wx.showModal = function (opt) { modals.push(opt) }
+  wx.env = { USER_DATA_PATH: '/tmp' }
+  wx.openDocument = function (opt) { opened.push(opt) }
+  wx.getFileSystemManager = function () {
+    return { writeFile: function (opt) { if (opt && opt.success) opt.success() } }
+  }
+  var reportWxml = require('fs').readFileSync(require('path').join(__dirname, '../miniprogram/pages/report/index.wxml'), 'utf8')
+  assert(/<button\b[^>]*bindtap="download"[^>]*loading="\{\{downloadLoading\}\}"[^>]*disabled="\{\{downloadLoading\}\}"/.test(reportWxml),
+    'download button binds loading and disabled')
+  var sheet = Object.assign({}, def, {
+    data: Object.assign({}, def.data),
+    setData: function (v) { Object.assign(this.data, v) }
+  })
+  sheet.query = { name: '真实测试片' }
+  sheet.load()
+  await drain()
+  assert.strictEqual(sheet.data.phase, 'ready')
+  assert(sheet.data.showDownload)
+  assert.strictEqual(sheet.data.downloadLoading, false)
+  var before = calls.length
+  sheet.download()
+  assert.strictEqual(sheet.data.downloadLoading, true, 'download button stays loading while exporting')
+  sheet.download()
+  assert.strictEqual(calls.length, before + 1, 'repeated taps send one export request')
+  await drain()
+  assert.strictEqual(sheet.data.downloadLoading, false, 'download button recovers after success')
+  assert.strictEqual(opened.length, 1)
+  assert.strictEqual(modals.length, 0)
+  assert.strictEqual(toasts.length, 0)
+  before = calls.length
+  nextError = true
+  sheet.download()
+  assert.strictEqual(sheet.data.downloadLoading, true)
+  sheet.download()
+  sheet.download()
+  assert.strictEqual(calls.length, before + 1, 'taps during a failed export send one request')
+  await drain()
+  assert.strictEqual(sheet.data.downloadLoading, false, 'download button recovers after network failure')
+  assert.strictEqual(toasts.length, 0, 'network failure must not toast 网络异常，请重试')
+  assert.strictEqual(modals.length, 1)
+  var modal = modals[0]
+  assert.strictEqual(modal.title, '下载失败')
+  assert.strictEqual(modal.content, '网络异常，请重试')
+  assert.strictEqual(modal.cancelText, '取消')
+  assert.strictEqual(modal.confirmText, '重试')
+  assert.strictEqual(modal.confirmColor, '#1D4E9E')
+  assert.notStrictEqual(modal.showCancel, false, 'cancel stays on the left')
+  modal.success({ confirm: false, cancel: true })
+  assert.strictEqual(calls.length, before + 1, 'cancel does not download again')
+  assert.strictEqual(sheet.data.downloadLoading, false)
+  nextError = true
+  modal.success({ confirm: true, cancel: false })
+  assert.strictEqual(sheet.data.downloadLoading, true)
+  assert.strictEqual(calls.length, before + 2, 'confirm retries the same download')
+  sheet.download()
+  assert.strictEqual(calls.length, before + 2, 'a second tap during retry sends no extra request')
+  await drain()
+  assert.strictEqual(modals.length, 2)
+  assert.strictEqual(toasts.length, 0)
+  assert.strictEqual(sheet.data.downloadLoading, false)
+  var savedRequest = wx.request
+  wx.request = function (opt) {
+    calls.push(opt)
+    opt.success({ statusCode: 503, data: {} })
+  }
+  sheet.download()
+  await drain()
+  wx.request = savedRequest
+  assert.strictEqual(modals.length, 2, 'non-network export errors do not use the download modal')
+  assert.strictEqual(toasts.length, 1)
+  assert.strictEqual(toasts[0].title, '服务暂不可用')
+  assert.strictEqual(toasts[0].icon, 'none')
+  assert.strictEqual(sheet.data.downloadLoading, false)
   require('../miniprogram/pages/viewer/index')
   function viewer() {
     return Object.assign({}, def, { data: {}, setData: function (v) { Object.assign(this.data, v) } })

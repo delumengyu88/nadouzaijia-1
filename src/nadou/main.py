@@ -19,7 +19,11 @@ from nadou.admin.schemas import InviteRedeemIn
 from nadou.auth import UserSessions, WeChatLogin, require_active, user_profile
 from nadou.config import get_settings
 from nadou.db import Database
+from nadou.devtools.trial_tools import register_trial_tools
+from nadou.evidence_user import UserEvidence
 from nadou.models import User
+from nadou.payments.api import PaymentApi
+from nadou.public_config import PublicConfig
 from nadou.schemas import SearchOut
 from nadou.search import EmptyQuery, ProgramSearch, UnknownUser
 from nadou.signed_url import FakeSignedUrlProvider, SignedUrlProvider
@@ -130,6 +134,11 @@ def create_app(
             "expires_at": grant.expires_at.isoformat(),
         }
 
+    PublicConfig.register(app, get_session)
+    UserEvidence.register(app, get_session, clock, alerts)
+    PaymentApi.register(app, get_session, clock, alerts, grant_writer)
+    # Experience-build only. Delete this line with src/nadou/devtools before review.
+    register_trial_tools(app, get_session, clock)
     AdminApi.register(app, get_session, clock, alerts, grant_writer)
 
     @app.get("/api/v1/queries/{query_id}/export")
