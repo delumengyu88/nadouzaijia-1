@@ -56,11 +56,11 @@ function respond(status, data) {
   req.success({ statusCode: status, data: data })
 }
 
-function session() {
+function session(user) {
   state.setSession({
-    token: 'orders-token',
+    token: user ? user + '-token' : 'orders-token',
     expires_at: new Date(Date.now() + 86400000).toISOString(),
-    user: { id: 'orders-user', tier: 'free' }
+    user: { id: user || 'orders-user', tier: 'free' }
   })
 }
 
@@ -256,6 +256,38 @@ async function main() {
   assert.strictEqual(guest.data.failed, false)
   assert.strictEqual(guest.data.empty, false)
   assert.deepStrictEqual(guest.data.rows, [])
+
+  session()
+  var switched = page()
+  switched.onShow()
+  state.clearSession()
+  switched.onShow()
+  respond(200, FIXTURE)
+  await drain()
+  assert.strictEqual(switched.data.needLogin, true)
+  assert.deepStrictEqual(switched.data.rows, [])
+
+  session()
+  switched.onShow()
+  state.load().auth.expires_at = new Date(0).toISOString()
+  respond(200, FIXTURE)
+  await drain()
+  assert.strictEqual(switched.data.needLogin, true)
+  assert.strictEqual(switched.data.loading, false)
+  assert.deepStrictEqual(switched.data.rows, [])
+
+  session()
+  switched.onShow()
+  session('replacement')
+  respond(401, {})
+  await drain()
+  assert.strictEqual(switched.data.needLogin, false)
+  assert.strictEqual(switched.data.loading, true)
+  assert.strictEqual(pending.length, 1)
+  assert.strictEqual(pending[0].header.Authorization, 'Bearer replacement-token')
+  respond(200, [FIXTURE[1]])
+  await drain()
+  assert.deepStrictEqual(switched.data.rows.map(function (item) { return item.orderNo }), ['ND-B'])
 
   session()
   var failed = page()

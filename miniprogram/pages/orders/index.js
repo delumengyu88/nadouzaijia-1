@@ -1,4 +1,5 @@
 var api = require('../../api/index')
+var state = require('../../api/state')
 var nav = require('../../utils/nav')
 
 var STATUS_LABEL = {
@@ -55,6 +56,7 @@ Page({
     live: false
   },
   onShow: function () {
+    this.ticket = (this.ticket || 0) + 1
     var data = nav.layout('orders', this.query)
     data.title = '我的订单'
     data.showBack = true
@@ -63,7 +65,8 @@ Page({
       data.failed = false
       data.empty = false
       data.rows = []
-      if (!require('../../api/state').token()) {
+      var token = state.token()
+      if (!token) {
         data.loading = false
         data.needLogin = true
         this.setData(data)
@@ -72,7 +75,7 @@ Page({
       data.loading = true
       data.needLogin = false
       this.setData(data)
-      this.fetchOrders()
+      this.fetchOrders(this.ticket, token)
       return
     }
     var rows = api.listOrders()
@@ -84,25 +87,29 @@ Page({
     data.empty = !rows.length
     this.setData(data)
   },
-  fetchOrders: function () {
+  fetchOrders: function (ticket, token) {
     var self = this
-    var ticket = (this.ticket || 0) + 1
-    this.ticket = ticket
+    function isCurrent() {
+      if (ticket !== self.ticket) return false
+      if (state.token() === token) return true
+      self.onShow()
+      return false
+    }
     var pending
     try {
       pending = api.listOrders()
     } catch (error) {
-      this.failLoad(ticket)
+      if (isCurrent()) this.failLoad()
       return
     }
     if (!pending || typeof pending.then !== 'function') {
-      this.failLoad(ticket)
+      if (isCurrent()) this.failLoad()
       return
     }
     pending.then(function (body) {
-      if (ticket !== self.ticket) return
+      if (!isCurrent()) return
       if (!Array.isArray(body)) {
-        self.failLoad(ticket)
+        self.failLoad()
         return
       }
       self.setData({
@@ -114,16 +121,15 @@ Page({
         empty: body.length === 0
       })
     }, function (error) {
-      if (ticket !== self.ticket) return
+      if (!isCurrent()) return
       if (error && error.message === '请先登录') {
         self.setData({ loading: false, failed: false, needLogin: true, empty: false, rows: [], live: true })
         return
       }
-      self.failLoad(ticket)
+      self.failLoad()
     })
   },
-  failLoad: function (ticket) {
-    if (ticket != null && ticket !== this.ticket) return
+  failLoad: function () {
     this.setData({ loading: false, failed: true, needLogin: false, empty: false, rows: [], live: true })
   },
   retry: function () {
