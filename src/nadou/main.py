@@ -20,6 +20,7 @@ from nadou.auth import UserSessions, WeChatLogin, require_active, user_profile
 from nadou.config import get_settings
 from nadou.db import Database
 from nadou.devtools.trial_tools import register_trial_tools
+from nadou.invite_state import InviteState
 from nadou.models import User
 from nadou.payments.api import PaymentApi
 from nadou.public_config import PublicConfig
@@ -134,6 +135,7 @@ def create_app(
         }
 
     PublicConfig.register(app, get_session)
+    InviteState.register(app, get_session, clock)
     PaymentApi.register(app, get_session, clock, alerts, grant_writer)
     # Experience-build only. Delete this line with src/nadou/devtools before review.
     register_trial_tools(app, get_session, clock)
