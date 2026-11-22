@@ -14,8 +14,19 @@ from sqlalchemy.orm import Session
 from nadou.admin.orders import EntitlementIssuer, OrderGrantWriter, OrderLookup
 from nadou.config import get_settings
 from nadou.models import Order, User
-from nadou.payments.catalog import PayProduct, product_by_code, product_for_sale, products_for
-from nadou.payments.config import WeChatPaySettings, load_pay_settings, user_may_use_test_tier
+from nadou.payments.catalog import (
+    LIVE_TEST,
+    PayProduct,
+    product_by_code,
+    product_for_sale,
+    products_for,
+)
+from nadou.payments.config import (
+    WeChatPaySettings,
+    live_test_product_id,
+    load_pay_settings,
+    user_may_use_test_tier,
+)
 from nadou.payments.crypto import (
     decrypt_resource,
     mini_program_pay_sign,
@@ -45,9 +56,11 @@ class PaymentService:
         self.notifier = notifier
         self.grant_writer = grant_writer or OrderGrantWriter()
 
-    def list_tiers(self, user: User) -> dict:
-        visible = products_for(user_may_use_test_tier(user.id))
-        return {"tiers": [product.public() for product in visible]}
+    def list_tiers(self, user: User, *, virtual: bool = False) -> dict:
+        tiers = [product.public() for product in products_for(user_may_use_test_tier(user.id))]
+        if virtual and (product_id := live_test_product_id(user.id)):
+            tiers.append({**LIVE_TEST.public(), "product_id": product_id})
+        return {"tiers": tiers}
 
     def create(self, session: Session, user: User, tier: str | None) -> dict:
         product = product_for_sale(

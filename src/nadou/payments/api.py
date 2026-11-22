@@ -63,8 +63,14 @@ class PaymentApi:
             )
 
         @app.get("/api/v1/pay/tiers")
-        def list_tiers(user: User = Depends(payer), payments: PaymentService = Depends(service)):
-            return payments.list_tiers(user)
+        def list_tiers(
+            response: Response,
+            channel: str | None = None,
+            user: User = Depends(payer),
+            payments: PaymentService = Depends(service),
+        ):
+            response.headers["Cache-Control"] = "private, no-store"
+            return payments.list_tiers(user, virtual=channel == "virtual")
 
         @app.post("/api/v1/pay/orders")
         def create_order(
