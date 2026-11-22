@@ -14,8 +14,8 @@ services:
       retries: 30
   api:
     build: .
-    environment:
-      DATABASE_URL: &application_database postgresql+psycopg://nadou:nadou_dev_password@db:5432/nadou
+    environment: &application_environment
+      DATABASE_URL: postgresql+psycopg://nadou:nadou_dev_password@db:5432/nadou
       APP_ENV: local
       NADOU_ALLOW_DEV_SEED: "1"
       NADOU_DATA_SOURCE: demo
@@ -32,7 +32,8 @@ services:
     entrypoint: ["python", "-m", "nadou", "query-retention", "--daily"]
     command: ["${NADOU_RETENTION_MODE:---dry-run}"]
     environment:
-      DATABASE_URL: *application_database
+      <<: *application_environment
+      NADOU_ALLOW_DEV_SEED: "0"
     depends_on:
       db:
         condition: service_healthy
