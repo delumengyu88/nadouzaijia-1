@@ -59,6 +59,11 @@ The API shows `其他平台` (`PlatformNames.OTHER`) only on records the caller 
 4. `GET /api/v1/app/config` — public splash switch for the mini program. No login. See below.
 5. `GET /api/v1/app/home` — public home content for the mini program. No login. See below.
 6. `GET /api/v1/app/examples/{name}` — public example report for one homepage example. No login. See below.
+7. `POST /api/v1/evidence-requests` — 登录用户提交委托取证。见下方「用户侧委托取证」。
+8. `GET /api/v1/evidence-requests` — 只返回当前用户的工单，按 `created_at` 倒序。
+9. `GET /api/v1/evidence-requests/{id}` — 本人工单详情。非本人或不存在都是 404。
+10. `POST /api/v1/evidence-requests/{id}/withdraw` — 仅「已提交」可撤回为「已取消」。
+11. `POST /api/v1/evidence-requests/{id}/confirm` — 仅「已交付」可确认为「已完成」。
 
 Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is local-only until WeChat login lands.** Do not expose this header as account authentication on a shared or deployed API. There is no import endpoint; import is `TaskExportImporter`, used by the seed script and tests. Workbench upload can call the same class later.
 
@@ -110,6 +115,22 @@ Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is loc
 `GET /api/v1/app/examples/{name}` 用与检索相同的标题折叠找到一条上线示例。找不到、未上线，或标题折叠后为空，返回 404 `example not found`，同样带上面的缓存头。返回的 `name` 是工作台保存的节目名，`program_name` 是折叠后的索引名。`records` 与上面的 `line` / `sub` 是同一批行：有真实检测日，并且 `EntitlementPolicy.age_bucket` 不是 `lt_30`（不满 30 天，任何权益都看不到字段）。`date_generated` 的行、没有真实检测日的行、不满 30 天的行都不出现，也不以打码形式返回平台或精确时间。记录按真实检测日从新到旧。只有这类行时 `records` 为空；`evidence_program_name` 仍是示例节目名，只要去掉 `date_generated` 之后还有索引行。没有任何可报告行时它为 `null`。
 
 下面这些字段没有公开来源（没有登录用户，也不签名），每条记录固定为 `null`：`thumbnail_url`、`hd_url`、`access`、`can_download_report`、`can_download_screenshot`、`locked`。没有可报告记录时 `evidence_program_name` 为 `null`。不返回 `locked_summary`、`locked_window`，也不返回首页会话字段（登录态、草稿、是否已看过公告）。
+
+### 用户侧委托取证
+
+鉴权和 `GET /api/v1/auth/me` 相同，请求头是 `Authorization: Bearer`。未登录 401。数据库里的状态继续用中文，工作台接口不改。
+
+`POST /api/v1/evidence-requests` 的字段：`name`（必填，去掉首尾空白并做 NFKC 之后必须非空，最长 200）、`kind`（只能是 `normal` 或 `recent`）、`platform`（可选；`recent` 忽略且不存）、`note`（可选，最长 500，写入 `requirement`）、`phone`（必填，11 位并且以 1 开头）。这个接口不接收 `record_ref`，也不会去读检索记录或生成日期来填任何字段。
+
+`normal` 存成 `request_type=常规`，`recent` 存成 `近期`。成功时 201，正文只有 `{id, no}`。`no` 就是 `application_number`，仍由工作台的 `ApplicationNumbers.next_value` 生成。联系电话写在新增的可空列 `evidence_requests.contact_phone`（迁移 `20261122_0012`，可升级也可降级，不改已有行的其他列）。`phone` 必须由本次请求带上，不读取 `users.phone`。缺失或空白是 422 `{code:"phone_required", message:"请填写联系手机号"}`。格式不对是 422 `{code:"invalid_phone", message:"请填写正确的手机号"}`。用户侧响应和钉钉通知里的手机号都是脱敏的（如 `138****1234`）。
+
+列表每条是 `id, no, name, platform, kind, status, status_text, created_at`。详情在此基础上增加 `note`、脱敏 `phone`、`quote_amount`、`failure_reason`、`refund_method`、`refund_amount`、`refund_note`，以及 `accepted_at`、`quoted_at`、`payment_confirmed_at`、`delivered_at`、`completed_at`、`failed_at`、`cancelled_at`、`closed_at`。`status` 与中文的对应是：已提交 `submitted`，已受理 `accepted`，待付款（线下） `pay`，取证中 `working`，已交付 `delivered`，已完成 `done`，取证失败 `failed`，已关闭 `closed`，已取消 `cancelled`。`status_text` 是库里的中文原值。
+
+同一用户、同一节目名（先去首尾空白，再 NFKC），如果已经有状态属于已提交、已受理、待付款（线下）、取证中的工单，返回 409 `{code:"duplicate", id, no, message:"这个节目已经提交过取证申请"}`，`id` 和 `no` 是已有的那一张。检查和插入在同一个事务里完成，并且先锁住这个用户：Postgres 用 `SELECT … FOR UPDATE`；SQLite 先提交登录时的只读事务，再 `UPDATE` 该用户行，把写锁一直占到本次请求提交，另一个连接用 `busy_timeout` 等待。已取消、已交付、已完成、取证失败、已关闭都不阻止再次提交。
+
+撤回和确认在状态不对时返回 409 `{code:"invalid_state", message:…}`。这两步写审计。`AuditWriter` 的操作者是员工账号；用户自己操作时没有员工，所以 `actor_id` 为空，`after_json` 里记下 `user_id`，不记手机号。
+
+事务提交成功之后才走现有 `Notifier`（请求返回前先 `commit`，通知放在后台任务里）。正文含标题、节目名、工单号、取证类型和脱敏手机号。通知抛错不影响 201；提交没写进库就不会发。工单号连续三次都冲突时返回 503 `{code:"no_unavailable", message:"提交失败，请稍后再试"}`。
 
 ## Import
 
@@ -230,7 +251,7 @@ Manual grant or extend takes `regular` or `vip`, a day count, and a reason. The 
 
 The workbench still reads orders; it does not take payment. `OrderLookup.by_order_number` and `GET /api/v1/admin/orders/by-number/{order_number}` find an order by its public number. Export is `GET /api/v1/admin/orders/export` (CSV, admin only). Mini program JSAPI payment is specified in [PAYMENTS.md](PAYMENTS.md). The server prices each tier. A verified WeChat notification, or a server-side order query, grants that order's original tier and duration through `EntitlementIssuer` and `OrderGrantWriter`. `amount` stays the yuan integer the workbench already shows. `amount_fen` is the WeChat charge in 分.
 
-`EntitlementIssuer.issue` grants the order's original tier and duration. `order_issuances.order_id` is unique, so a second call returns the existing grant instead of creating another entitlement. The issuer tries three times, then sets the order and the issuance to `发放异常` and notifies once. `POST /api/v1/admin/orders/{id}/reissue` (support or admin) runs that same path only for `发放异常`. The body cannot carry a tier or a duration; the issuance row keeps the snapshot taken on the first attempt. A repeated reissue returns the entitlement already issued.
+`EntitlementIssuer.issue` grants the order's original tier and duration. The new entitlement ends at `max(live expiry of that same tier, now) + duration_days`. The live expiry is the latest `expires_at` still in the future for that `kind`, the same instant `vip_expires_at` or `regular_expires_at` shows, whatever the source. A `regular` grant is not a base for `vip`, and a `vip` grant is not a base for `regular`; neither row is rewritten by a purchase of the other tier. Suspending leftover 普通 days on upgrade, and 7-day renewals, stay unimplemented. `order_issuances.order_id` is unique, so a second call returns the existing grant instead of creating another entitlement or extending again. The issuer tries three times, then sets the order and the issuance to `发放异常` and notifies once. `POST /api/v1/admin/orders/{id}/reissue` (support or admin) runs that same path only for `发放异常`. The body cannot carry a tier or a duration; the issuance row keeps the snapshot taken on the first attempt. A repeated reissue returns the entitlement already issued.
 
 ### Hourly index run
 

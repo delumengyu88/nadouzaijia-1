@@ -582,6 +582,39 @@ def test_platform_certificate_verifies_and_gateway_signs_the_fen_amount(pay_keys
     assert API_V3_KEY not in captured["headers"]["Authorization"]
 
 
+def test_duplicate_notify_does_not_extend_a_renewal(pay_app, session, clock, pay_keys):
+    user, headers = login(session, clock)
+    current = Entitlement(
+        user_id=user.id,
+        kind="regular",
+        program_name=None,
+        record_id=None,
+        expires_at=clock + timedelta(days=10),
+        source="order",
+    )
+    session.add(current)
+    session.commit()
+    created = pay_app.post(
+        "/api/v1/pay/orders", headers=headers, json={"tier": "membership_regular"}
+    ).json()
+    txn = transaction(created["order_number"], amount={"total": 29900, "currency": "CNY"})
+    first, _body = post_notify(pay_app, pay_keys, clock, txn)
+    second, _body = post_notify(pay_app, pay_keys, clock, txn)
+    assert first.status_code == 204
+    assert second.status_code == 204
+    refresh(session)
+    rows = session.scalars(select(Entitlement).where(Entitlement.user_id == user.id)).all()
+    assert len(rows) == 2
+    assert current.expires_at == clock + timedelta(days=10)
+    renewed = next(row for row in rows if row.id != current.id)
+    assert renewed.expires_at == clock + timedelta(days=40)
+    assert renewed.source == "order"
+    me = pay_app.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200
+    assert me.json()["regular_expires_at"] == renewed.expires_at.isoformat()
+    assert me.json()["tier"] == "regular"
+
+
 def test_pay_settings_reject_a_non_https_notify_url(pay_keys, monkeypatch):
     del pay_keys
     monkeypatch.setenv(

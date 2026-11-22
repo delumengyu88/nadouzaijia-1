@@ -42,3 +42,4 @@
   <view class="btn block ghost" wx:if="{{fromFile}}" bindtap="reset">改为粘贴</view>
   <view class="btn block" wx:if="{{!showReselect}}" bindtap="reset">重新输入</view>
 </view>
+<privacy-popup />
