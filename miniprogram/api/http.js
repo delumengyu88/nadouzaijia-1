@@ -21,12 +21,12 @@ class PayClient {
   }
 
   static yuan(fen) {
-    if (typeof fen !== 'number' || fen !== Math.floor(fen) || fen < 0) return ''
-    var whole = Math.floor(fen / 100)
-    var cents = fen % 100
-    if (!cents) return '¥' + whole
-    var text = cents < 10 ? '0' + cents : String(cents)
-    return '¥' + whole + '.' + text
+    if (typeof fen === 'number' && Number.isSafeInteger(fen)) fen = String(fen)
+    if (typeof fen !== 'string' || !/^\d+$/.test(fen)) return ''
+    var digits = '00' + fen
+    var whole = digits.slice(0, -2).replace(/^0+(?=\d)/, '')
+    var cents = digits.slice(-2)
+    return '¥' + whole + (cents === '00' ? '' : '.' + cents)
   }
 
   static phaseOf(body) {

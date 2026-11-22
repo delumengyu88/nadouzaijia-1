@@ -80,10 +80,7 @@ class PaymentApi:
             session: Session = Depends(get_session, scope="function"),
             payments: PaymentService = Depends(service),
         ):
-            return JSONResponse(
-                payments.get_order(session, user, order_number),
-                headers={"Cache-Control": UserOrders.CACHE_CONTROL},
-            )
+            return UserOrders.private_response(payments.get_order(session, user, order_number))
 
         @app.post("/api/v1/pay/orders/{order_number}/sync")
         def sync_order(
