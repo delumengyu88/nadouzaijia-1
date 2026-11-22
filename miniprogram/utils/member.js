@@ -50,13 +50,13 @@ class MemberCopy {
 
   static decoratePlans(plans, tier) {
     return plans.map(function (plan) {
-      if (plan.selectable) return plan
+      if (plan.selectable) return Object.assign({}, plan, { current: plan.id === 'membership_' + tier })
       return Object.assign({}, plan, { priceText: MemberCopy.freeCornerLabel(tier) })
     })
   }
 
-  static confirmLabel(price) {
-    return '确认开通 ¥' + price
+  static confirmLabel(plan) {
+    return plan.current ? '续费 ¥' + plan.price : '确认开通'
   }
 
   static statusLine(tier, until) {

@@ -85,7 +85,7 @@ Page({
     data.plans = plans
     data.selected = plan ? plan.id : ''
     data.showPay = !!plan
-    data.payLabel = plan ? member.confirmLabel(plan.price) : ''
+    data.payLabel = plan ? member.confirmLabel(plan) : ''
     data.loading = false
     data.loadError = false
     Object.keys(info).forEach(function (key) { data[key] = info[key] })
@@ -98,7 +98,7 @@ Page({
     this.setData({
       selected: plan.id,
       showPay: true,
-      payLabel: member.confirmLabel(plan.price)
+      payLabel: member.confirmLabel(plan)
     })
   },
   go: function () {
