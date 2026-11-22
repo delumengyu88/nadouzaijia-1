@@ -1,9 +1,18 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
 var config = require('../../config')
+var ring = require('./ring')
+
+function withRing(view) {
+  return Object.assign({}, view, ring.ringState(view))
+}
 
 Page({
-  data: { title: '查询结果', showBack: true, calibrating: config.calibrating, items: [], head: '' },
+  data: {
+    title: '查询结果', showBack: true, calibrating: config.calibrating, items: [], head: '',
+    ringMode: 'progress', ringSpin: false, ringFull: false, ringRatio: 0, ringText: '0/0',
+    ringRight: -180, ringLeft: 180
+  },
   onLoad: function (query) {
     this.id = query.id || ''
     this.view = config.calibrating || api.isLive ? '' : query.view || ''
@@ -48,18 +57,18 @@ Page({
     if (this.finished) this.stop()
     if (current && current.done) api.markQuerySeen(this.id)
     if (config.calibrating) {
-      this.setData({ calibrating: true, title: '数据校准中', head: '', items: [],
+      this.setData(withRing({ calibrating: true, title: '数据校准中', head: '', items: [],
         queued: false, running: false, done: true, percent: 0, networkError: false,
-        showFailBanner: false, showRetryAll: false, allFail: false, showNetworkRetry: false })
+        showFailBanner: false, showRetryAll: false, allFail: false, showNetworkRetry: false }))
       return
     }
-    this.setData({ calibrating: false, title: '查询结果' })
     if (!current) {
-      this.setData({ done: true, queued: false, running: false, networkError: false, showNetworkRetry: false, items: [], head: '查询记录不可用，请重新查询。' })
+      this.setData(withRing({ calibrating: false, title: '查询结果', done: true, queued: false, running: false,
+        networkError: false, showNetworkRetry: false, items: [], head: '查询记录不可用，请重新查询。' }))
       this.stop()
       return
     }
-    this.setData(current)
+    this.setData(withRing(Object.assign({ calibrating: false, title: '查询结果' }, current)))
   },
   renderSpecial: function (view) {
     if (view === 'queued') {
@@ -67,7 +76,8 @@ Page({
       return
     }
     if (view === 'running') {
-      this.setData({ queued: false, running: true, done: false, head: '已完成 2 / 4', percent: 50 })
+      this.setData(withRing({ queued: false, running: true, done: false, networkError: false,
+        head: '已完成 2 / 4', percent: 50 }))
       return
     }
     if (view === 'allfail') {

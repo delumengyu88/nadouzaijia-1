@@ -18,20 +18,28 @@
     <view class="center-sub">{{head}}</view>
   </view>
 </view>
-<view class="body" wx:elif="{{running}}">
-  <view class="center-box">
-    <view class="center-title">正在查询</view>
-    <view class="center-sub">{{head}}</view>
+<view class="body" wx:elif="{{running || networkError}}">
+  <view class="q-ring-wrap">
+    <view class="q-ring {{ringSpin ? 'is-spin' : ''}} {{ringFull ? 'is-full' : ''}}">
+      <view class="q-ring-track"></view>
+      <view class="q-ring-progress">
+        <view class="q-ring-clip right">
+          <view class="q-ring-half right" style="transform: rotate({{ringRight}}deg);"></view>
+        </view>
+        <view class="q-ring-clip left">
+          <view class="q-ring-half left" style="transform: rotate({{ringLeft}}deg);"></view>
+        </view>
+      </view>
+      <view class="q-ring-spinner" wx:if="{{ringSpin}}">
+        <view class="q-ring-arc"></view>
+      </view>
+      <view class="q-ring-hole">
+        <view class="q-ring-ratio">{{ringText}}</view>
+        <view class="q-ring-hint">正在查询</view>
+      </view>
+    </view>
   </view>
-  <view class="bar-track"><view class="bar-fill" style="width: {{percent}}%;"></view></view>
-</view>
-<view class="body" wx:elif="{{networkError}}">
-  <view class="center-box">
-    <view class="center-title">正在查询</view>
-    <view class="center-sub">{{head}}</view>
-  </view>
-  <view class="bar-track"><view class="bar-fill" style="width: {{percent}}%;"></view></view>
-  <view class="err-box">{{failBanner}}</view>
+  <view class="err-box" wx:if="{{networkError}}">{{failBanner}}</view>
   <view class="btn block" wx:if="{{showNetworkRetry}}" bindtap="retry">重试</view>
 </view>
 <view class="body" wx:else>

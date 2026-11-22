@@ -1,3 +1,135 @@
 /* local */
 
 .evidence-link { text-align: right; color: #1D4E9E; font-size: 26rpx; padding: 16rpx 0; }
+
+/* 查询中、部分进度、满环、网络异常共用这一块固定高度，避免状态切换把圆环挤偏。 */
+.q-ring-wrap {
+  height: 280rpx;
+  padding-top: 120rpx;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+}
+
+.q-ring {
+  position: relative;
+  width: 160rpx;
+  height: 160rpx;
+  flex: none;
+}
+
+.q-ring-track {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 160rpx;
+  height: 160rpx;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 8rpx solid #E5E9F0;
+}
+
+.q-ring-progress {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 160rpx;
+  height: 160rpx;
+  z-index: 1;
+}
+
+.q-ring.is-spin .q-ring-progress { visibility: hidden; }
+
+.q-ring-clip {
+  position: absolute;
+  top: 0;
+  width: 80rpx;
+  height: 160rpx;
+  overflow: hidden;
+}
+
+.q-ring-clip.right { right: 0; }
+.q-ring-clip.left { left: 0; }
+
+.q-ring-half {
+  position: absolute;
+  top: 0;
+  width: 80rpx;
+  height: 160rpx;
+  background: #1D4E9E;
+  transition: transform 300ms linear;
+}
+
+.q-ring-half.right {
+  right: 0;
+  border-radius: 0 80rpx 80rpx 0;
+  transform-origin: 0% 50%;
+}
+
+.q-ring-half.left {
+  left: 0;
+  border-radius: 80rpx 0 0 80rpx;
+  transform-origin: 100% 50%;
+}
+
+.q-ring-spinner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 160rpx;
+  height: 160rpx;
+  z-index: 2;
+}
+
+.q-ring-arc {
+  width: 160rpx;
+  height: 160rpx;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 8rpx solid transparent;
+  border-top-color: #1D4E9E;
+  animation: q-ring-spin 0.9s linear infinite;
+}
+
+@keyframes q-ring-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.q-ring-hole {
+  position: absolute;
+  left: 8rpx;
+  top: 8rpx;
+  width: 144rpx;
+  height: 144rpx;
+  border-radius: 50%;
+  background: #f4f6f8;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.q-ring-ratio {
+  width: 144rpx;
+  height: 44rpx;
+  line-height: 44rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  text-align: center;
+  color: #1c2430;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.q-ring-hint {
+  width: 144rpx;
+  height: 32rpx;
+  line-height: 32rpx;
+  margin-top: 4rpx;
+  font-size: 24rpx;
+  text-align: center;
+  color: #66707c;
+  white-space: nowrap;
+}

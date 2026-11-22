@@ -1,5 +1,8 @@
 // 查询结果页：请求不返回、同步抛错、超时重试、离开页面，都不能让页面一直停在「正在查询」。
+// 进度环：0 为旋转，部分进度按已完成/总数，全部完成满环，超时和网络异常沿用已有重试。
 var assert = require('assert')
+var fs = require('fs')
+var path = require('path')
 var config = require('../miniprogram/config')
 config.calibrating = false
 config.apiBase = '/test-api'
@@ -54,12 +57,20 @@ async function main() {
   assert.strictEqual(activeTimers(), 1)
   clock += 59000; page.tick(); await drain()
   assert(page.data.running && page.data.percent === 0 && page.data.head === '已完成 0 / 1')
+  assert.strictEqual(page.data.ringMode, 'spin', 'zero progress stays on the rotating arc')
+  assert.strictEqual(page.data.ringSpin, true)
+  assert.strictEqual(page.data.ringRatio, 0)
+  assert.strictEqual(page.data.ringText, '0/1')
+  assert.strictEqual(page.data.ringRight, -180)
+  assert.strictEqual(page.data.ringLeft, 180)
   assert.strictEqual(pending.length, 1, 'polling must not resend while a request is in flight')
   clock += 1000; page.tick(); await drain()
   assert(page.data.done && !page.data.running)
   assert.strictEqual(page.data.failBanner, '查询超时，请重试')
-  assert(page.data.items[0].failed && page.data.itemRetry)
+  assert(page.data.showFailBanner, 'timeout copy is the banner the page renders')
+  assert(page.data.items[0].failed && page.data.itemRetry, 'timeout row keeps the 重试 button')
   assert.strictEqual(page.data.items[0].line, '查询超时，请重试')
+  assert.strictEqual(page.data.ringSpin, false, 'timeout stops the indeterminate arc')
   assert.strictEqual(activeTimers(), 0, 'timeout must clear polling')
 
   // 2. 迟到的旧回包不覆盖；连点重试只发一次新请求。
@@ -84,6 +95,8 @@ async function main() {
   assert.strictEqual(page.data.items[0].line, '网络异常，请重试')
   assert.strictEqual(page.data.head, '已完成 0 / 1')
   assert.strictEqual(page.data.percent, 0)
+  assert.strictEqual(page.data.ringSpin, false, 'a stopped zero is not the querying arc')
+  assert.strictEqual(page.data.ringText, '0/1')
   assert.strictEqual(activeTimers(), 0)
   var thrown = pending.length
   page.retry({ currentTarget: { dataset: {} } })
@@ -99,9 +112,17 @@ async function main() {
   page = open(['甲片', '乙片']); await drain()
   clock += 30000; page.tick(); await drain()
   assert.strictEqual(page.data.percent, 0)
+  assert.strictEqual(page.data.ringMode, 'spin')
+  assert.strictEqual(page.data.ringRatio, 0, 'elapsed time must not move the ring')
   answer(pending[before]); await drain(); page.tick(); await drain()
   assert.strictEqual(page.data.head, '已完成 1 / 2')
   assert.strictEqual(page.data.percent, 50)
+  assert.strictEqual(page.data.ringMode, 'progress')
+  assert.strictEqual(page.data.ringSpin, false)
+  assert.strictEqual(page.data.ringText, '1/2')
+  assert.strictEqual(page.data.ringRatio, 0.5)
+  assert.strictEqual(page.data.ringRight, 0)
+  assert.strictEqual(page.data.ringLeft, 180)
 
   // 5. 离开页面清掉计时器；回来只恢复一个，且不重发进行中的请求。
   var inflight = pending.length
@@ -163,6 +184,10 @@ async function main() {
   assert.strictEqual(page.data.failBanner, '网络异常，请重试')
   assert.strictEqual(page.data.head, '已完成 1 / 2')
   assert.strictEqual(page.data.percent, 50)
+  assert.strictEqual(page.data.ringMode, 'progress')
+  assert.strictEqual(page.data.ringRatio, 0.5, 'network failure keeps the real ratio')
+  assert.strictEqual(page.data.ringText, '1/2')
+  assert(page.data.showNetworkRetry, '网络异常，请重试 keeps the 重试 button')
   assert.strictEqual(pending.length, netSent, 'network failure must not start the next title')
   assert.strictEqual(activeTimers(), 0)
   page.onHide(); page.onShow()
@@ -188,6 +213,88 @@ async function main() {
   assert(page.data.done && !page.data.networkError && page.data.items[0].failed && page.data.itemRetry)
   assert.strictEqual(page.data.items[0].line, '服务暂不可用')
   assert.strictEqual(activeTimers(), 0)
-  console.log('query page timeout, retry, progress and timer cleanup checks ok')
+
+  // 11. 进度环：三分之一按真实比例，两条都返回后是满环，不再旋转。
+  var thirdAt = pending.length
+  page = open(['环一', '环二', '环三']); await drain()
+  assert.strictEqual(page.data.ringMode, 'spin')
+  answer(pending[thirdAt]); await drain(); page.tick(); await drain()
+  assert.strictEqual(page.data.ringText, '1/3')
+  assert.strictEqual(page.data.ringMode, 'progress')
+  assert.strictEqual(page.data.ringRatio, 1 / 3)
+  assert.strictEqual(page.data.ringRight, -60)
+  assert.strictEqual(page.data.ringLeft, 180)
+  page.onUnload()
+
+  var fullAt = pending.length
+  page = open(['满甲', '满乙']); await drain()
+  answer(pending[fullAt], 'hit'); await drain(); page.tick(); await drain()
+  answer(pending[fullAt + 1], 'hit'); await drain(); page.tick(); await drain()
+  assert(page.data.done && !page.data.running)
+  assert(page.data.items[0].hit && page.data.items[1].hit)
+  assert.strictEqual(page.data.ringMode, 'full')
+  assert.strictEqual(page.data.ringFull, true)
+  assert.strictEqual(page.data.ringSpin, false)
+  assert.strictEqual(page.data.ringRatio, 1)
+  assert.strictEqual(page.data.ringText, '2/2')
+  assert.strictEqual(page.data.ringRight, 0)
+  assert.strictEqual(page.data.ringLeft, 0)
+  page.onUnload()
+
+  // 12. 圆环尺寸颜色、四种状态的模板，以及页面里没有假倒计时。
+  var queryDir = path.join(__dirname, '../miniprogram/pages/query')
+  var pageSrc = fs.readFileSync(path.join(queryDir, 'index.js'), 'utf8')
+  var ringSrc = fs.readFileSync(path.join(queryDir, 'ring.js'), 'utf8')
+  var wxml = fs.readFileSync(path.join(queryDir, 'index.wxml'), 'utf8')
+  var wxss = fs.readFileSync(path.join(queryDir, 'index.wxss'), 'utf8')
+  var blob = pageSrc + '\n' + ringSrc + '\n' + wxml + '\n' + wxss
+  ;['倒计时', '预计剩余', '预计', '模拟进度', '假进度', 'countdown', 'fakeProgress'].forEach(function (word) {
+    assert(blob.indexOf(word) === -1, 'no fake countdown: ' + word)
+  })
+  assert(!/setInterval|setTimeout|Date\.now|new Date/.test(ringSrc), 'ring ratio is not driven by a clock')
+  assert(!/percent\s*\+=|ringRatio\s*\+=|ringRight\s*\+=/.test(pageSrc + ringSrc), 'no local progress increment')
+  assert(/setInterval\(function \(\) \{ self\.tick\(\) \}, 700\)/.test(pageSrc), 'the only timer is the result poll')
+  assert(wxml.indexOf('bar-track') === -1, 'the linear bar is gone')
+  assert(wxml.indexOf('正在查询') !== -1)
+  assert(wxml.indexOf('{{ringText}}') !== -1)
+  assert(wxml.indexOf('q-ring-arc') !== -1)
+  var querying = wxml.split('wx:elif="{{running || networkError}}"')[1].split('<view class="body" wx:else>')[0]
+  assert(querying.indexOf('{{failBanner}}') !== -1)
+  assert(querying.indexOf('showNetworkRetry') !== -1 && querying.indexOf('>重试</view>') !== -1,
+    '网络异常，请重试 is rendered with 重试')
+  var results = wxml.split('<view class="body" wx:else>')[1]
+  assert(results.indexOf('{{failBanner}}') !== -1)
+  assert(results.indexOf('item.failed && itemRetry') !== -1 && results.indexOf('>重试</view>') !== -1,
+    '查询超时，请重试 is rendered with 重试')
+  function rule(selector) {
+    var body = new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}').exec(wxss)
+    assert(body, 'missing rule ' + selector)
+    return body[1]
+  }
+  var ringBox = rule('.q-ring')
+  assert(ringBox.indexOf('width: 160rpx') !== -1 && ringBox.indexOf('height: 160rpx') !== -1)
+  assert(rule('.q-ring-track').indexOf('border: 8rpx solid #E5E9F0') !== -1)
+  var half = rule('.q-ring-half')
+  assert(half.indexOf('background: #1D4E9E') !== -1)
+  assert(half.indexOf('transition: transform 300ms linear') !== -1)
+  var arc = rule('.q-ring-arc')
+  assert(arc.indexOf('border: 8rpx solid transparent') !== -1)
+  assert(arc.indexOf('border-top-color: #1D4E9E') !== -1, 'indeterminate arc is one 90 degree border')
+  assert(arc.indexOf('border-right-color') === -1 && arc.indexOf('border-bottom-color') === -1)
+  assert(rule('.q-ring-ratio').indexOf('font-size: 32rpx') !== -1)
+  assert(rule('.q-ring-ratio').indexOf('height: 44rpx') !== -1)
+  assert(rule('.q-ring-hint').indexOf('height: 32rpx') !== -1)
+  assert(rule('.q-ring-wrap').indexOf('height: 280rpx') !== -1, 'ring block height stays fixed')
+  var spinBox = rule('.q-ring.is-spin .q-ring-progress')
+  assert(spinBox.indexOf('width') === -1 && spinBox.indexOf('height') === -1, 'spin state does not resize the ring')
+  assert(!/\.is-full[^{]*\{[^}]*(width|height)\s*:/.test(wxss), 'full state does not resize the ring')
+  var direct = require('../miniprogram/pages/query/ring').ringState
+  assert.strictEqual(direct({ running: true, head: '已完成 0 / 4' }).ringMode, 'spin')
+  var twoThirds = direct({ running: true, head: '已完成 2 / 3' })
+  assert.strictEqual(twoThirds.ringRatio, 2 / 3)
+  assert.strictEqual(twoThirds.ringRight, 0)
+  assert.strictEqual(twoThirds.ringLeft, 120)
+  assert.strictEqual(twoThirds.ringText, '2/3')
+  console.log('query page timeout, retry, progress ring and timer cleanup checks ok')
 }
 main().catch(function (error) { console.error(error); process.exitCode = 1 })
