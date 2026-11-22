@@ -28,17 +28,12 @@
   </view>
   <view class="note" wx:if="{{examplesError}}">示例报告暂时无法加载。</view>
   <view class="ex" wx:for="{{examples}}" wx:key="name" data-name="{{item.name}}" bindtap="openExample">
-    <view class="thumb">
-      <view class="moon"></view>
-      <view class="hill"></view>
-      <text class="thumb-badge">高清</text>
-      <text class="thumb-wm">那豆在架</text>
-      <text class="thumb-time">00:12:31</text>
-    </view>
+    <view class="thumb thumb-plain"></view>
     <view class="ex-main">
       <view class="ex-name-row"><text class="ex-tag">示例</text><text class="ex-name">{{item.name}}</text></view>
       <view class="ex-line">{{item.line}}</view>
       <view class="ex-sub">{{item.sub}}</view>
+      <view class="ex-sub" wx:if="{{item.dateText}}">{{item.dateText}}</view>
     </view>
     <text class="chev">›</text>
   </view>

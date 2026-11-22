@@ -89,7 +89,15 @@ assert(homeWxml.indexOf('已收录 {{platformTotal}} 个平台') !== -1)
 assert(homeWxml.indexOf('wx:if="{{examples.length || examplesError}}"') !== -1)
 assert(homeWxml.indexOf('showAnnounce && !showSplash') !== -1)
 assert(homeWxml.indexOf('wx:if="{{announcement && showAnnounce && !showSplash && !showPrivacy}}"') !== -1)
-assert(homeWxml.indexOf('showDone && !showAnnounce && !showSplash') !== -1)
+  assert(homeWxml.indexOf('showDone && !showAnnounce && !showSplash') !== -1)
+  assert(homeWxml.indexOf('thumb-plain') !== -1)
+  assert(homeWxml.indexOf('{{item.dateText}}') !== -1)
+  assert(reportWxml.indexOf('wx:if="{{showEvidenceLink}}"') !== -1)
+  assert(reportWxml.indexOf('{{badgeCls}}') !== -1)
+  assert(reportWxml.indexOf('example && platformLine') !== -1)
+  assert(reportWxss.indexOf('color: #646A73') !== -1)
+  assert(reportWxss.indexOf('.nav-title { top: 0; height: 88rpx; line-height: 88rpx; }') !== -1)
+  assert(reportWxss.indexOf('align-items: center') !== -1)
 assert(homeWxml.indexOf('<privacy-popup />') !== -1)
 assert(reportWxml.indexOf('暂无可展示的示例记录') !== -1)
 assert(reportWxml.indexOf('wx:if="{{exampleEmpty}}"') !== -1)
@@ -121,7 +129,7 @@ async function main() {
   var zeroBody = await zero
   assert.strictEqual(zeroBody.platformTotal, null)
   assert.strictEqual(zeroBody.showPlatformTotal, false)
-  assert.strictEqual(zeroBody.examples.length, 1)
+  assert.strictEqual(zeroBody.examples.length, 0)
 
   var missing = http.homeContent()
   ok({ platformTotal: null, examples: [], announcements: [] })
@@ -144,7 +152,23 @@ async function main() {
   var noted = await notes
   assert.strictEqual(noted.platformTotal, 18)
   assert.strictEqual(noted.showPlatformTotal, true)
-  assert.deepStrictEqual(noted.examples[0], { name: '海边来信', line: '涉及 2 个平台', sub: '命中 4 条记录 · 2026-08-13' })
+  assert.deepStrictEqual(noted.examples[0], { name: '海边来信', line: '涉及 2 个平台', sub: '命中 4 条记录 · 2026-08-13', dateText: '' })
+  var mixedCards = http.homeContent()
+  ok({
+    platformTotal: 4,
+    examples: [
+      { name: '空示例', line: '涉及 0 个平台', sub: '命中 0 条记录' },
+      { name: '无日期', line: '涉及 1 个平台', sub: '命中 2 条记录' },
+      { name: '海边来信', line: '涉及 2 个平台', sub: '命中 2 条记录 · 2026-08-13' }
+    ],
+    announcements: []
+  })
+  var mixed = await mixedCards
+  assert.deepStrictEqual(mixed.examples.map(function (item) { return item.name }), ['无日期', '海边来信'])
+  assert.strictEqual(mixed.examples[0].dateText, '—')
+  assert.strictEqual(mixed.examples[1].dateText, '')
+  assert.strictEqual(mixed.examples[1].line, '涉及 2 个平台')
+  assert.strictEqual(mixed.examples[1].sub, '命中 2 条记录 · 2026-08-13')
   assert.strictEqual(noted.announcements.length, 2)
   assert.strictEqual(noted.announcements[0].buttonText, '知道了')
   assert.strictEqual(noted.announcements[1].buttonText, '知道了')
@@ -353,6 +377,10 @@ async function main() {
   assert.strictEqual(emptyPage.data.exampleEmpty, true)
   assert.strictEqual(emptyPage.data.name, '空示例')
   assert.strictEqual(emptyPage.data.header, '命中 0 条记录')
+  assert.strictEqual(emptyPage.data.platformLine, '涉及 0 个平台')
+  assert.strictEqual(emptyPage.data.badge, '未命中')
+  assert.strictEqual(emptyPage.data.badgeCls, 'miss')
+  assert.strictEqual(emptyPage.data.showEvidenceLink, false)
   assert.strictEqual(emptyPage.data.example, true)
   assert.strictEqual(emptyPage.data.showDownload, false)
   assert.strictEqual(emptyPage.data.evidenceName, '')
@@ -384,8 +412,25 @@ async function main() {
   assert.strictEqual(row.ageLabel, '')
   assert.strictEqual(row.image, '')
   assert.strictEqual(row.plainThumb, true)
+  assert.strictEqual(nullPage.data.header, '命中 1 条记录')
+  assert.strictEqual(nullPage.data.platformLine, '涉及 1 个平台')
+  assert.strictEqual(nullPage.data.showEvidenceLink, false)
   assert.strictEqual(nullPage.data.showDownload, false)
   assert.strictEqual(nullPage.data.exampleEmpty, false)
+  var counted = openReport({ example: '1', name: encodeURIComponent('海边来信') })
+  ok({
+    name: '海边来信', program_name: '海边来信', example: true, outcome: 'hit',
+    platform_count: 9, line: '涉及 2 个平台', sub: '命中 4 条记录 · 2026-08-13',
+    records: [
+      { record_id: 'a', platform: '广东移动', checked_at: '2026-08-13T11:00:00+08:00', age_bucket: 'd30_89', thumbnail_url: null, hd_url: null, access: null, can_download_report: null, can_download_screenshot: null, locked: null },
+      { record_id: 'b', platform: '浙江移动', checked_at: '2026-07-01T11:00:00+08:00', age_bucket: 'd90_179', thumbnail_url: null, hd_url: null, access: null, can_download_report: null, can_download_screenshot: null, locked: null }
+    ]
+  })
+  await drain()
+  assert.strictEqual(counted.data.header, '命中 4 条记录 · 2026-08-13')
+  assert.strictEqual(counted.data.platformLine, '涉及 2 个平台')
+  assert.strictEqual(counted.data.groups.length, 2)
+  assert.notStrictEqual(counted.data.header, '命中 2 条记录')
   assert(!JSON.stringify(nullPage.data).includes('未知'))
 
   var shot = page(defs.viewer)
@@ -405,6 +450,14 @@ async function main() {
   assert.strictEqual(shot.data.canSave, false)
   assert.strictEqual(shot.data.date, '—')
   assert.strictEqual(calls.some(function (opt) { return String(opt.url).indexOf('thumbnail') !== -1 }), false)
+
+  var mock = require('../miniprogram/api/mock')
+  mock.homeState().examples.forEach(function (card) {
+    assert(!/^命中\s*0\s*条/.test(card.sub), card.name)
+    var report = mock.exampleReport(card.name)
+    assert.strictEqual(report.line, card.line, card.name)
+    assert.strictEqual(report.sub, card.sub, card.name)
+  })
 
   console.log('home content and example report checks ok')
 }

@@ -16,10 +16,13 @@ function homeExamples(list) {
   var out = []
   list.forEach(function (item) {
     if (!item || item.name == null || !String(item.name).trim()) return
+    var sub = item.sub == null ? '' : String(item.sub)
+    if (/^命中\s*0\s*条/.test(sub)) return
     out.push({
       name: String(item.name),
       line: item.line == null ? '' : String(item.line),
-      sub: item.sub == null ? '' : String(item.sub)
+      sub: sub,
+      dateText: /·\s*\d{4}-\d{2}-\d{2}\s*$/.test(sub) ? '' : '—'
     })
   })
   return out

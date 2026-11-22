@@ -82,14 +82,15 @@ Page({
       canExport: api.isLive && !search.example ? search.records.some(function (r) { return !r.locked && r.can_download_report }) : prof.tier === 'vip' || prof.tier === 'regular',
       expired: query.view === 'expired'
     })
-    if (publicExample) {
-      view.exampleEmpty = !(search.records && search.records.length)
+    view.showEvidenceLink = !search.example
+    if (search.example) {
+      if (publicExample) view.exampleEmpty = !(search.records && search.records.length)
       view.showDownload = false
       view.showEvidence = false
       view.evidenceName = ''
       view.evidencePlatforms = []
-      if (search.sub) view.header = search.sub
-      else if (search.line) view.header = search.line
+      view.platformLine = search.line || ''
+      view.header = search.sub || ''
     }
     view.phase = 'ready'
     view.title = meta.name

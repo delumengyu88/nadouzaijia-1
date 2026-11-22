@@ -235,20 +235,28 @@ function latestDate(report) {
   return latest
 }
 
-function homeExamples() {
-  return catalog.examples.map(function (name) {
-    var report = searchRaw(name, { example: true })
-    var meta = metaOf(name)
-    var count = 0
-    report.records.forEach(function (rec) {
-      if (rec.age_bucket !== 'lt_30') count += 1
-    })
-    return {
-      name: meta.name,
-      line: '涉及 ' + report.platform_count + ' 个平台',
-      sub: '命中 ' + count + ' 条记录 · ' + (latestDate(report) || date.today())
-    }
+function exampleSummary(name) {
+  var report = searchRaw(name, { example: true })
+  var meta = metaOf(name)
+  var count = 0
+  report.records.forEach(function (rec) {
+    if (rec.age_bucket !== 'lt_30') count += 1
   })
+  var day = latestDate(report)
+  var sub = '命中 ' + count + ' 条记录' + (day ? ' · ' + day : '')
+  report.line = '涉及 ' + report.platform_count + ' 个平台'
+  report.sub = sub
+  return { name: meta.name, line: report.line, sub: sub, report: report }
+}
+
+function homeExamples() {
+  var cards = []
+  catalog.examples.forEach(function (name) {
+    var card = exampleSummary(name)
+    if (/^命中\s*0\s*条/.test(card.sub)) return
+    cards.push({ name: card.name, line: card.line, sub: card.sub, dateText: /·\s*\d{4}-\d{2}-\d{2}\s*$/.test(card.sub) ? '' : '—' })
+  })
+  return cards
 }
 
 function runningQuery(account) {
@@ -780,7 +788,7 @@ module.exports = {
       if (text.foldKey(title) === text.foldKey(name)) allowed = true
     })
     if (!allowed) return null
-    return searchRaw(name, { example: true })
+    return exampleSummary(name).report
   },
   programMeta: function (name) { return metaOf(name) },
   tierOfAccount: function () { return tierOf(acc()) },

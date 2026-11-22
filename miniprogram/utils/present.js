@@ -117,6 +117,7 @@ function present(search, meta) {
     name: name,
     example: !!search.example,
     badge: search.outcome === 'miss' ? '未命中' : '已命中',
+    badgeCls: search.outcome === 'miss' ? 'miss' : 'ok',
     hit: search.outcome === 'hit',
     miss: search.outcome === 'miss',
     header: header,
