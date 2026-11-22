@@ -218,6 +218,10 @@ Page({
         })
         return
       }
+      if (result.code === 'unsupported') {
+        self.setData({ phase: 'unavailable', title: '微信版本不支持', resultSub: result.message, payLoading: false, showPay: false })
+        return
+      }
       if (result.code === 'covered') {
         self.setData({ payLoading: false, phase: 'covered', title: '无需购买', showPay: false })
         return
@@ -263,7 +267,13 @@ Page({
     }
     try {
       if (pay.mode === 'short_series_goods') {
-        wx.requestVirtualPayment(Object.assign({}, pay, { success: done, fail: done }))
+        wx.requestVirtualPayment(Object.assign({}, pay, { success: done, fail: function (error) {
+          var message = require('../../api/xpay').configurationError(error)
+          if (!message) { done(); return }
+          if (once || !self.activeSession()) return
+          once = true
+          self.setData({ phase: 'unavailable', title: '暂时无法购买', resultSub: message, payLoading: false, showPay: false })
+        } }))
         return
       }
       wx.requestPayment({

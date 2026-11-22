@@ -482,6 +482,26 @@ async function main() {
   respond(200,orderBody('已发放',{order_number:'XV-fixture'}))
   await drain()
   assert.strictEqual(page.data.phase,'granted')
+  resetTransport()
+  wx.getDeviceInfo = function () { return { platform: 'ios' } }
+  wx.getAppBaseInfo = function () { return { version: '8.0.67' } }
+  var checkingClient = api.checkout('membership_regular')
+  await drain()
+  assert.strictEqual(pending.length, 0, 'unsupported iOS must not create an order')
+  var oldClient = await checkingClient
+  assert.strictEqual(oldClient.code, 'unsupported')
+  assert.ok(oldClient.message.indexOf('8.0.68') >= 0)
+  wx.getAppBaseInfo = function () { return { version: '8.0.100' } }
+  page = createPage()
+  page.onLoad({product:'membership_regular'})
+  page.pay()
+  await drain()
+  respond(200,virtualOrder)
+  await drain()
+  virtualCall.fail({ errCode: -15010 })
+  assert.strictEqual(page.data.phase, 'unavailable')
+  assert.ok(page.data.resultSub.indexOf('未上架') >= 0)
+  assert.strictEqual(pending.length, 0, 'unpublished goods cannot be paid')
   wx.requestVirtualPayment = undefined
   var unsupported = await api.checkout('membership_regular')
   assert.strictEqual(unsupported.code,'unsupported')

@@ -109,8 +109,8 @@
 <view class="body" wx:elif="{{phase == 'unavailable'}}">
   <view class="result">
     <icon type="info" size="56" color="#1D4E9E"/>
-    <view class="result-title">支付暂未开通</view>
-    <view class="result-sub">当前不能付款，请稍后再试。</view>
+    <view class="result-title">{{title || '支付暂未开通'}}</view>
+    <view class="result-sub">{{resultSub || '当前不能付款，请稍后再试。'}}</view>
     <view class="result-primary" bindtap="finish">返回</view>
   </view>
 </view>

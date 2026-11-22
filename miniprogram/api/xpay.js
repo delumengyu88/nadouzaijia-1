@@ -1,9 +1,32 @@
 var state = require('./state')
 
-function checkout(tier, request) {
-  if (typeof wx.requestVirtualPayment !== 'function') {
-    return Promise.resolve({ ok: false, code: 'unsupported', message: '当前微信版本不支持虚拟支付' })
+function clientError() {
+  if (typeof wx.requestVirtualPayment !== 'function') return '当前微信版本不支持虚拟支付，请更新微信后再试。'
+  var legacy = {}
+  if (!wx.getDeviceInfo || !wx.getAppBaseInfo) legacy = wx.getSystemInfoSync ? wx.getSystemInfoSync() : {}
+  var device = wx.getDeviceInfo ? wx.getDeviceInfo() : legacy
+  if (String(device.platform || '').toLowerCase() !== 'ios') return ''
+  var info = wx.getAppBaseInfo ? wx.getAppBaseInfo() : legacy
+  var parts = String(info.version || '').split('.').map(function (part) { return parseInt(part, 10) || 0 })
+  if (parts[0] > 8 || (parts[0] === 8 && (parts[1] > 0 || parts[2] >= 68))) return ''
+  return 'iOS 需微信 8.0.68 或更高版本，请更新微信后再试。'
+}
+
+function configurationError(error) {
+  var messages = {
+    '-15008': '当前会员支付尚未开通，请稍后再试。',
+    '-15010': '当前会员商品尚未上架，请稍后再试。',
+    '-15011': '当前版本不能使用此支付环境，请联系运营人员。',
+    '-15013': '当前会员商品价格待核对，请稍后再试。',
+    '-15014': '当前会员商品还在同步，请稍后再试。',
+    '-15018': '当前会员商品尚未通过审核，请稍后再试。'
   }
+  return messages[error && error.errCode] || ''
+}
+
+function checkout(tier, request) {
+  var unsupported = clientError()
+  if (unsupported) return Promise.resolve({ ok: false, code: 'unsupported', message: unsupported })
   var token = state.token()
   if (!token) return Promise.resolve({ ok: false, code: 'login', message: '请先登录' })
   return new Promise(function (resolve) {
@@ -30,4 +53,4 @@ function params(body) {
   return { mode: value.mode, signData: value.signData, paySig: value.paySig, signature: value.signature }
 }
 
-module.exports = { checkout: checkout, params: params }
+module.exports = { checkout: checkout, params: params, configurationError: configurationError }
