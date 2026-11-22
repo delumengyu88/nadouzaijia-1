@@ -361,6 +361,20 @@ try {
   expect(bookText.indexOf('D6" t="inlineStr"><is><t>节目类型值') !== -1, 'xlsx program type independent')
   boot('guest', { splash: false, announce: false })
   wx._tabBarLog = []
+  var skipAtZero = open('pages/home/index', {}, 'show')
+  var readyAtZero = skipAtZero.data.showSplash && skipAtZero.data.seconds === 5 &&
+    wx._tabBarLog[wx._tabBarLog.length - 1] === 'hide'
+  skipAtZero.finishSplash()
+  expect(readyAtZero && !skipAtZero.data.showSplash && wx._tabBarLog[wx._tabBarLog.length - 1] === 'show',
+    'skip at second 0 closes splash and restores the tab bar')
+  getApp().onShow()
+  skipAtZero.onShow()
+  var shareReturn = open('pages/home/index', {}, 'show')
+  expect(!skipAtZero.data.showSplash && !shareReturn.data.showSplash && getApp().globalData.splashShownThisLaunch,
+    'warm start from background or share card does not show splash')
+
+  boot('guest', { splash: false, announce: false })
+  wx._tabBarLog = []
   var home = open('pages/home/index', {}, 'show')
   expect(home.data.showSplash, 'splash did not cover home')
   expect(home.data.splashSkipTop === 48 && home.data.splashSkipRight === 102, 'skip sits left of the capsule')
