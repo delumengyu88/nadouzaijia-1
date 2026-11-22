@@ -9,7 +9,7 @@ from datetime import datetime
 from sqlalchemy import select
 
 from nadou.admin.audit import AuditWriter
-from nadou.admin.auth import StaffDirectory
+from nadou.admin.auth import StaffAuthenticator, StaffDirectory, StaffSessions
 from nadou.admin.errors import WorkbenchError
 from nadou.models import StaffAccount
 
@@ -63,14 +63,11 @@ class CreateAdminCommand:
             logger.warning("create-admin rejected password input")
             print(str(exc), file=sys.stderr)
             return 2
-        if not CreateAdminCommand._strong(password):
+        try:
+            StaffDirectory.check_password(password, CreateAdminCommand.MIN_PASSWORD)
+        except WorkbenchError as exc:
             logger.warning("create-admin rejected weak password")
-            print(
-                "password must be "
-                f"{CreateAdminCommand.MIN_PASSWORD} to {CreateAdminCommand.MAX_PASSWORD} "
-                "characters",
-                file=sys.stderr,
-            )
+            print(CreateAdminCommand._detail(exc), file=sys.stderr)
             return 2
         return CreateAdminCommand._apply(options, password, generated)
 
@@ -162,23 +159,25 @@ class CreateAdminCommand:
         return text
 
     @staticmethod
-    def _strong(password: str) -> bool:
-        return CreateAdminCommand.MIN_PASSWORD <= len(password) <= CreateAdminCommand.MAX_PASSWORD
-
-    @staticmethod
     def _apply(options: _Options, password: str, generated: bool) -> int:
         from nadou.config import get_settings
         from nadou.db import Database
         from nadou.text import RecordAge
 
-        database = Database(get_settings().database_url)
-        session = database.session()
+        database = None
+        session = None
         try:
+            database = Database(get_settings().database_url)
+            session = database.session()
             now = datetime.now(RecordAge.TZ)
             if options.reset:
-                account = CreateAdminCommand._reset(session, options.username, password)
+                account, locks = CreateAdminCommand._reset(session, options.username, password, now)
                 action = "reset_password"
-                before = {"username": account.username, "role": account.role}
+                before = {
+                    "username": account.username,
+                    "role": account.role,
+                    "locks": locks,
+                }
             else:
                 account = StaffDirectory.create(
                     session,
@@ -186,10 +185,14 @@ class CreateAdminCommand:
                     password,
                     "admin",
                     now,
+                    minimum_password=CreateAdminCommand.MIN_PASSWORD,
                 )
                 action = "create_admin"
                 before = None
+                locks = []
             after = {"username": account.username, "role": account.role}
+            if options.reset:
+                after["locks_cleared"] = len(locks)
             AuditWriter(session, now, None, None).write(
                 "staff_account",
                 account.id,
@@ -200,7 +203,8 @@ class CreateAdminCommand:
             session.commit()
             username = account.username
         except WorkbenchError as exc:
-            session.rollback()
+            if session is not None:
+                session.rollback()
             logger.warning(
                 "create-admin rejected username=%s status=%s",
                 options.username,
@@ -208,28 +212,40 @@ class CreateAdminCommand:
             )
             print(CreateAdminCommand._detail(exc), file=sys.stderr)
             return 2
-        except Exception:
-            session.rollback()
-            logger.error("create-admin failed")
-            print("create-admin failed", file=sys.stderr)
+        except Exception as exc:
+            if session is not None:
+                session.rollback()
+            kind = type(exc).__name__
+            logger.error("create-admin failed error=%s", kind)
+            print(f"create-admin failed: {kind}", file=sys.stderr)
             return 1
         finally:
-            session.close()
-            database.engine.dispose()
+            if session is not None:
+                session.close()
+            if database is not None:
+                database.engine.dispose()
         CreateAdminCommand._report(username, options.reset, password if generated else None)
         return 0
 
     @staticmethod
-    def _reset(session, username: str, password: str) -> StaffAccount:
-        name = username.strip()
-        if not name or len(name) > 64 or any(char.isspace() for char in name):
-            raise WorkbenchError(400, "username is required")
+    def _reset(
+        session, username: str, password: str, now: datetime
+    ) -> tuple[StaffAccount, list[dict]]:
+        name = StaffDirectory.normalize_username(username)
         existing = session.scalar(select(StaffAccount).where(StaffAccount.username == name))
         if existing is None:
             raise WorkbenchError(404, "username not found")
         if existing.role != "admin":
             raise WorkbenchError(409, "account is not an admin")
-        return StaffDirectory.reset_password(session, name, password)
+        account = StaffDirectory.reset_password(
+            session,
+            name,
+            password,
+            minimum_password=CreateAdminCommand.MIN_PASSWORD,
+        )
+        StaffSessions.revoke_account(session, account.id, now)
+        locks = StaffAuthenticator.clear_locks(session, account.id)
+        return account, locks
 
     @staticmethod
     def _detail(exc: WorkbenchError) -> str:

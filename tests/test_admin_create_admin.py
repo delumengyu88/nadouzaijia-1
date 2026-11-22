@@ -3,6 +3,8 @@ import logging
 import os
 import subprocess
 import sys
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,7 +16,7 @@ from nadou.admin.demo_data import DemoAccounts
 from nadou.config import get_settings
 from nadou.db import Database
 from nadou.main import create_app
-from nadou.models import AuditLog, StaffAccount
+from nadou.models import AuditLog, StaffAccount, StaffLoginLock
 from tests.workbench_helpers import auth
 
 USERNAME = "ops-admin"
@@ -372,6 +374,134 @@ def test_dev_seed_flag_does_not_load_demo_accounts(
     assert names == {USERNAME}
     assert DemoAccounts.ADMIN not in names
     assert DemoAccounts.SUPPORT not in names
+
+
+def test_reset_revokes_sessions_issued_before_the_reset(
+    command_db, session, capsys, caplog, monkeypatch
+):
+    _watch_logs(caplog)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(PASSWORD + "\n"))
+    assert _run([USERNAME]) == 0
+    capsys.readouterr()
+    moment = datetime.now(ZoneInfo("Asia/Shanghai"))
+    StaffDirectory.create(session, "other-admin", PASSWORD, "admin", moment)
+    session.commit()
+    app = create_app(database=Database(engine=session.get_bind()), now=lambda: moment)
+    with TestClient(app) as client:
+        first = client.post(
+            "/api/v1/admin/auth/login",
+            json={"username": USERNAME, "password": PASSWORD},
+        )
+        second = client.post(
+            "/api/v1/admin/auth/login",
+            json={"username": USERNAME, "password": PASSWORD},
+        )
+        other = client.post(
+            "/api/v1/admin/auth/login",
+            json={"username": "other-admin", "password": PASSWORD},
+        )
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert other.status_code == 200
+        old_token = first.json()["token"]
+        other_token = other.json()["token"]
+        assert client.get("/api/v1/admin/auth/me", headers=auth(old_token)).status_code == 200
+        second_token = second.json()["token"]
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO(REPLACEMENT + "\n"))
+    assert _run([USERNAME, "--reset-password"]) == 0
+    output = _captured(capsys)
+    assert PASSWORD not in output
+    assert REPLACEMENT not in output
+    assert PASSWORD not in caplog.text
+    assert REPLACEMENT not in caplog.text
+    assert old_token not in output
+    assert old_token not in caplog.text
+
+    with TestClient(app) as client:
+        denied = client.get("/api/v1/admin/auth/me", headers=auth(old_token))
+        assert denied.status_code == 401
+        also_denied = client.get("/api/v1/admin/auth/me", headers=auth(second_token))
+        assert also_denied.status_code == 401
+        denied_staff = client.get("/api/v1/admin/staff", headers=auth(old_token))
+        assert denied_staff.status_code == 401
+        kept = client.get("/api/v1/admin/auth/me", headers=auth(other_token))
+        assert kept.status_code == 200
+        assert kept.json()["username"] == "other-admin"
+
+
+def test_reset_clears_login_locks(command_db, session, clock, capsys, caplog, monkeypatch):
+    _watch_logs(caplog)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(PASSWORD + "\n"))
+    assert _run([USERNAME]) == 0
+    capsys.readouterr()
+    session.expire_all()
+    account = session.scalar(select(StaffAccount).where(StaffAccount.username == USERNAME))
+    session.add(
+        StaffLoginLock(
+            account_id=account.id,
+            ip="testclient",
+            consecutive_failures=5,
+            locked_until=clock + timedelta(minutes=30),
+        )
+    )
+    session.commit()
+    app = create_app(database=Database(engine=session.get_bind()), now=lambda: clock)
+    with TestClient(app) as client:
+        locked = client.post(
+            "/api/v1/admin/auth/login",
+            json={"username": USERNAME, "password": PASSWORD},
+        )
+    assert locked.status_code == 423
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO(REPLACEMENT + "\n"))
+    assert _run([USERNAME, "--reset-password"]) == 0
+    output = _captured(capsys)
+    assert PASSWORD not in output
+    assert REPLACEMENT not in output
+    assert PASSWORD not in caplog.text
+    blob = _audit_blob(session)
+    assert "testclient" in blob
+    assert "locks_cleared" in blob
+    assert PASSWORD not in blob
+    assert REPLACEMENT not in blob
+    session.expire_all()
+    remaining = session.scalars(
+        select(StaffLoginLock).where(StaffLoginLock.account_id == account.id)
+    ).all()
+    assert remaining == []
+
+    with TestClient(app) as client:
+        rejected = client.post(
+            "/api/v1/admin/auth/login",
+            json={"username": USERNAME, "password": PASSWORD},
+        )
+        restored = client.post(
+            "/api/v1/admin/auth/login",
+            json={"username": USERNAME, "password": REPLACEMENT},
+        )
+    assert rejected.status_code == 401
+    assert restored.status_code == 200
+
+
+def test_unexpected_failure_logs_the_exception_type_only(command_db, capsys, caplog, monkeypatch):
+    _watch_logs(caplog)
+    secret = "postgresql://nadou:super-secret-db@10.1.2.3:5432/nadou"
+
+    class DatabaseOffline(RuntimeError):
+        pass
+
+    def explode(*_args, **_kwargs):
+        raise DatabaseOffline(secret)
+
+    monkeypatch.setattr("nadou.db.Database", explode)
+    assert _run([USERNAME, "--generate"]) == 1
+    output = _captured(capsys)
+    assert "create-admin failed: DatabaseOffline" in output
+    assert "DatabaseOffline" in caplog.text
+    assert secret not in output
+    assert secret not in caplog.text
+    assert "generated password:" not in output
 
 
 def test_module_entrypoint_requires_a_username():

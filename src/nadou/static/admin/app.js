@@ -847,6 +847,7 @@ function auditText(value) {
     text: "内容",
     username: "账号",
     role: "角色",
+    locks_cleared: "解除锁定",
     application_number: "申请号",
     quote_amount: "报价",
     payment_amount: "收款",

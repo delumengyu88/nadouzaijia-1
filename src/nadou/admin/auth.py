@@ -54,6 +54,22 @@ class StaffSessions:
         session.flush()
 
     @staticmethod
+    def revoke_account(session: Session, account_id: str, now: datetime) -> None:
+        """Revoke every unexpired session for one account. Logout uses the same revoked_at flag."""
+        rows = session.scalars(
+            select(StaffSession).where(
+                StaffSession.account_id == account_id,
+                StaffSession.revoked_at.is_(None),
+                StaffSession.expires_at > now,
+            )
+        ).all()
+        if not rows:
+            return
+        for row in rows:
+            row.revoked_at = now
+        session.flush()
+
+    @staticmethod
     def _row(session: Session, token: str | None) -> StaffSession | None:
         if not token:
             return None
@@ -63,6 +79,23 @@ class StaffSessions:
 
 class StaffDirectory:
     ROLES = frozenset({"support", "admin"})
+    MIN_PASSWORD = 8
+    MAX_PASSWORD = 128
+
+    @staticmethod
+    def normalize_username(username: str) -> str:
+        name = username.strip()
+        if not name or len(name) > 64 or any(char.isspace() for char in name):
+            raise WorkbenchError(400, "username is required")
+        return name
+
+    @staticmethod
+    def check_password(password: str, minimum: int) -> None:
+        if len(password) < minimum or len(password) > StaffDirectory.MAX_PASSWORD:
+            raise WorkbenchError(
+                400,
+                f"password must be {minimum} to {StaffDirectory.MAX_PASSWORD} characters",
+            )
 
     @staticmethod
     def create(
@@ -71,12 +104,11 @@ class StaffDirectory:
         password: str,
         role: str,
         now: datetime,
+        *,
+        minimum_password: int = MIN_PASSWORD,
     ) -> StaffAccount:
-        name = username.strip()
-        if not name or len(name) > 64 or any(char.isspace() for char in name):
-            raise WorkbenchError(400, "username is required")
-        if len(password) < 8 or len(password) > 128:
-            raise WorkbenchError(400, "password must be 8 to 128 characters")
+        name = StaffDirectory.normalize_username(username)
+        StaffDirectory.check_password(password, minimum_password)
         if role not in StaffDirectory.ROLES:
             raise WorkbenchError(400, "role must be support or admin")
         taken = session.scalar(select(StaffAccount).where(StaffAccount.username == name))
@@ -94,12 +126,15 @@ class StaffDirectory:
         return account
 
     @staticmethod
-    def reset_password(session: Session, username: str, password: str) -> StaffAccount:
-        name = username.strip()
-        if not name or len(name) > 64 or any(char.isspace() for char in name):
-            raise WorkbenchError(400, "username is required")
-        if len(password) < 8 or len(password) > 128:
-            raise WorkbenchError(400, "password must be 8 to 128 characters")
+    def reset_password(
+        session: Session,
+        username: str,
+        password: str,
+        *,
+        minimum_password: int,
+    ) -> StaffAccount:
+        name = StaffDirectory.normalize_username(username)
+        StaffDirectory.check_password(password, minimum_password)
         account = session.scalar(select(StaffAccount).where(StaffAccount.username == name))
         if account is None:
             raise WorkbenchError(404, "username not found")
@@ -174,8 +209,15 @@ class StaffAuthenticator:
         account = self.session.get(StaffAccount, account_id)
         if account is None:
             raise WorkbenchError(404, "staff account not found")
+        before = StaffAuthenticator.clear_locks(self.session, account_id)
+        self.audit.actor = actor
+        self.audit.write("staff_account", account.id, "unlock", {"locks": before}, {"locks": []})
+        return account
+
+    @staticmethod
+    def clear_locks(session: Session, account_id: str) -> list[dict]:
         rows = list(
-            self.session.scalars(
+            session.scalars(
                 select(StaffLoginLock).where(StaffLoginLock.account_id == account_id)
             ).all()
         )
@@ -188,11 +230,9 @@ class StaffAuthenticator:
             for row in rows
         ]
         for row in rows:
-            self.session.delete(row)
-        self.session.flush()
-        self.audit.actor = actor
-        self.audit.write("staff_account", account.id, "unlock", {"locks": before}, {"locks": []})
-        return account
+            session.delete(row)
+        session.flush()
+        return before
 
     def _expire_lock(self, account_id: str, ip: str) -> None:
         row = self._lock(account_id, ip)
