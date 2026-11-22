@@ -44,7 +44,7 @@
   <view class="foot-gap"></view>
 </view>
 </view>
-<view class="splash-cover" wx:if="{{showSplash}}">
+<view class="splash-cover{{splashFailed ? ' is-text' : ''}}" wx:if="{{showSplash}}">
   <image wx:if="{{!splashFailed}}" class="splash-bg" src="/assets/p01-splash-bg.webp" mode="aspectFill" bindload="splashLoaded" binderror="splashFailed" />
   <view class="splash-copy">
     <view class="splash-title">那豆在架</view>
