@@ -280,6 +280,10 @@ Page({
       if (token !== self._pollToken) return
       var code = order && (order.code || order.status)
       var phase = order && order.status
+      if (code === 'network' || code === 'query_failed') {
+        self.schedulePoll(token, count)
+        return
+      }
       if (code === 'unconfigured' || code === 'unavailable' || phase === 'unavailable') {
         self.setData({ phase: 'unavailable', title: '支付暂未开通', payLoading: false, confirmTimeout: false, confirmSpin: false, showPay: false })
         return
@@ -289,32 +293,36 @@ Page({
         return
       }
       if (phase === 'granting') self.apply(order)
-      var next = count + 1
-      if (next >= self.pollLimit) {
-        if (self.data.phase === 'granting') {
-          self.setData({ confirmTimeout: true, payLoading: false })
-          return
-        }
-        self.setData({
-          phase: 'confirming',
-          title: '支付确认中',
-          confirmTimeout: true,
-          confirmSpin: false,
-          resultTitle: '暂未确认支付结果',
-          resultSub: '暂未收到最终结果，请稍后刷新，请勿重复支付。',
-          payLoading: false
-        })
-        return
-      }
-      setTimeout(function () {
-        if (token !== self._pollToken) return
-        self.poll(token, next)
-      }, self.pollInterval)
+      self.schedulePoll(token, count)
     }, function () {
       if (token !== self._pollToken) return
-      self.setData({ payLoading: false })
-      wx.showToast({ title: '请稍后重试', icon: 'none' })
+      self.schedulePoll(token, count)
     })
+  },
+  schedulePoll: function (token, count) {
+    var self = this
+    if (token !== this._pollToken) return
+    var next = count + 1
+    if (next >= this.pollLimit) {
+      if (this.data.phase === 'granting') {
+        this.setData({ confirmTimeout: true, confirmSpin: false, payLoading: false })
+        return
+      }
+      this.setData({
+        phase: 'confirming',
+        title: '支付确认中',
+        confirmTimeout: true,
+        confirmSpin: false,
+        resultTitle: '暂未确认支付结果',
+        resultSub: '暂未收到最终结果，请稍后刷新，请勿重复支付。',
+        payLoading: false
+      })
+      return
+    }
+    setTimeout(function () {
+      if (token !== self._pollToken) return
+      self.poll(token, next)
+    }, this.pollInterval)
   },
   showChecked: function (order) {
     if (!order) return
