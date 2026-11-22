@@ -99,7 +99,7 @@ class Settings(BaseSettings):
         validation_alias="NADOU_WECHAT_PAY_TEST_USERS",
     )
     data_source: str = Field(
-        default="demo",
+        default="unverified",
         validation_alias=AliasChoices("NADOU_DATA_SOURCE"),
     )
     trusted_proxies: str = Field(
@@ -109,6 +109,10 @@ class Settings(BaseSettings):
     # Experience-build switch. Only the exact value "1" enables it. Production stays "0".
     # Delete this field with src/nadou/devtools before review.
     trial_tools: str = Field(default="0", validation_alias="NADOU_TRIAL_TOOLS")
+
+    @property
+    def demo_data(self) -> bool:
+        return self.app_env in {"local", "test"} and self.data_source == "demo"
 
     @field_validator("trusted_proxies")
     @classmethod

@@ -16,9 +16,9 @@ services:
     build: .
     environment: &application_environment
       DATABASE_URL: postgresql+psycopg://nadou:nadou_dev_password@db:5432/nadou
-      APP_ENV: local
-      NADOU_ALLOW_DEV_SEED: "1"
-      NADOU_DATA_SOURCE: demo
+      APP_ENV: "${APP_ENV:-local}"
+      NADOU_ALLOW_DEV_SEED: "${NADOU_ALLOW_DEV_SEED:-1}"
+      NADOU_DATA_SOURCE: "${NADOU_DATA_SOURCE:-demo}"
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
