@@ -6,13 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from nadou.importer import TaskExportImporter
-from nadou.models import Entitlement, ProgramAlias, User
+from nadou.models import Entitlement, User
 from nadou.records import IndexRecordStore
-from nadou.text import RecordAge, TextNormalizer
+from nadou.text import RecordAge
 
 DEMO_VIP_USER_ID = "00000000-0000-4000-8000-000000000001"
 PROGRAM = "示例节目"
-PROGRAM_ALIAS = "示例剧集"
 
 
 class DevSeedDisabled(RuntimeError):
@@ -34,7 +33,6 @@ class Seed:
         self.allow_dev_user = allow_dev_user
 
     def run(self) -> str:
-        self._aliases()
         self.session.flush()
         csv_text = self.build_csv()
         TaskExportImporter(self.session).import_csv(csv_text)
@@ -101,18 +99,6 @@ class Seed:
     def _at(self, days_ago: int) -> datetime:
         day = self.now.astimezone(RecordAge.TZ).date() - timedelta(days=days_ago)
         return datetime(day.year, day.month, day.day, 11, 12, 24, tzinfo=RecordAge.TZ)
-
-    def _aliases(self) -> None:
-        self._ensure_alias(ProgramAlias, PROGRAM_ALIAS, PROGRAM)
-
-    def _ensure_alias(self, model, alias: str, canonical: str) -> None:
-        folded_alias = TextNormalizer.fold(alias)
-        folded_name = TextNormalizer.fold(canonical)
-        row = self.session.scalar(select(model).where(model.alias == folded_alias))
-        if row is None:
-            self.session.add(model(alias=folded_alias, canonical_name=folded_name))
-        else:
-            row.canonical_name = folded_name
 
     def _records(self) -> None:
         store = IndexRecordStore(self.session)
@@ -191,16 +177,6 @@ def main() -> None:
     finally:
         session.close()
     print(csv_text)
-    print("anonymous:")
-    print(
-        "curl -s 'http://localhost:8000/api/v1/programs/search?name=%E7%A4%BA%E4%BE%8B%E5%89%A7%E9%9B%86'"
-    )
-    print("vip:")
-    print(
-        "curl -s -H 'X-User-Id: "
-        + DEMO_VIP_USER_ID
-        + "' 'http://localhost:8000/api/v1/programs/search?name=%E7%A4%BA%E4%BE%8B%E5%89%A7%E9%9B%86'"
-    )
 
 
 if __name__ == "__main__":

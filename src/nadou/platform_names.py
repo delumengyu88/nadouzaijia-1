@@ -36,7 +36,7 @@ class PlatformNames:
     """
 
     UNRECOGNIZED = "平台未识别"
-    _ALIASES: tuple[tuple[str, str], ...] = (("gd移动", "广东移动"), ("示例视频平台", "示例视频"))
+    _NAME_MAP: tuple[tuple[str, str], ...] = (("gd移动", "广东移动"), ("示例视频平台", "示例视频"))
     _SUBTYPES: tuple[tuple[str, str], ...] = (("百视通", "百视通"), ("ott", "OTT"))
     _NETWORK_TAGS = ("专网", "公网")
     _OPERATORS = ("移动", "联通", "电信", "广电")
@@ -97,8 +97,8 @@ class PlatformNames:
         folded = TextNormalizer.fold(raw)
         if not folded:
             return ""
-        for alias, canonical in PlatformNames._ALIASES:
-            if folded == TextNormalizer.fold(alias):
+        for source, canonical in PlatformNames._NAME_MAP:
+            if folded == TextNormalizer.fold(source):
                 return TextNormalizer.fold(canonical)
         return folded
 

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
-from nadou.models import Entitlement, IndexRecord, ProgramAlias, Task, User
+from nadou.models import Entitlement, IndexRecord, Task, User
 from nadou.platform_names import PlatformNames
 from nadou.program_titles import ProgramTitleGuard
 from nadou.records import IndexRecordStore
@@ -242,7 +242,6 @@ def _assert_shape(body, tier):
 
 
 def test_counts_exclusions_and_fallbacks(session, client, clock):
-    session.add(ProgramAlias(alias="边界别名", canonical_name=PROGRAM))
     add_hit(
         session,
         task_id="keep-a",
@@ -323,7 +322,7 @@ def test_counts_exclusions_and_fallbacks(session, client, clock):
         platform="平台己",
     )
     session.commit()
-    response = client.get("/api/v1/programs/search", params={"name": "  边界别名  "})
+    response = client.get("/api/v1/programs/search", params={"name": "  " + PROGRAM + "  "})
     assert response.status_code == 200
     body = response.json()
     assert body["program_name"] == PROGRAM
@@ -494,15 +493,14 @@ def test_unknown_age_is_not_a_fresh_hit(session, client, clock):
     assert "有最新记录，可委托取证" not in json.dumps(alone)
 
 
-def test_upsert_canonicalizes_program_alias(session, client, clock):
-    session.add(ProgramAlias(alias="ＡＢＣ剧", canonical_name="标准剧"))
+def test_upsert_canonicalizes_width_and_case(session, client, clock):
     when = at_age(clock, 200)
     session.add(
         Task(
-            task_id="alias-task",
+            task_id="fold-task",
             status="done",
             created_at=when,
-            raw_filename="alias-task.mp4",
+            raw_filename="fold-task.mp4",
             network_type="公网",
             platform_name="示例视频",
             source_unverified=False,
@@ -512,7 +510,7 @@ def test_upsert_canonicalizes_program_alias(session, client, clock):
     store = IndexRecordStore(session)
     raw = "  ＡＢＣ剧 "
     stored = store.upsert(
-        task_id="alias-task",
+        task_id="fold-task",
         program_name=raw,
         program_name_raw=raw,
         hit_type="consensus",
@@ -520,7 +518,7 @@ def test_upsert_canonicalizes_program_alias(session, client, clock):
         timestamps=["00:01:02"],
     )
     again = store.upsert(
-        task_id="alias-task",
+        task_id="fold-task",
         program_name="ａｂｃ剧",
         program_name_raw="ａｂｃ剧",
         hit_type="consensus",
@@ -528,17 +526,17 @@ def test_upsert_canonicalizes_program_alias(session, client, clock):
         timestamps=["00:02:02"],
     )
     assert stored.id == again.id
-    assert stored.program_name == "标准剧"
+    assert stored.program_name == "abc剧"
     assert again.program_name_raw == "ａｂｃ剧"
     assert len(session.scalars(select(IndexRecord)).all()) == 1
     session.commit()
-    by_standard = client.get("/api/v1/programs/search", params={"name": "标准剧"}).json()
-    by_alias = client.get("/api/v1/programs/search", params={"name": "ａｂｃ剧"}).json()
-    assert by_standard["program_name"] == "标准剧"
+    by_standard = client.get("/api/v1/programs/search", params={"name": "abc剧"}).json()
+    by_width = client.get("/api/v1/programs/search", params={"name": "ａｂｃ剧"}).json()
+    assert by_standard["program_name"] == "abc剧"
     assert by_standard["outcome"] == "hit"
     visible = by_standard["platform_groups"][0]["records"][0]
-    alias_visible = by_alias["platform_groups"][0]["records"][0]
-    assert visible["record_id"] == alias_visible["record_id"]
+    width_visible = by_width["platform_groups"][0]["records"][0]
+    assert visible["record_id"] == width_visible["record_id"]
     assert visible["platform"] == "示例视频"
     assert visible["frame_count"] == 4
     assert visible["hit_label"] == "已命中"
@@ -674,9 +672,8 @@ def test_locked_rows_leak_no_real_fields_and_unconfirmed_stay_hidden(session, cl
             timestamps=["00:09:09"],
         )
     )
-    session.add(ProgramAlias(alias="泄漏别名", canonical_name=program))
     session.commit()
-    body = client.get("/api/v1/programs/search", params={"name": "泄漏别名"}).json()
+    body = client.get("/api/v1/programs/search", params={"name": program}).json()
     assert body["program_name"] == program
     assert body["outcome"] == "hit"
     assert body["platform_count"] == 1
@@ -887,3 +884,34 @@ def test_category_only_revealed_on_permitted_records(session, client, clock):
     assert "category" not in rows["cat-blank"]
     assert set(rows["cat-locked"]) == LOCKED_KEYS
     assert "隐藏类别" not in response.text
+
+
+def test_retired_mappings_cannot_change_search(session, client, clock):
+    from nadou.db import Base
+
+    session.execute(
+        Base.metadata.tables["program_aliases"]
+        .insert()
+        .values(alias="历史名称", canonical_name="规范名称")
+    )
+    session.execute(
+        Base.metadata.tables["platform_aliases"]
+        .insert()
+        .values(alias="广东移动", canonical_name="浙江移动")
+    )
+    add_hit(
+        session,
+        task_id="retired-map",
+        record_id="retired-map-rec",
+        program="规范名称",
+        when=at_age(clock, 200),
+        platform="广东移动",
+    )
+    session.commit()
+    assert (
+        client.get("/api/v1/programs/search", params={"name": "历史名称"}).json()["outcome"]
+        == "miss"
+    )
+    body = client.get("/api/v1/programs/search", params={"name": "规范名称"}).json()
+    assert body["platform_groups"][0]["records"][0]["platform"] == "广东移动"
+    assert client.get("/api/v1/admin/aliases").status_code == 404

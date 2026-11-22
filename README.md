@@ -32,7 +32,6 @@ docker compose up --build -d
 | W04 用户与会员 | http://localhost:8000/admin/#/w04 |
 | W05 订单 | http://localhost:8000/admin/#/w05 |
 | W06 内容配置 | http://localhost:8000/admin/#/w06 |
-| W07 | 已取消，没有这一页 |
 | W08 操作日志 | http://localhost:8000/admin/#/w08 |
 | W09 数据与索引 | http://localhost:8000/admin/#/w09 |
 

@@ -1,60 +1,12 @@
-from collections.abc import Mapping
-
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-from nadou.models import ProgramAlias
 from nadou.text import TextNormalizer
 
 
 class ProgramNormalizer:
-    """Fold a program name and apply the admin alias table. Does not pick among several."""
+    """One program per folded title; no title remapping or short-title heuristics."""
 
-    def __init__(
-        self,
-        aliases: Mapping[str, str] | None = None,
-        *,
-        pairs: list[tuple[str, str]] | None = None,
-    ) -> None:
-        grouped: dict[str, list[str]] = {}
-        items: list[tuple[str, str]] = []
-        if aliases:
-            items.extend(aliases.items())
-        if pairs:
-            items.extend(pairs)
-        for alias, canonical in items:
-            key = TextNormalizer.fold(alias)
-            name = TextNormalizer.fold(canonical)
-            if not key or not name:
-                continue
-            bucket = grouped.setdefault(key, [])
-            if name not in bucket:
-                bucket.append(name)
-        self._aliases = grouped
-
-    @classmethod
-    def from_session(cls, session: Session) -> "ProgramNormalizer":
-        rows = session.scalars(select(ProgramAlias)).all()
-        return cls(pairs=[(row.alias, row.canonical_name) for row in rows])
-
-    def candidates(self, raw: str) -> list[str]:
-        folded = TextNormalizer.fold(raw)
-        if not folded:
-            return []
-        mapped = self._aliases.get(folded)
-        if not mapped:
-            return [folded]
-        return list(mapped)
-
-    def canonical(self, raw: str) -> str:
-        """One normalized title. Several alias targets are not collapsed into one of them."""
-        folded = TextNormalizer.fold(raw)
-        if not folded:
-            return ""
-        mapped = self._aliases.get(folded, [])
-        if len(mapped) == 1:
-            return mapped[0]
-        return folded
+    @staticmethod
+    def canonical(raw: str) -> str:
+        return TextNormalizer.fold(raw)
 
     def dedupe(self, names: list[str]) -> list[str]:
         seen: set[str] = set()

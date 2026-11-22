@@ -19,7 +19,6 @@ from nadou.models import (
     Entitlement,
     IndexRecord,
     MemberQuery,
-    ProgramAlias,
     QueryProgram,
     Task,
     User,
@@ -338,7 +337,6 @@ def test_rejects_callers_who_cannot_export(session, clock, client):
 
 def test_header_columns_and_exact_strings(session, clock):
     add_user(session, "user-vip", clock, "vip")
-    session.add(ProgramAlias(alias="海边故事别名", canonical_name="别名故事"))
     add_record(
         session,
         task_id="task-hit",
@@ -353,7 +351,7 @@ def test_header_columns_and_exact_strings(session, clock):
         session,
         task_id="task-alias",
         record_id="rec-alias",
-        program="别名故事",
+        program="规范化故事",
         when=at_age(clock, 120),
         platform="示例视频",
         network="公网",
@@ -363,7 +361,7 @@ def test_header_columns_and_exact_strings(session, clock):
         session,
         task_id="task-dispute",
         record_id="rec-dispute",
-        program="别名故事",
+        program="规范化故事",
         when=at_age(clock, 110),
         platform="示例视频",
         network="公网",
@@ -389,8 +387,8 @@ def test_header_columns_and_exact_strings(session, clock):
                 "program_type": "电视剧",
             },
             {
-                "uploaded": "海边故事别名",
-                "matched": "别名故事",
+                "uploaded": "规范化故事",
+                "matched": "规范化故事",
                 "resolution": "alias",
             },
             {
@@ -417,11 +415,11 @@ def test_header_columns_and_exact_strings(session, clock):
     assert "部分" not in block
     headers, records, _styled = hit_table(sheet)
     assert headers == COLUMNS
-    assert HitColumns.TYPE not in headers
+    assert "命中类型" not in headers
     assert [row[1] for row in records] == ["专网", "公网", "专网"]
     assert [row[3] for row in records] == ["电视剧", None, "电影"]
-    assert [row[4] for row in records] == ["海边故事", "海边故事别名", "手工剧"]
-    assert records[1][5] == "别名故事"
+    assert [row[4] for row in records] == ["海边故事", "规范化故事", "手工剧"]
+    assert records[1][5] == "规范化故事"
     joined = " ".join("" if value is None else str(value) for row in records for value in row)
     assert "客户" not in joined
     assert "%" not in joined
@@ -431,9 +429,8 @@ def test_header_columns_and_exact_strings(session, clock):
     workbook.close()
 
 
-def test_alias_match_is_a_confirmed_hit_without_a_label(session, clock):
+def test_legacy_resolution_uses_only_the_uploaded_title(session, clock):
     add_user(session, "user-regular", clock, "regular")
-    session.add(ProgramAlias(alias="标准故事的别名", canonical_name="标准故事"))
     add_record(
         session,
         task_id="task-alias",
@@ -456,8 +453,8 @@ def test_alias_match_is_a_confirmed_hit_without_a_label(session, clock):
         "q-alias",
         [
             {
-                "uploaded": "标准故事的别名",
-                "matched": "标准故事的别名",
+                "uploaded": "标准故事",
+                "matched": "标准故事",
                 "resolution": "alias",
             },
             {
@@ -473,21 +470,16 @@ def test_alias_match_is_a_confirmed_hit_without_a_label(session, clock):
     headers, records, _styled = hit_table(workbook["命中结果"])
     assert headers == COLUMNS
     assert [(row[4], row[5]) for row in records] == [
-        ("标准故事的别名", "标准故事"),
+        ("标准故事", "标准故事"),
         ("另一故事", "另一故事"),
     ]
     assert_no_match_labels(workbook["命中结果"])
     workbook.close()
 
 
-def test_uniform_confirmed_label_drops_the_hit_type_column():
-    confirmed = HitColumns.for_labels([HitColumns.CONFIRMED, HitColumns.CONFIRMED])
-    assert confirmed == COLUMNS
-    assert HitColumns.for_labels([]) == COLUMNS
-    mixed = HitColumns.for_labels([HitColumns.CONFIRMED, "其他"])
-    assert mixed[len(HitColumns.LEAD)] == HitColumns.TYPE
-    assert mixed[:4] == COLUMNS[:4]
-    assert mixed[-2:] == COLUMNS[-2:]
+def test_export_columns_are_fixed():
+    assert HitColumns.LEAD + HitColumns.TAIL == COLUMNS
+    assert "命中类型" not in COLUMNS
 
 
 def test_two_records_of_the_same_platform_and_program(session, clock):
@@ -784,14 +776,14 @@ def test_sheet2_matches_the_unresolved_summary(session, clock):
     summary = rest_table(workbook["未命中与待处理"])
     assert summary == [
         ("没有这场", RestStatus.MISS, None),
-        ("待确认剧", RestStatus.PENDING, "候选甲、候选乙"),
+        ("待确认剧", RestStatus.FAILED, "候选甲、候选乙"),
         ("失败剧", RestStatus.FAILED, "名称无法解析"),
         ("太新了", RestStatus.MISS, None),
     ]
     counts = {}
     for _name, status, _detail in summary:
         counts[status] = counts.get(status, 0) + 1
-    assert counts == {RestStatus.MISS: 2, RestStatus.PENDING: 1, RestStatus.FAILED: 1}
+    assert counts == {RestStatus.MISS: 2, RestStatus.FAILED: 2}
     workbook.close()
 
 
@@ -920,10 +912,8 @@ def test_unrecognized_platform_is_still_a_hit(session, clock):
     workbook.close()
 
 
-def test_several_alias_targets_stay_one_title(session, clock):
+def test_stored_matched_name_does_not_remap_the_uploaded_title(session, clock):
     add_user(session, "user-vip", clock, "vip")
-    session.add(ProgramAlias(alias="abc剧", canonical_name="节目1986"))
-    session.add(ProgramAlias(alias="ａｂｃ剧", canonical_name="节目2010"))
     add_record(
         session,
         task_id="amb-1986",
@@ -1031,7 +1021,7 @@ def _assert_parts(blob: bytes, expected_rows: int):
                 assert workbook.sheetnames == ["命中结果", "未命中与待处理"]
                 assert rest_table(workbook["未命中与待处理"]) == [
                     ("落在末卷", RestStatus.MISS, None),
-                    ("待核名", RestStatus.PENDING, "候选丙"),
+                    ("待核名", RestStatus.FAILED, "候选丙"),
                 ]
             else:
                 assert workbook.sheetnames == ["命中结果"]

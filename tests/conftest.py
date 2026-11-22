@@ -14,8 +14,6 @@ from nadou.models import (  # noqa: F401
     Entitlement,
     IndexRecord,
     MemberQuery,
-    PlatformAlias,
-    ProgramAlias,
     QueryProgram,
     Task,
     User,

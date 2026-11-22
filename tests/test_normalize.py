@@ -3,23 +3,17 @@ from nadou.platform_names import PlatformNames
 
 
 def test_fold_trims_width_and_case():
-    assert ProgramNormalizer({}).canonical("  ＡＢＣ  ") == "abc"
-    assert ProgramNormalizer({}).canonical("\u3000甲\u3000") == "甲"
-    assert ProgramNormalizer({}).canonical("甲   乙") == "甲 乙"
+    assert ProgramNormalizer().canonical("  ＡＢＣ  ") == "abc"
+    assert ProgramNormalizer().canonical("\u3000甲\u3000") == "甲"
+    assert ProgramNormalizer().canonical("甲   乙") == "甲 乙"
 
 
-def test_program_alias_and_dedupe():
-    normalizer = ProgramNormalizer({"乙": "b", "示例剧集": "示例节目"})
-    assert normalizer.canonical("示例剧集") == "示例节目"
-    assert normalizer.dedupe(["  Ｂ ", "b", "乙"]) == ["b"]
-    assert normalizer.dedupe(["甲", "甲 ", "乙"]) == ["甲", "b"]
-    assert ProgramNormalizer({}).dedupe(["甲", "甲 ", "乙"]) == ["甲", "乙"]
+def test_dedupe_only_folds_identical_titles():
+    normalizer = ProgramNormalizer()
+    assert normalizer.dedupe(["  Ｂ ", "b", "乙"]) == ["b", "乙"]
+    assert normalizer.dedupe(["甲", "甲 ", "乙"]) == ["甲", "乙"]
     assert normalizer.dedupe(["", "   ", "甲"]) == ["甲"]
-
-
-def test_program_alias_with_several_targets_stays_one_title():
-    normalizer = ProgramNormalizer(pairs=[("abc剧", "节目1986"), ("ａｂｃ剧", "节目2010")])
-    assert normalizer.canonical("ABC剧") == "abc剧"
+    assert normalizer.canonical("示例剧集") != normalizer.canonical("示例节目")
 
 
 def test_platform_parts_and_unrecognized():
