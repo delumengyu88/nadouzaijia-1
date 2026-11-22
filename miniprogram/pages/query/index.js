@@ -19,7 +19,7 @@ Page({
     var self = this
     this.stop()
     this.tick()
-    if (!this.id || this.finished) return
+    if (!this.id || this.finished || this.remote) return
     this.timer = setInterval(function () { self.tick() }, 700)
   },
   onHide: function () { this.stop() },
@@ -37,29 +37,103 @@ Page({
     wx.switchTab({ url: '/pages/home/index' })
   },
   tick: function () {
-    if (!this.id) return
+    if (!this.id || this.remote) return
     var current = api.getQuery(this.id)
+    if (current && typeof current.then === 'function') {
+      this.remote = true
+      this.loadRemote(current)
+      return
+    }
     if (current && (current.queued || current.running)) api.advanceQuery(this.id)
-    this.refresh()
+    this.applyQuery(api.getQuery(this.id), true)
   },
   refresh: function () {
+    if (this.view) return
     var current = api.getQuery(this.id)
-    this.finished = !current || current.done || current.networkError
+    if (current && typeof current.then === 'function') {
+      this.remote = true
+      this.loadRemote(current)
+      return
+    }
+    this.remote = false
+    this.applyQuery(current, true)
+  },
+  loadRemote: function (pending) {
+    var self = this
+    var token = this.detailToken = (this.detailToken || 0) + 1
+    this.setData({ loading: true, missing: false, loadError: false, needLogin: false })
+    pending.then(function (detail) {
+      if (self.detailToken !== token) return
+      self.remote = false
+      self.applyQuery(detail, false)
+    }, function (error) {
+      if (self.detailToken !== token) return
+      self.remote = false
+      self.applyQueryError(error)
+    })
+  },
+  applyQuery: function (current, local) {
+    this.finished = !local || !current || current.done || current.networkError
     if (this.finished) this.stop()
     if (current && current.done) api.markQuerySeen(this.id)
     if (config.calibrating) {
       this.setData({ calibrating: true, title: '数据校准中', head: '', items: [],
         queued: false, running: false, done: true, percent: 0, networkError: false,
-        showFailBanner: false, showRetryAll: false, allFail: false, showNetworkRetry: false })
+        showFailBanner: false, showRetryAll: false, allFail: false, showNetworkRetry: false,
+        missing: false, loadError: false, needLogin: false, loading: false })
       return
     }
-    this.setData({ calibrating: false, title: '查询结果' })
     if (!current) {
-      this.setData({ done: true, queued: false, running: false, networkError: false, showNetworkRetry: false, items: [], head: '查询记录不可用，请重新查询。' })
+      this.setData({ calibrating: false, title: '查询结果', missing: false, loadError: false, needLogin: false, loading: false,
+        done: true, queued: false, running: false, networkError: false, showNetworkRetry: false,
+        items: [], head: '查询记录不可用，请重新查询。', showFailBanner: false })
       this.stop()
       return
     }
-    this.setData(current)
+    var data = Object.assign({}, current)
+    if (!local) {
+      data.networkError = false
+      data.showNetworkRetry = false
+    }
+    if (!data.failBanner) data.showFailBanner = false
+    data.calibrating = false
+    data.title = '查询结果'
+    data.missing = false
+    data.loadError = false
+    data.needLogin = false
+    data.loading = false
+    this.setData(data)
+  },
+  applyQueryError: function (error) {
+    this.finished = true
+    this.stop()
+    var code = error && error.statusCode
+    var base = {
+      calibrating: false, title: '查询结果', loading: false, items: [], head: '',
+      queued: false, running: false, done: true, networkError: false, showNetworkRetry: false,
+      showFailBanner: false, showRetryAll: false
+    }
+    if (code === 401 || (error && error.message === '请先登录')) {
+      this.setData(Object.assign(base, { needLogin: true, missing: false, loadError: false }))
+      return
+    }
+    if (code === 404) {
+      this.setData(Object.assign(base, { missing: true, needLogin: false, loadError: false }))
+      return
+    }
+    if (!code || code >= 500 || (error && error.message === '网络异常，请重试')) {
+      this.setData(Object.assign(base, { loadError: true, missing: false, needLogin: false }))
+      return
+    }
+    this.setData(Object.assign(base, { loadError: false, missing: false, needLogin: false, head: '查询记录不可用，请重新查询。' }))
+  },
+  retryLoad: function () {
+    this.remote = false
+    this.finished = false
+    this.refresh()
+  },
+  login: function () {
+    return require('../../utils/login')(this, this.onShow)
   },
   renderSpecial: function (view) {
     if (view === 'queued') {

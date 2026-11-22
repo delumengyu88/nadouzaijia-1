@@ -1029,6 +1029,9 @@ if (uploadCheck.status !== 0) fail(uploadCheck.stderr || uploadCheck.stdout || '
 var privacyCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-privacy.js')], { encoding: 'utf8' })
 console.log(privacyCheck.stdout || '')
 if (privacyCheck.status !== 0) fail(privacyCheck.stderr || privacyCheck.stdout || 'privacy check failed')
+var recordsCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-records.js')], { encoding: 'utf8' })
+console.log(recordsCheck.stdout || '')
+if (recordsCheck.status !== 0) fail(recordsCheck.stderr || recordsCheck.stdout || 'records check failed')
 if (failed) process.exit(1)
 console.log('miniprogram check ok')
 

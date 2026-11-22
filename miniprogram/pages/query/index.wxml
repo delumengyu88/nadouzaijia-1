@@ -12,6 +12,28 @@
     <view class="btn block" bindtap="home">返回首页</view>
   </view>
 </view>
+<view class="body" wx:elif="{{missing}}">
+  <view class="center-box">
+    <view class="center-title">记录不存在</view>
+    <view class="btn block" bindtap="back">返回</view>
+  </view>
+</view>
+<view class="body" wx:elif="{{loadError}}">
+  <view class="center-box">
+    <view class="center-title">网络异常，请重试</view>
+    <view class="btn block" bindtap="retryLoad">重试</view>
+  </view>
+</view>
+<view class="body" wx:elif="{{needLogin}}">
+  <view class="mask">
+    <view class="dialog">
+      <view class="dialog-title">登录后继续</view>
+      <button class="btn" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">微信登录</button>
+      <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
+    </view>
+  </view>
+</view>
+<view class="body" wx:elif="{{loading}}"></view>
 <view class="body" wx:elif="{{queued}}">
   <view class="center-box">
     <view class="center-title">排队中</view>
@@ -31,18 +53,18 @@
     <view class="center-sub">{{head}}</view>
   </view>
   <view class="bar-track"><view class="bar-fill" style="width: {{percent}}%;"></view></view>
-  <view class="err-box">{{failBanner}}</view>
+  <view class="err-box" wx:if="{{failBanner}}">{{failBanner}}</view>
   <view class="btn block" wx:if="{{showNetworkRetry}}" bindtap="retry">重试</view>
 </view>
 <view class="body" wx:else>
-  <view class="err-box" wx:if="{{showFailBanner}}">{{failBanner}}</view>
-  <view class="note" wx:if="{{!showFailBanner}}">{{head}}</view>
+  <view class="err-box" wx:if="{{showFailBanner && failBanner}}">{{failBanner}}</view>
+  <view class="note" wx:if="{{!showFailBanner && head}}">{{head}}</view>
   <view class="card" wx:for="{{items}}" wx:key="name" data-name="{{item.name}}" data-hit="{{item.hit}}" bindtap="openHit">
     <view class="choice-top">
       <text class="row-title">{{item.name}}</text>
       <text class="tag {{item.badgeCls}}">{{item.badge}}</text>
     </view>
-    <view class="ex-line">{{item.line}}</view>
+    <view class="ex-line" wx:if="{{item.line}}">{{item.line}}</view>
     <view wx:if="{{item.hit}}" class="evidence-link" data-name="{{item.name}}" data-platform="{{item.evidencePlatform}}" data-evidence-name="{{item.evidenceName}}" catchtap="evidence">委托取证 ›</view>
     <view class="choice-top" wx:if="{{item.missed}}" style="margin-top:16rpx;">
       <view class="btn ghost" style="width:48%;margin-top:0;" data-name="{{item.name}}" bindtap="requery">修改后重查</view>

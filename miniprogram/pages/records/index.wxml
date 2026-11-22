@@ -6,13 +6,25 @@
 </view>
 <view style="height: {{navHeight}}px;"></view>
 <view class="body">
-  <view class="center-box" wx:if="{{empty}}">
-    <view class="center-title">暂无查询记录</view>
+  <view class="mask" wx:if="{{needLogin}}">
+    <view class="dialog">
+      <view class="dialog-title">登录后继续</view>
+      <button class="btn" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">微信登录</button>
+      <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
+    </view>
   </view>
-  <view class="row" wx:for="{{rows}}" wx:key="name" data-id="{{item.id}}" bindtap="open">
+  <view class="center-box" wx:if="{{failed}}">
+    <view class="center-title">网络异常，请重试</view>
+    <view class="btn block" bindtap="retryLoad">重试</view>
+  </view>
+  <view class="center-box" wx:elif="{{empty}}">
+    <view class="center-title">还没有查询记录</view>
+    <view class="btn block" bindtap="goQuery">去查询</view>
+  </view>
+  <view class="row" wx:for="{{rows}}" wx:key="key" data-id="{{item.id}}" bindtap="open">
     <view class="row-main">
-      <view class="row-title">{{item.name}}</view>
-      <view class="row-sub">{{item.line}}</view>
+      <view class="row-title record-name">{{item.name}}</view>
+      <view class="row-sub" wx:if="{{item.line}}">{{item.line}}</view>
     </view>
     <text class="tag {{item.badgeCls}}">{{item.badge}}</text>
     <text class="chev">›</text>
