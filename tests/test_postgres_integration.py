@@ -212,3 +212,88 @@ def test_autogenerate_has_no_drift():
         assert migration.upgrade_ops.is_empty()
     finally:
         engine.dispose()
+
+
+@pytest.mark.parametrize("same_user", [False, True])
+def test_concurrent_invite_redemption_is_atomic(same_user):
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import UTC, timedelta
+    from threading import Barrier
+    from uuid import uuid4
+
+    from sqlalchemy import delete, select
+
+    from nadou.admin.audit import AuditWriter
+    from nadou.admin.errors import WorkbenchError
+    from nadou.admin.invites import InviteAlphabet, InviteRedemption
+    from nadou.models import Entitlement, InviteCode, StaffAccount, User
+
+    engine = create_engine_for(_database_url())
+    factory = sessionmaker(bind=engine)
+    now = datetime.now(UTC)
+    user_ids = [str(uuid4()), str(uuid4())]
+    code_ids = [str(uuid4()), str(uuid4())]
+    tokens = [InviteAlphabet.new_code(), InviteAlphabet.new_code()]
+    staff_id = str(uuid4())
+    try:
+        with factory.begin() as session:
+            session.add(
+                StaffAccount(
+                    id=staff_id,
+                    username=staff_id,
+                    password_hash="unused",
+                    role="admin",
+                    created_at=now,
+                )
+            )
+            session.add_all([User(id=uid, created_at=now) for uid in user_ids])
+            session.flush()
+            session.add_all(
+                [
+                    InviteCode(
+                        id=cid,
+                        code=token,
+                        channel="并发测试",
+                        created_by=staff_id,
+                        created_at=now,
+                        expires_at=now + timedelta(days=1),
+                    )
+                    for cid, token in zip(code_ids, tokens, strict=True)
+                ]
+            )
+        barrier = Barrier(2)
+
+        def attempt(index):
+            with factory() as session:
+                barrier.wait(timeout=10)
+                try:
+                    InviteRedemption(session, AuditWriter(session, now, None, None), now).redeem(
+                        tokens[index if same_user else 0], user_ids[0 if same_user else index]
+                    )
+                    session.commit()
+                    return "ok"
+                except WorkbenchError as exc:
+                    session.rollback()
+                    return exc.detail
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(attempt, [0, 1]))
+        assert sorted(results) == sorted(["ok", "bound" if same_user else "used"])
+        with factory() as session:
+            grants = session.scalars(
+                select(Entitlement).where(Entitlement.user_id.in_(user_ids))
+            ).all()
+            consumed = session.scalars(
+                select(InviteCode).where(
+                    InviteCode.id.in_(code_ids), InviteCode.redeemed_at.is_not(None)
+                )
+            ).all()
+            assert len(grants) == len(consumed) == 1
+    finally:
+        with factory.begin() as session:
+            # Audit rows are append-only; keep the synthetic concurrency event.
+            session.execute(delete(Entitlement).where(Entitlement.user_id.in_(user_ids)))
+            session.execute(delete(InviteCode).where(InviteCode.id.in_(code_ids)))
+            session.execute(delete(User).where(User.id.in_(user_ids)))
+            session.execute(delete(StaffAccount).where(StaffAccount.id == staff_id))
+        engine.dispose()

@@ -125,11 +125,18 @@ class InviteRedemption:
     def redeem(self, code: str, user_id: str) -> Entitlement:
         from nadou.admin.members import EntitlementBook
 
-        user = self.session.get(User, user_id)
+        # Serialize both competing codes for one user and competing users for one code.
+        # Locks live until the request transaction commits or rolls back.
+        user = self.session.scalar(select(User).where(User.id == user_id).with_for_update())
         if user is None:
             raise WorkbenchError(404, "user not found")
         token = code.strip().upper()
-        row = self.session.scalar(select(InviteCode).where(InviteCode.code == token))
+        row = self.session.scalar(
+            select(InviteCode)
+            .where(InviteCode.code == token)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         if row is None or row.voided_at is not None:
             raise WorkbenchError(400, "invalid")
         if row.redeemed_at is not None:
@@ -141,14 +148,6 @@ class InviteRedemption:
         )
         if already is not None:
             raise WorkbenchError(409, "bound")
-        vip = self.session.scalar(
-            select(Entitlement).where(
-                Entitlement.user_id == user.id,
-                Entitlement.kind == "vip",
-                Entitlement.expires_at > self.now,
-            )
-        )
-        vip_expires = None if vip is None else vip.expires_at
         grant = Entitlement(
             user_id=user.id,
             kind="regular",
@@ -161,8 +160,6 @@ class InviteRedemption:
         row.redeemed_at = self.now
         self.session.add(grant)
         self.session.flush()
-        if vip is not None and vip.expires_at != vip_expires:
-            raise WorkbenchError(409, "vip clock changed")
         self.audit.write(
             "invite_code",
             row.id,
@@ -226,7 +223,12 @@ class InviteBook:
         return created
 
     def void(self, code_id: str, actor: StaffAccount) -> InviteCode:
-        row = self.session.get(InviteCode, code_id)
+        row = self.session.scalar(
+            select(InviteCode)
+            .where(InviteCode.id == code_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         if row is None:
             raise WorkbenchError(404, "invite code not found")
         if InviteStatus.of(row, self.now) != InviteStatus.UNUSED:
