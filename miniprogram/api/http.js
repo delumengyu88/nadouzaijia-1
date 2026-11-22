@@ -1,6 +1,7 @@
 var shape = require('./shape')
 var state = require('./state')
 var request = require('./request')
+var evidence = require('./evidence')
 
 function notReady() {
   return Promise.resolve({ ok: false, message: '服务暂不可用，请改用本地数据' })
@@ -33,6 +34,7 @@ module.exports = {
   accountKind: function () { return state.currentId() },
   profile: function () { return require('./mock').profile() },
   memberCenter: function () { return require('./mock').memberCenter() },
+  membershipPlans: function () { return require('./mock').membershipPlans() },
   setDraft: function (value) { state.load().draft = String(value || ''); state.save() },
   getDraft: function () { return state.load().draft || '' },
   parseTitles: function (raw) { return require('../utils/text').parseTitles(raw) },
@@ -62,11 +64,28 @@ module.exports = {
   repay: function () { return notReady() },
   inviteState: function () { return { guest: !state.userId(), bound: false } },
   redeem: function () { return notReady() },
-  listEvidence: function () { return [] },
-  evidenceDetail: function () { return null },
-  createEvidence: function () { return notReady() },
-  withdrawEvidence: function () { return notReady() },
-  confirmEvidence: function () { return notReady() },
+  listEvidence: function () {
+    return request('/api/v1/evidence-requests', null, { method: 'GET', readBody: true }).then(function (body) {
+      var rows = evidence.listRows(body)
+      if (!rows) return Promise.reject(new Error('网络异常，请重试'))
+      return rows.map(evidence.presentList)
+    })
+  },
+  evidenceDetail: function (id) {
+    return request('/api/v1/evidence-requests/' + encodeURIComponent(id || ''), null, { method: 'GET', readBody: true }).then(function (body) {
+      if (!body || typeof body !== 'object' || Array.isArray(body) || body.code || !body.id) return null
+      return evidence.presentDetail(body)
+    }, function () { return null })
+  },
+  createEvidence: function (form) {
+    return request('/api/v1/evidence-requests', evidence.createPayload(form || {}), { method: 'POST', readBody: true }).then(function (body) {
+      return evidence.createOutcome(body)
+    }, function () {
+      return evidence.createOutcome(null)
+    })
+  },
+  withdrawEvidence: function (id) { return evidence.postAction(request, id, 'withdraw') },
+  confirmEvidence: function (id) { return evidence.postAction(request, id, 'confirm') },
   agreements: function () {
     return [
       { id: 'user', title: '用户协议' },

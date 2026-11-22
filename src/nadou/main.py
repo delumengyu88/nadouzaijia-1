@@ -25,6 +25,7 @@ from nadou.invite_state import InviteState
 from nadou.models import User
 from nadou.payments.api import PaymentApi
 from nadou.public_config import PublicConfig
+from nadou.public_home import PublicHome
 from nadou.schemas import SearchOut
 from nadou.search import EmptyQuery, ProgramSearch, UnknownUser
 from nadou.signed_url import FakeSignedUrlProvider, SignedUrlProvider
@@ -137,6 +138,7 @@ def create_app(
         }
 
     PublicConfig.register(app, get_session)
+    PublicHome.register(app, get_session, clock)
     InviteState.register(app, get_session, clock)
     UserEvidence.register(app, get_session, clock, alerts)
     PaymentApi.register(app, get_session, clock, alerts, grant_writer)
