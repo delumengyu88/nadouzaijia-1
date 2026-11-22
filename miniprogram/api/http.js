@@ -127,6 +127,11 @@ class PayClient {
               resolve({ ok: false, code: 'session_changed', message: '登录状态已变化' })
               return
             }
+            if (res && (res.statusCode === 401 || res.statusCode === 404) && /\/sync$/.test(path)) {
+              if (res.statusCode === 401) tokenState.clearSession(token)
+              resolve({ ok: false, code: res.statusCode === 401 ? 'login' : 'missing', message: res.statusCode === 401 ? '请先登录' : '订单不存在' })
+              return
+            }
             var normalized = PayClient.normalize(res && res.data)
             if (normalized.code === 'login') tokenState.clearSession(token)
             resolve(normalized)
@@ -436,6 +441,9 @@ module.exports = {
     return PayClient.sync(orderNo).then(function (result) {
       if (result.ok) return result.order
       if (result.code === 'unconfigured') return { orderNo: orderNo, code: 'unconfigured', status: 'unavailable' }
+      if (result.code === 'login' || result.code === 'missing') {
+        return { orderNo: orderNo, code: result.code, status: 'orderUnavailable', centerTitle: result.message }
+      }
       return PayClient.failedView(orderNo, result)
     })
   },

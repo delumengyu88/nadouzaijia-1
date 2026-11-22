@@ -72,12 +72,36 @@ Page({
   },
   readCenter: function () {
     if (require('../../config').mode === 'mock') return api.memberCenter()
-    return require('../../api/http').memberCenter()
+    var identity = require('../../api/http').memberCenter()
+    if (require('../../config').mode !== 'live' || !identity || typeof identity.then !== 'function') return identity
+    return identity.then(function (info) {
+      if (info.guest) return info
+      var state = require('../../api/state')
+      var token = state.token()
+      return require('../../api/request')('/api/v1/pay/tiers').then(function (body) {
+        if (token !== state.token()) throw new Error('登录状态已变化')
+        if (!body || !Array.isArray(body.tiers)) throw new Error('会员档位暂不可用')
+        return Object.assign({}, info, { pricedTiers: body.tiers })
+      })
+    })
   },
   paint: function (info) {
     info = presentCenter(info)
     var data = nav.layout('member', this.query)
-    var plans = member.decoratePlans(api.membershipPlans(), info.tier)
+    var catalog = api.membershipPlans()
+    if (require('../../config').mode === 'live') {
+      var tiers = info.pricedTiers || []
+      catalog = catalog.map(function (plan) {
+        if (!plan.selectable) return plan
+        var row = tiers.find(function (tier) { return tier.id === plan.id })
+        if (!row || !Number.isSafeInteger(row.amount_fen) || row.amount_fen <= 0 || !Number.isSafeInteger(row.duration_days) || row.duration_days <= 0) {
+          return Object.assign({}, plan, { selectable: !!info.guest, price: null, priceText: '' })
+        }
+        var price = row.amount_fen / 100
+        return Object.assign({}, plan, { price: price, days: row.duration_days, priceText: '¥' + price + '/' + row.duration_days + '天' })
+      })
+    }
+    var plans = member.decoratePlans(catalog, info.tier)
     var plan = selectedPlan(plans, this.data.selected)
     if (!plan || !plan.selectable) plan = selectedPlan(plans, defaultPlanId(info.tier))
     if (plan && !plan.selectable) plan = null
@@ -85,7 +109,7 @@ Page({
     data.plans = plans
     data.selected = plan ? plan.id : ''
     data.showPay = !!plan
-    data.payLabel = plan ? member.confirmLabel(plan.price) : ''
+    data.payLabel = plan ? (info.guest && plan.price == null ? '登录后查看价格' : member.confirmLabel(plan.price)) : ''
     data.loading = false
     data.loadError = false
     Object.keys(info).forEach(function (key) { data[key] = info[key] })
@@ -98,7 +122,7 @@ Page({
     this.setData({
       selected: plan.id,
       showPay: true,
-      payLabel: member.confirmLabel(plan.price)
+      payLabel: this.data.guest && plan.price == null ? '登录后查看价格' : member.confirmLabel(plan.price)
     })
   },
   go: function () {

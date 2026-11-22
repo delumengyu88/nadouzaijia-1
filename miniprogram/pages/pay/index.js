@@ -306,6 +306,11 @@ Page({
         self.setData({ phase: 'unavailable', title: '支付暂未开通', payLoading: false, confirmTimeout: false, confirmSpin: false, showPay: false })
         return
       }
+      if (phase === 'orderUnavailable') {
+        self.apply(order)
+        self.setData({ title: '查询订单' })
+        return
+      }
       if (phase === 'granted' || phase === 'grant_error' || phase === 'cancelled' || phase === 'covered' || phase === 'failed') {
         self.apply(order)
         return

@@ -236,7 +236,7 @@ async function main() {
   assert.strictEqual(clock.length, 1)
   assert.strictEqual(clock[0].ms, 2000)
   clock.shift().fn()
-  respond(404, orderBody('已发放'))
+  respond(200, orderBody('已发放'))
   await drain()
   assert.strictEqual(page.data.phase, 'granted')
   assert.ok(page.data.successLine.indexOf('已发放') !== -1)
@@ -447,6 +447,20 @@ async function main() {
   respond(200, orderBody('待支付'))
   assert.strictEqual((await switched).code, 'no_params')
 
+  resetTransport()
+  page = createPage()
+  page.onLoad({product:'membership_regular'})
+  page.orderNo = ORDER_NO
+  page.beginPoll()
+  respond(404, {detail:'订单不存在'})
+  await drain()
+  assert.strictEqual(page.data.phase,'orderUnavailable')
+  assert.strictEqual(clock.length,0)
+  page.beginPoll()
+  respond(401,{detail:'authentication required'})
+  await drain()
+  assert.strictEqual(page.data.phase,'sessionEnded')
+  assert.strictEqual(clock.length,0)
   console.log('pay check ok')
 }
 

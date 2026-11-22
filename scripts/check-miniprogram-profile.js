@@ -12,7 +12,13 @@ global.wx = {
   getStorageSync: function (key) { return storage[key] },
   setStorageSync: function (key, value) { storage[key] = JSON.parse(JSON.stringify(value)) },
   getSystemInfoSync: function () { return { statusBarHeight: 20 } },
-  request: function (opts) { requests.push(opts) },
+  request: function (opts) {
+    if (opts.url.endsWith('/pay/tiers')) opts.success({statusCode:200,data:{tiers:[
+      {id:'membership_vip',amount_fen:59900,duration_days:30},
+      {id:'membership_regular',amount_fen:31301,duration_days:42}
+    ]}})
+    else requests.push(opts)
+  },
   navigateTo: function () {},
   switchTab: function () {},
   showToast: function () {}
@@ -232,6 +238,7 @@ async function main() {
   assert.strictEqual(loadingMember.data.extraLine, '')
   assert.strictEqual(loadingMember.data.plans[2].priceText, '免费')
   assert.strictEqual(loadingMember.data.plans[0].priceText.indexOf('¥'), 0)
+  assert.strictEqual(loadingMember.data.plans[1].priceText, '¥313.01/42天')
   assert.strictEqual(loadingMember.data.plans[2].perks.length, 3)
   assert.strictEqual(loadingMember.data.plans[0].perks.length, 3)
   noMock(loadingProfile.data)
@@ -319,7 +326,7 @@ async function main() {
   assert.strictEqual(failedMember.data.loading, false)
   assert.strictEqual(failedMember.data.plans.length, 3)
   assert.strictEqual(failedMember.data.plans[2].priceText, '免费')
-  assert.strictEqual(failedMember.data.plans[0].selectable, true)
+  assert.strictEqual(failedMember.data.plans[0].selectable, false)
   assert.strictEqual(failedMember.data.plans[2].perks.length, 3)
 
   login(paidBody())

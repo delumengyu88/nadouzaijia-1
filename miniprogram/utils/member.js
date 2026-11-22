@@ -50,7 +50,7 @@ class MemberCopy {
 
   static decoratePlans(plans, tier) {
     return plans.map(function (plan) {
-      if (plan.selectable) return plan
+      if (plan.id !== 'free') return plan
       return Object.assign({}, plan, { priceText: MemberCopy.freeCornerLabel(tier) })
     })
   }
