@@ -3,7 +3,6 @@
   <view class="nav-bar"><view class="nav-title">{{title}}</view></view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
-<view class="trial-banner" wx:if="{{trialData}}">体验数据</view>
 <view class="body">
   <view class="card choice-top" wx:if="{{guest}}">
     <text class="row-title">未登录</text>

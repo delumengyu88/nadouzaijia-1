@@ -5,7 +5,6 @@
   </view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
-<view class="trial-banner" wx:if="{{trialData}}">体验数据</view>
 <view class="body">
   <view class="note" wx:for="{{paragraphs}}" wx:key="*this" style="color:#1c2430;font-size:28rpx;">{{item}}</view>
 </view>

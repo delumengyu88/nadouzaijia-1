@@ -41,7 +41,7 @@ Page({
     var layout = nav.layout('viewer', this.query)
     this.setData({
       statusBarHeight: layout.statusBarHeight,
-      navHeight: layout.navHeight, trialData: layout.trialData,
+      navHeight: layout.navHeight,
       title: '截图',
       showBack: true,
       platform: (row && row.platform) || extra.platform || '平台未识别',

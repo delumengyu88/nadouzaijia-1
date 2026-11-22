@@ -8,7 +8,7 @@ Page({
     var state = api.inviteState()
     this.setData({
       statusBarHeight: layout.statusBarHeight,
-      navHeight: layout.navHeight, trialData: layout.trialData,
+      navHeight: layout.navHeight,
       showBack: true,
       title: '兑换邀请码',
       phase: state.bound ? 'bound' : 'form',

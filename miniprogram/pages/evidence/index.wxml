@@ -5,7 +5,6 @@
   </view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
-<view class="trial-banner" wx:if="{{trialData}}">体验数据</view>
 <view class="body" wx:if="{{phase == 'form'}}">
   <view class="note">客服线下交付，1 个工作日内联系您。</view>
   <view class="field-label">类型</view>

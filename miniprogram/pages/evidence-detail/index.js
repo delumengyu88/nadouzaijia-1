@@ -6,7 +6,7 @@ Page({
   onLoad: function (query) {
     this.id = query.id || ''
     var layout = nav.layout('evidence-detail', this.query)
-    this.setData({ statusBarHeight: layout.statusBarHeight, navHeight: layout.navHeight, trialData: layout.trialData, showBack: true, title: '取证进度' })
+    this.setData({ statusBarHeight: layout.statusBarHeight, navHeight: layout.navHeight, showBack: true, title: '取证进度' })
     this.load()
   },
   load: function () {

@@ -5,7 +5,6 @@
   </view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
-<view class="trial-banner" wx:if="{{trialData}}">体验数据</view>
 <view class="body" wx:if="{{phase == 'loading'}}">
   <view class="center-box"><view class="center-title">正在加载</view></view>
 </view>

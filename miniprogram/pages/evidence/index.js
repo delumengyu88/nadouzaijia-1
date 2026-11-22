@@ -13,7 +13,7 @@ Page({
     var kind = query.kind === 'recent' ? 'recent' : 'normal'
     this.setData({
       statusBarHeight: layout.statusBarHeight,
-      navHeight: layout.navHeight, trialData: layout.trialData,
+      navHeight: layout.navHeight,
       showBack: true,
       title: '委托取证',
       phase: query.view === 'duplicate' ? 'duplicate' : 'form',

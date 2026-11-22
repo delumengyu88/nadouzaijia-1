@@ -11,7 +11,7 @@ function layout(page, query) {
       }
     }
   } catch (err) {}
-  return { statusBarHeight: status, navHeight: status + nav, trialData: require('./trial').mockPage(page, query) }
+  return { statusBarHeight: status, navHeight: status + nav }
 }
 
 function selectTab(page, index) {

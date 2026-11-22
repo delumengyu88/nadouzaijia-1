@@ -25,7 +25,7 @@ Page({
     this.programName = decode(query.name)
     this.orderNo = query.id || ''
     var layout = nav.layout('pay', this.query)
-    this.setData({ statusBarHeight: layout.statusBarHeight, navHeight: layout.navHeight, trialData: layout.trialData, showBack: true })
+    this.setData({ statusBarHeight: layout.statusBarHeight, navHeight: layout.navHeight, showBack: true })
     if (require('../../config').trialMode) {
       this.setData({ phase: 'trial', title: '支付', trialMessage: require('../../utils/trial').message })
       return

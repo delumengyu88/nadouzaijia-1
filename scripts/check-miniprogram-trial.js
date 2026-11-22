@@ -18,17 +18,10 @@ Object.keys(pages).forEach(function (name) {
   require('../miniprogram/pages/' + name + '/index')
   var page = Object.assign({}, def, { data: {}, setData: function (v) { Object.assign(this.data, v) } })
   pages[name].forEach(function (handler) { page[handler]() })
-  if (name === 'pay') { page.onLoad({ product: 'membership_vip' }); assert.strictEqual(page.data.phase, 'trial'); assert(page.data.trialData) }
+  if (name === 'pay') { page.onLoad({ product: 'membership_vip' }); assert.strictEqual(page.data.phase, 'trial') }
 })
 assert.strictEqual(modals, 7)
 assert.strictEqual(api.listOrders().length, orders)
-;['home','input','member','profile','records','orders','invite','evidence','evidence-list','evidence-detail','legal','legal-doc','pay'].forEach(function (page) {
-  assert(trial.mockPage(page), page)
-})
-;['query','report','viewer','splash'].forEach(function (page) { assert(!trial.mockPage(page), page) })
-assert(trial.mockPage('report', { example: '1' }))
-config.mode = 'mock'; assert(trial.mockPage('report'))
 config.trialMode = false
-assert(!trial.mockPage('home') && !trial.mockPage('report', { example: '1' }))
 assert.strictEqual(trial.blockPayment(), false)
-console.log('trial payment guards, mock banners and disabled switch checks ok')
+console.log('trial payment guards and disabled switch checks ok')

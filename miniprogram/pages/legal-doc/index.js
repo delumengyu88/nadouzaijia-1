@@ -8,7 +8,7 @@ Page({
     var layout = nav.layout('legal-doc', this.query)
     this.setData({
       statusBarHeight: layout.statusBarHeight,
-      navHeight: layout.navHeight, trialData: layout.trialData,
+      navHeight: layout.navHeight,
       showBack: true,
       title: doc ? doc.title : '协议',
       paragraphs: doc ? doc.paragraphs : []
