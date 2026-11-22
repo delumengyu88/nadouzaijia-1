@@ -93,6 +93,9 @@ class Settings(BaseSettings):
         default="127.0.0.1",
         validation_alias=AliasChoices("NADOU_TRUSTED_PROXIES"),
     )
+    # Experience-build switch. Only the exact value "1" enables it. Production stays "0".
+    # Delete this field with src/nadou/devtools before review.
+    trial_tools: str = Field(default="0", validation_alias="NADOU_TRIAL_TOOLS")
 
     @field_validator("trusted_proxies")
     @classmethod
