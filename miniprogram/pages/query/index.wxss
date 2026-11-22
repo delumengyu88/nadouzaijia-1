@@ -1,3 +1,23 @@
 /* local */
 
 .evidence-link { text-align: right; color: #1D4E9E; font-size: 26rpx; padding: 16rpx 0; }
+.result { padding-top: 128rpx; text-align: center; }
+.result-title {
+  margin-top: 32rpx;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #1F2329;
+  line-height: 56rpx;
+}
+.result-primary {
+  margin: 48rpx auto 0;
+  width: 480rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  background: #1D4E9E;
+  color: #fff;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+.item-retry { width: 48%; margin-top: 16rpx; margin-left: 0; margin-right: auto; }

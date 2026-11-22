@@ -13,15 +13,17 @@
   </view>
 </view>
 <view class="body" wx:elif="{{missing}}">
-  <view class="center-box">
-    <view class="center-title">记录不存在</view>
-    <view class="btn block" bindtap="back">返回</view>
+  <view class="result">
+    <icon type="info" size="56" color="#8F959E" />
+    <view class="result-title">记录不存在</view>
+    <view class="result-primary" bindtap="back">返回</view>
   </view>
 </view>
 <view class="body" wx:elif="{{loadError}}">
-  <view class="center-box">
-    <view class="center-title">网络异常，请重试</view>
-    <view class="btn block" bindtap="retryLoad">重试</view>
+  <view class="result">
+    <icon type="info" size="56" color="#8F959E" />
+    <view class="result-title">网络异常，请重试</view>
+    <view class="result-primary" bindtap="retryLoad">重试</view>
   </view>
 </view>
 <view class="body" wx:elif="{{needLogin}}">
@@ -70,7 +72,7 @@
       <view class="btn ghost" style="width:48%;margin-top:0;" data-name="{{item.name}}" bindtap="requery">修改后重查</view>
       <view class="btn plain" style="width:48%;margin-top:0;" data-name="{{item.name}}" bindtap="evidence">委托取证</view>
     </view>
-    <view class="btn" wx:if="{{item.failed && itemRetry}}" data-name="{{item.name}}" bindtap="retry">重试</view>
+    <view class="btn ghost item-retry" wx:if="{{item.failed && itemRetry}}" data-name="{{item.name}}" bindtap="retry">重试</view>
   </view>
   <view class="btn block" wx:if="{{showRetryAll}}" bindtap="retryAll">全部重试</view>
 </view>
