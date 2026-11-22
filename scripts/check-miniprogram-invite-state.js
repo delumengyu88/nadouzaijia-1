@@ -77,8 +77,11 @@ async function main() {
   assert(profileWxml.indexOf('class="invite-bound"') !== -1)
   var boundRow = profileWxml.split('invite-row').slice(1, 2).join('')
   assert(boundRow.indexOf('bindtap') === -1, 'bound row does not navigate')
-  assert(fs.readFileSync(path.join(__dirname, '../miniprogram/pages/profile/index.wxss'), 'utf8').indexOf('min-height: 102rpx') !== -1)
-  assert(fs.readFileSync(path.join(__dirname, '../miniprogram/pages/profile/index.wxss'), 'utf8').indexOf('color: #646A73') !== -1)
+  var profileWxss = fs.readFileSync(path.join(__dirname, '../miniprogram/pages/profile/index.wxss'), 'utf8')
+  assert(profileWxss.indexOf('min-height: 102rpx') !== -1)
+  assert(profileWxss.indexOf('color: #646A73') !== -1)
+  assert(profileWxss.indexOf('margin: 12px 16px 12px;') !== -1, 'card keeps 12px below it')
+  assert(profileWxss.indexOf('padding-top: 16px;') !== -1 && profileWxss.indexOf('padding-bottom: 16px;') !== -1, 'card vertical padding is 16px')
 
   state.reset()
   var guestPage = page('invite')

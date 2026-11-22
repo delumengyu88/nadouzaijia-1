@@ -1,4 +1,4 @@
-<view class="tab-page">
+<view class="tab-page profile-page">
 <view class="nav" style="padding-top: {{statusBarHeight}}px;">
   <view class="nav-bar"><view class="nav-title">{{title}}</view></view>
 </view>

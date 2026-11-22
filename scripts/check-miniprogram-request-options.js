@@ -1,4 +1,6 @@
 var assert = require('assert')
+var fs = require('fs')
+var path = require('path')
 var config = require('../miniprogram/config')
 config.apiBase = '/test-api'
 var calls = []
@@ -13,6 +15,23 @@ var request = require('../miniprogram/api/request')
 function drain() { return new Promise(function (resolve) { setImmediate(resolve) }) }
 
 async function main() {
+  var source = fs.readFileSync(path.join(__dirname, '../miniprogram/api/request.js'), 'utf8')
+  assert.strictEqual(source.indexOf('<<<<<<<'), -1, 'request.js has no conflict markers')
+  function times(needle) {
+    var count = 0
+    var from = 0
+    while (source.indexOf(needle, from) !== -1) {
+      count += 1
+      from = source.indexOf(needle, from) + needle.length
+    }
+    return count
+  }
+  assert.strictEqual(times('options.optionalAuth'), 1, 'optionalAuth is handled once')
+  assert.strictEqual(times('options.readBody'), 1, 'readBody is handled once')
+  assert.strictEqual(times('if (options.readBody || options.exposeStatus)'), 1, 'readBody and exposeStatus share one branch')
+  assert.strictEqual(times('if (options.exposeStatus)'), 1, 'exposeStatus is handled once')
+  assert.strictEqual(times('module.exports'), 1, 'request.js exports one function')
+
   state.reset()
   var blocked = request('/api/v1/invite-codes/state')
   var blockedError = blocked.then(function () { return null }, function (error) { return error })
