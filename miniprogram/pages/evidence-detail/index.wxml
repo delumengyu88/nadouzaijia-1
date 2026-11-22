@@ -5,7 +5,14 @@
   </view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
-<view class="body">
+<view class="body" wx:if="{{loading}}">
+  <view class="sk"></view>
+  <view class="center-sub">加载中</view>
+</view>
+<view class="body" wx:else>
+  <view class="pad" wx:if="{{missing}}">
+    <view class="h1">申请不存在</view>
+  </view>
   <view class="pad">
     <view class="choice-top">
       <text class="h1" style="font-size:40rpx;">{{name}}</text>
@@ -13,8 +20,18 @@
     </view>
     <view class="sub">{{sub}}</view>
   </view>
+  <view class="kv"><text class="kv-k">手机号</text><text class="kv-v">{{phoneText}}</text></view>
+  <view class="kv"><text class="kv-k">平台</text><text class="kv-v">{{platformText}}</text></view>
+  <view class="kv"><text class="kv-k">报价</text><text class="kv-v">{{quoteText}}</text></view>
+  <view class="kv"><text class="kv-k">失败原因</text><text class="kv-v">{{reasonText}}</text></view>
+  <view class="kv"><text class="kv-k">退款</text><text class="kv-v">{{refundText}}</text></view>
+  <view class="kv"><text class="kv-k">补充说明</text><text class="kv-v">{{noteText}}</text></view>
+  <view class="kv" wx:for="{{times}}" wx:key="label">
+    <text class="kv-k">{{item.label}}</text>
+    <text class="kv-v">{{item.value}}</text>
+  </view>
   <view class="err-box" wx:if="{{reason}}">{{reason}}</view>
-  <view class="refund-box" wx:if="{{hasRefund}}">已全额退款 ¥{{refundAmount}} · {{refundMethod}} · {{refundTime}}</view>
+  <view class="refund-box" wx:if="{{hasRefund}}">已全额退款 ¥{{refundAmount}}<text wx:if="{{refundMethod}}"> · {{refundMethod}}</text><text wx:if="{{refundTime}}"> · {{refundTime}}</text></view>
   <view class="warn-box" wx:if="{{showPayBanner}}">{{payBanner}}</view>
   <view class="tl">
     <view class="tl-item {{item.cls}}" wx:for="{{steps}}" wx:key="name">
@@ -24,7 +41,7 @@
     </view>
   </view>
   <view class="note">{{message}}</view>
-  <view class="btn block" wx:if="{{canWithdraw}}" bindtap="withdraw">撤回</view>
-  <view class="btn block" wx:if="{{canConfirm}}" bindtap="confirm">确认完成</view>
+  <button class="btn block" wx:if="{{canWithdraw}}" bindtap="withdraw" loading="{{acting}}" disabled="{{acting}}">撤回</button>
+  <button class="btn block" wx:if="{{canConfirm}}" bindtap="confirm" loading="{{acting}}" disabled="{{acting}}">确认收到</button>
   <button class="link" open-type="contact" session-from="{{contactFrom}}">联系客服</button>
 </view>
