@@ -129,7 +129,12 @@ module.exports = {
   tierOfAccount: function () { return state.userId() ? 'free' : 'guest' },
   checkout: function () { return notReady() },
   getOrder: function () { return null },
-  listOrders: function () { return [] },
+  listOrders: function () {
+    return request('/api/v1/pay/orders').then(function (body) {
+      if (!Array.isArray(body)) throw new Error('服务暂不可用')
+      return body
+    })
+  },
   startPay: function () { return notReady() },
   setOrderStatus: function () { return null },
   settle: function () { return notReady() },
