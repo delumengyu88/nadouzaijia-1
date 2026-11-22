@@ -147,6 +147,128 @@ async function polls(count, body, trailingTimer) {
   assert.strictEqual(clock.length, trailingTimer ? 1 : 0, trailingTimer ? 'poll keeps waiting' : 'polling stops after the limit')
 }
 
+async function checkOneYuan() {
+  var testOffer = require('../miniprogram/api/live-test-offer')
+  var id = testOffer.id
+  var tier = { id: id, membership: 'regular', duration_days: 1, amount_fen: 100, amount_yuan: '1.00', product_id: 'demo-product' }
+  var catalog = { tiers: [tier] }
+  var orderNo = 'XV-test-local'
+  var sign = { env: 0, currencyType: 'CNY', goodsPrice: 100, buyQuantity: 1, outTradeNo: orderNo, productId: tier.product_id, attach: id }
+  var valid = orderBody('待支付', { order_number: orderNo, tier: id, membership: 'regular', isTest: true, duration_days: 1,
+    title: '现网支付测试', amount_fen: '100', virtual_payment: { mode: 'short_series_goods', signData: JSON.stringify(sign), paySig: 'fake', signature: 'fake' } })
+  var virtualCalls = []
+  var regularCashier = payment
+  wx.requestVirtualPayment = function (options) { virtualCalls.push(options) }
+
+  async function confirmPrice() {
+    var page = createPage()
+    page.onLoad({ product: id })
+    assert.strictEqual(page.data.showPay, false)
+    page.pay()
+    assert.strictEqual(pending.length, 1)
+    assert.strictEqual(pending[0].url, '/test-api/api/v1/pay/tiers?channel=virtual')
+    respond(200, catalog)
+    await drain()
+    assert.strictEqual(page.data.priceText, '¥1.00')
+    assert.strictEqual(page.data.payText, '立即支付 ¥1.00')
+    assert.strictEqual(pending.length, 0, 'displaying the confirmation does not place an order')
+    return page
+  }
+  function denyCatalog() { respond(200, { tiers: [Object.assign({}, tier, { id: 'membership_regular', amount_fen: 29900 })] }) }
+
+  config.liveOneYuanTest = false
+  assert.strictEqual((await api.checkout(id)).code, 'test_unavailable')
+  config.liveOneYuanTest = true
+  for (var wrongTier of ['membership_regular', 'membership_vip', 'membership_test']) {
+    assert.strictEqual((await api.checkout(wrongTier)).code, 'test_unavailable')
+    var ordinary = createPage()
+    ordinary.onLoad({ product: wrongTier })
+    ordinary.pay()
+  }
+  assert.strictEqual(pending.length, 0)
+  var payDef = pageDef
+  require('../miniprogram/pages/member/index')
+  var center = createPage()
+  pageDef = payDef
+  var opened = []
+  wx.navigateTo = function (opt) { opened.push(opt.url) }
+  center.refreshTestOffer()
+  denyCatalog()
+  await drain()
+  center.openTestOffer()
+  assert.strictEqual(opened.length,0)
+  center.refreshTestOffer()
+  center.onHide()
+  respond(200,catalog)
+  await drain()
+  assert(!center.data.showTestOffer,'a late discovery cannot restore a hidden offer')
+  center.refreshTestOffer()
+  respond(200,catalog)
+  await drain()
+  assert.strictEqual(center.data.showTestOffer,true)
+  center.openTestOffer()
+  assert.deepStrictEqual(opened,['/pages/pay/index?product=membership_test_live'])
+  assert.strictEqual(pending.length,0,'opening the offer never places an order')
+  state.clearSession()
+  center.openTestOffer()
+  assert(!center.data.showTestOffer)
+  assert.strictEqual(opened.length,1)
+  state.setSession({ token:'allowed-local', expires_at:new Date(Date.now()+60000).toISOString(), user:{id:'allowed',tier:'free'} })
+  var blocked = createPage()
+  blocked.onLoad({ product: id })
+  denyCatalog()
+  await drain()
+  blocked.pay()
+  assert.strictEqual(blocked.data.phase, 'unavailable')
+  assert.strictEqual(pending.length, 0)
+
+  for (var invalid of [{ amount_fen: 1 }, { amount_fen: 29900 }, { amount_fen: 59900 }, { product_id: '' }, { duration_days: 30 }]) {
+    var discovery = testOffer.discover()
+    respond(200, { tiers: [Object.assign({}, tier, invalid)] })
+    assert.strictEqual(await discovery, null)
+  }
+  var revoked = await confirmPrice()
+  revoked.pay()
+  denyCatalog()
+  await drain()
+  assert.strictEqual(revoked.data.phase, 'unavailable')
+  assert.strictEqual(pending.length, 0)
+
+  for (var altered of [{ goodsPrice: 1 }, { goodsPrice: 29900 }, { goodsPrice: 59900 }, { buyQuantity: 2 },
+    { env: 1 }, { productId: 'wrong' }, { attach: 'membership_regular' }, { outTradeNo: 'XV-other' }]) {
+    var attempt = api.checkout(id)
+    respond(200, catalog)
+    await drain()
+    assert.deepStrictEqual(pending[0].data, {tier:id, code:'fresh-fixture-code'})
+    var badPay = Object.assign({},valid.virtual_payment,{signData:JSON.stringify(Object.assign({},sign,altered))})
+    respond(200,Object.assign({},valid,{virtual_payment:badPay}))
+    assert.strictEqual((await attempt).ok, false)
+  }
+  var stale = await confirmPrice()
+  stale.pay()
+  state.setSession({ token:'next-local', expires_at:new Date(Date.now()+60000).toISOString(), user:{id:'new',tier:'free'} })
+  respond(200,catalog)
+  await drain()
+  assert.strictEqual(pending.length,0,'a stale catalog must not create an order after account change')
+  assert.strictEqual(virtualCalls.length,0)
+
+  var page = await confirmPrice()
+  page.pay()
+  respond(200,catalog)
+  await drain()
+  assert.strictEqual(pending[0].url,'/test-api/api/v1/xpay/orders')
+  respond(200,valid)
+  await drain()
+  assert.strictEqual(virtualCalls.length,1)
+  assert.strictEqual(virtualCalls[0].signData,valid.virtual_payment.signData)
+  assert.strictEqual(payment,regularCashier,'no classic payment fallback')
+  assert.strictEqual((await api.startPay(orderNo)).code,'test_unavailable')
+  assert.strictEqual((await api.repay(orderNo)).code,'test_unavailable')
+  assert.strictEqual(pending.length,0)
+  config.liveOneYuanTest = false
+  console.log('allowlisted live one-yuan flow, strict signed goods and stale-account checks ok')
+}
+
 async function main() {
   var payDir = path.join(__dirname, '../miniprogram/pages/pay')
   var paySource = ['index.js', 'index.wxml', 'index.wxss', 'index.json'].map(function (name) {
@@ -538,6 +660,7 @@ async function main() {
   assert.strictEqual(unsupported.code,'unsupported')
   assert.strictEqual(pending.length,0)
   assert.strictEqual(payment,null)
+  await checkOneYuan()
   console.log('virtual goods SDK, signed payload and server confirmation checks ok')
   console.log('pay check ok')
 }

@@ -29,6 +29,7 @@
   <button class="btn block" loading="{{payLoading}}" disabled="{{payLoading}}" bindtap="pay">{{payText}}</button>
   <view class="hint">支付即表示同意《会员服务协议》</view>
 </view>
+<view class="body" wx:elif="{{phase == 'loadingTestOffer'}}"><view class="note">正在核对测试商品…</view></view>
 <view class="body" wx:elif="{{phase == 'paying'}}">
   <view class="center-box">
     <view class="center-title">正在拉起微信支付</view>

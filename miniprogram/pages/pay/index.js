@@ -1,3 +1,4 @@
+var testOffer = require('../../api/live-test-offer')
 var api = require('../../api/index')
 var state = require('../../api/state')
 var nav = require('../../utils/nav')
@@ -57,6 +58,18 @@ Page({
     this._pollToken = 0
     var layout = nav.layout('pay', this.query)
     this.setData({ statusBarHeight: layout.statusBarHeight, navHeight: layout.navHeight, showBack: true })
+    if (testOffer.dedicated() && this.product !== testOffer.id && !this.orderNo) { this.testUnavailable(); return }
+    if (this.product === testOffer.id) {
+      this.setData({ phase: 'loadingTestOffer', title: '确认开通', showPay: false })
+      var self = this
+      testOffer.discover().then(function (productId) {
+        if (!self.activeSession()) return
+        if (!productId || self.orderNo) { self.testUnavailable(); return }
+        self.setData({ phase: 'pending', title: '确认开通', card: '支付测试', priceText: testOffer.price,
+          blurb: '普通会员 1 天', payText: '立即支付 ' + testOffer.price, showPay: true })
+      })
+      return
+    }
     if (require('../../config').trialMode || require('../../config').calibrating) {
       this.setData({ phase: 'trial', title: '支付', trialMessage: require('../../utils/trial').paymentMessage() })
       return
@@ -187,8 +200,13 @@ Page({
       centerSub: order.centerSub || ''
     })
   },
+  testUnavailable: function () {
+    this.setData({ phase: 'unavailable', title: '暂时无法购买', resultSub: testOffer.unavailable().message, payLoading: false, showPay: false })
+  },
   pay: function () {
     if (!this.activeSession()) return
+    if (testOffer.dedicated() && this.product !== testOffer.id) return
+    if (this.product === testOffer.id && (!testOffer.enabled() || !this.data.showPay || this.data.phase !== 'pending')) return
     if (require('../../utils/trial').blockPayment()) return
     if (this.livePayFlow) {
       if (this.data.payLoading) return
@@ -221,6 +239,7 @@ Page({
         })
         return
       }
+      if (result.code === 'test_unavailable') { self.testUnavailable(); return }
       if (result.code === 'unsupported') {
         self.setData({ phase: 'unavailable', title: '当前设备无法支付', resultSub: result.message, payLoading: false, showPay: false })
         return

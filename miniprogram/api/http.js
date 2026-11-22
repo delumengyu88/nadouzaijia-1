@@ -2,6 +2,7 @@ var shape = require('./shape')
 var state = require('./state')
 var request = require('./request')
 var xpay = require('./xpay')
+var testOffer = require('./live-test-offer')
 var evidence = require('./evidence')
 
 function notReady() {
@@ -43,6 +44,7 @@ class PayClient {
   static viewFromServer(body) {
     var phase = PayClient.phaseOf(body)
     var priceText = PayClient.yuan(body.amount_fen)
+    if (body.tier === testOffer.id && priceText === '¥1') priceText = testOffer.price
     var title = body.title || '订单'
     return {
       orderNo: body.order_number,
@@ -426,6 +428,8 @@ module.exports = {
   tierOfAccount: function () { return state.userId() ? 'free' : 'guest' },
   checkout: function (product) {
     var tier = typeof product === 'string' ? product : ''
+    if (tier === testOffer.id) return testOffer.checkout(PayClient.normalize)
+    if (testOffer.dedicated()) return Promise.resolve(testOffer.unavailable())
     var token = state.token()
     var pending = require('../config').virtualPayment
       ? xpay.checkout(tier, PayClient.request)
@@ -446,10 +450,12 @@ module.exports = {
     })
   },
   startPay: function (orderNo) {
+    if (testOffer.dedicated()) return Promise.resolve(testOffer.unavailable())
     var pay = PayClient.saved(orderNo)
     return PayClient.read(orderNo).then(function (result) {
       if (!result.ok) return { ok: false, code: result.code, message: result.message }
       var order = result.order
+      if (order.product === testOffer.id) return testOffer.unavailable()
       if (order.code === 'granted' || order.code === 'granting' || order.code === 'grant_error') {
         return { ok: false, code: order.code, message: '请勿重复支付', order: order }
       }
@@ -475,10 +481,12 @@ module.exports = {
     })
   },
   repay: function (orderNo) {
+    if (testOffer.dedicated()) return Promise.resolve(testOffer.unavailable())
     var pay = PayClient.saved(orderNo)
     return PayClient.sync(orderNo).then(function (result) {
       if (!result.ok) return { ok: false, code: result.code, message: result.message, order: result.code === 'unconfigured' ? null : PayClient.failedView(orderNo, result) }
       var order = result.order
+      if (order.product === testOffer.id) return testOffer.unavailable()
       if (order.code !== 'pending') return { ok: false, code: order.code, message: '订单已支付，不能再次支付', order: order }
       if (!pay) return { ok: false, code: 'no_params', message: '请重新下单', order: order }
       var paying = Object.assign({}, order, { status: 'paying', code: 'paying', showPay: false, allowRepay: false })
