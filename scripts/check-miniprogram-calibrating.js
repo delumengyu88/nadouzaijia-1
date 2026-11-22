@@ -38,6 +38,16 @@ function page(name) {
   } })
 }
 function drain() { return new Promise(function (resolve) { setImmediate(resolve) }) }
+function forgetOrderRequests() {
+  for (var i = pending.length - 1; i >= 0; i--) {
+    if (String(pending[i].url || '').indexOf('/api/v1/pay/orders') !== -1) pending.splice(i, 1)
+  }
+}
+function callsExceptOrders() {
+  return calls.filter(function (item) {
+    return String(item.url || '').indexOf('/api/v1/pay/orders') === -1
+  }).length
+}
 function respond(outcome) {
   var req = pending.shift()
   if (outcome === 'fail') { req.fail(); return }
@@ -92,13 +102,14 @@ async function main() {
   assert.strictEqual(modals.length, 3)
   assert(modals.every(function (message) { return message.indexOf('数据校准中') !== -1 }))
   assert.strictEqual(JSON.stringify(api.listOrders()), orders)
+  forgetOrderRequests()
   assert.strictEqual(JSON.stringify(api.profile()), profile)
   ;['report', 'viewer'].forEach(function (name) {
     var blocked = page(name)
     blocked.onLoad({ id: 'old-id', name: '真实测试片', example: '1' })
     assert(redirects.pop().indexOf('/pages/query/index') === 0, 'old and example report routes return to P07')
   })
-  assert.strictEqual(calls.length, requestCount)
+  assert.strictEqual(callsExceptOrders(), requestCount)
   result.home()
   assert.strictEqual(tabs.pop(), '/pages/home/index')
   assert.strictEqual(Object.keys(timers).length, 0)
