@@ -450,7 +450,8 @@ async function main() {
   resetTransport()
   config.virtualPayment = true
   var virtualCall = null
-  wx.requestVirtualPayment = function (options) { virtualCall = options }
+  var virtualRequests = 0
+  wx.requestVirtualPayment = function (options) { virtualRequests++; virtualCall = options }
   wx.login = function (options) { options.success({code: 'fresh-fixture-code'}) }
   page = createPage()
   page.onLoad({product:'membership_regular'})
@@ -469,6 +470,15 @@ async function main() {
   virtualCall.success({})
   assert.strictEqual(page.data.phase,'confirming')
   assert.strictEqual(pending[0].url,'/test-api/api/v1/xpay/orders/XV-fixture/sync')
+  respond(502, { detail: '微信虚拟支付服务暂不可用' })
+  await drain()
+  assert.strictEqual(page.data.phase, 'confirming')
+  assert.strictEqual(clock.length, 1)
+  assert.strictEqual(clock[0].ms, 2000)
+  clock.shift().fn()
+  assert.strictEqual(pending.length, 1)
+  assert.strictEqual(pending[0].url, '/test-api/api/v1/xpay/orders/XV-fixture/sync')
+  assert.strictEqual(virtualRequests, 1)
   respond(200,orderBody('已发放',{order_number:'XV-fixture'}))
   await drain()
   assert.strictEqual(page.data.phase,'granted')

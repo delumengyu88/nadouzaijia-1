@@ -130,6 +130,7 @@ class PayClient {
               return
             }
             var normalized = PayClient.normalize(res && res.data)
+            if (!normalized.ok) normalized.httpStatus = res && res.statusCode
             if (normalized.code === 'login') tokenState.clearSession(token)
             resolve(normalized)
           },
@@ -151,7 +152,12 @@ class PayClient {
   }
 
   static sync(orderNo) {
-    return PayClient.request('POST', PayClient.orderPath(orderNo) + '/sync')
+    return PayClient.request('POST', PayClient.orderPath(orderNo) + '/sync').then(function (result) {
+      if (/^XV/.test(orderNo) && !result.ok && result.httpStatus >= 500 && result.code !== 'unconfigured') {
+        return { ok: false, code: 'query_failed', message: '暂未确认支付结果' }
+      }
+      return result
+    })
   }
 
   static failedView(orderNo, result) {

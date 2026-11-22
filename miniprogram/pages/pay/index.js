@@ -353,6 +353,10 @@ Page({
       this.setData({ phase: 'unavailable', title: '支付暂未开通', payLoading: false, showPay: false, confirmTimeout: false })
       return
     }
+    if (code === 'query_failed' && /^XV/.test(this.orderNo)) {
+      this.beginPoll()
+      return
+    }
     if (code === 'pending') {
       this.apply(Object.assign({}, order, {
         status: 'failed',
