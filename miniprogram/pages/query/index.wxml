@@ -8,7 +8,7 @@
 <view class="body" wx:if="{{calibrating}}">
   <view class="center-box">
     <view class="center-title">数据校准中</view>
-    <view class="center-sub">校准完成后会通知你</view>
+    <view class="center-sub">校准完成后可查看结果</view>
     <view class="btn block" bindtap="home">返回首页</view>
   </view>
 </view>

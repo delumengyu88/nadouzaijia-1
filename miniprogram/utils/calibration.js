@@ -1,5 +1,5 @@
 var config = require('../config')
-var MESSAGE = '数据校准中，校准完成后会通知你'
+var MESSAGE = '数据校准中，校准完成后可查看结果'
 function blockedResult() {
   return { ok: false, code: 'calibrating', message: MESSAGE }
 }
