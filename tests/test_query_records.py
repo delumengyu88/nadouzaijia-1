@@ -378,6 +378,41 @@ def test_rows_older_than_the_retention_window_are_still_returned(session, clock)
     assert rows["items"][0]["name"] == "旧节目"
 
 
+def test_legacy_query_without_user_is_hidden_from_everyone(session, clock):
+    add_user(session, "member", clock, "vip")
+    add_user(session, "free-user", clock)
+    add_query(
+        session,
+        clock,
+        "legacy-hidden",
+        [{"uploaded": "旧查询节目", "resolution": "exact"}],
+        user_id=None,
+    )
+    add_query(
+        session,
+        clock,
+        "owned-q",
+        [{"uploaded": "我的节目", "resolution": "pending"}],
+        user_id="member",
+    )
+    session.commit()
+    client = make_client(session, clock)
+
+    assert export(client, "legacy-hidden", "member").status_code == 404
+    assert export(client, "legacy-hidden", "free-user").status_code == 404
+    member = client.auth("member")
+    assert client.get("/api/v1/queries/legacy-hidden", headers=member).status_code == 404
+    listed_rows = client.get("/api/v1/queries", headers=member)
+    assert listed_rows.status_code == 200
+    assert [item["id"] for item in listed_rows.json()["items"]] == ["owned-q"]
+    assert "legacy-hidden" not in listed_rows.text
+    free = client.auth("free-user")
+    assert client.get("/api/v1/queries/legacy-hidden", headers=free).status_code == 404
+    free_rows = client.get("/api/v1/queries", headers=free)
+    assert free_rows.json()["items"] == []
+    assert free_rows.json()["total"] == 0
+
+
 def test_export_is_limited_to_the_owner(session, clock):
     add_user(session, "owner", clock, "vip")
     add_user(session, "other-vip", clock, "vip")

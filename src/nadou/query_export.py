@@ -496,13 +496,16 @@ class QueryExport:
         self.max_bytes = max_bytes
 
     def export(self, query_id: str, user_id: str | None) -> ExportFile:
+        query = self.session.get(MemberQuery, query_id)
+        # No owner means the row cannot be attributed. Reject it before the
+        # membership gate so every caller gets 404. Allowing it would let
+        # anyone who knows the id export it.
+        if query is not None and query.user_id is None:
+            raise UnknownQuery(query_id)
         grants = MembershipGate.live(self.session, user_id, self.now)
         tier = MembershipGate.tier(grants)
         if tier is None:
             raise ExportForbidden(user_id)
-        query = self.session.get(MemberQuery, query_id)
-        # Membership is already required. Someone else's query, and a row
-        # saved with no owner, is the same as a missing id.
         if query is None or query.user_id != user_id:
             raise UnknownQuery(query_id)
         items = list(

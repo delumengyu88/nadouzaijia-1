@@ -224,7 +224,7 @@ If the newest successful run is more than two days old, the job calls `Notifier`
 
 ## Query workbook export
 
-`GET /api/v1/queries/{query_id}/export` writes the caller's view of one saved query. Missing `X-User-Id` is a free caller. An unknown user id is 404. A missing query id is 404. The query must belong to the caller (`member_queries.user_id`). Another member, and a row with no owner, gets 404. Non-members still get 403 before that check.
+`GET /api/v1/queries/{query_id}/export` writes the caller's view of one saved query. Missing `X-User-Id` is a free caller. An unknown user id is 404. A missing query id is 404. The query must belong to the caller (`member_queries.user_id`). Another member gets 404. Non-members still get 403 when the row has an owner, or when the id is missing, because that check runs first. A legacy row with a null `user_id` cannot be attributed: export and `GET /api/v1/queries/{id}` return 404 for every caller, and the row is omitted from `GET /api/v1/queries`, because allowing it would let anyone who knows the id export it.
 
 Only a live `regular` (普通会员) or `vip` grant can export. Free callers, and callers whose only live grants are `program_90`, `program_30`, or `screenshot`, get 403. Expired grants do not count. There is no row cap. If both `regular` and `vip` are live, VIP wins and the wider age floor is used.
 
@@ -393,4 +393,4 @@ Some `index_records` rows have no task in the export and a NULL `uploaded_at`. F
 - 到期后删除该用户的 `member_queries` 行，并一并删除其 `query_programs`。
 - 按用户和时间清理。索引用 `ix_member_queries_user_id_created_at`（`user_id`, `created_at`），不要全表扫描。
 - 定时清理不在本变更里，另开 PR。本接口对超过保留期的行仍照常返回。
-- `user_id` 为空的历史行不属于任何用户，本变更不删除，也不对任何人开放查看或导出。
+- `user_id` 为空的历史行无法核对归属：任何人导出都是 404，`GET /api/v1/queries/{id}` 也是 404，并且不会出现在 `GET /api/v1/queries` 列表里。本变更不删除这些行。
