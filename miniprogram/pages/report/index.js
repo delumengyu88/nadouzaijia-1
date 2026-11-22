@@ -2,6 +2,12 @@ var api = require('../../api/index')
 var nav = require('../../utils/nav')
 var calibration = require('../../utils/calibration')
 var present = require('../../utils/present').present
+var config = require('../../config')
+var httpApi = require('../../api/http')
+
+function mockMode() {
+  return (config.mode || 'mock') === 'mock'
+}
 
 function decode(value) {
   if (!value) return ''
@@ -52,7 +58,8 @@ Page({
       return
     }
     var search = null
-    if (query.example === '1') search = api.exampleReport(name)
+    if (query.example === '1' && !mockMode()) search = httpApi.exampleReport(name)
+    else if (query.example === '1') search = api.exampleReport(name)
     else if (query.view === 'expired' || query.view === 'locked') search = api.searchProgram(name, { locked: true })
     else search = api.searchProgram(name)
     var self = this
@@ -71,18 +78,32 @@ Page({
   applySearch: function (search, name, query) {
     if (calibration.blockReport(query)) return
     if (!search) { this.setData({ phase: 'fail', title: name }); return }
-    if (query.view === 'empty' || search.outcome === 'miss') {
+    var publicExample = !!search.publicExample
+    if (!publicExample && (query.view === 'empty' || search.outcome === 'miss')) {
       this.setData({ phase: 'empty', title: name, name: name })
       return
     }
     var meta = api.programMeta(name)
-    var prof = api.profile()
+    var prof = require('../../config').mode === 'live' ? require('../../api/identity').syncAccess() : api.profile()
     var view = present(search, {
       name: meta.name,
-      queried: '2026-11-20',
+      queried: publicExample ? '' : '2026-11-20',
       canExport: api.isLive && !search.example ? search.records.some(function (r) { return !r.locked && r.can_download_report }) : prof.tier === 'vip' || prof.tier === 'regular',
       expired: query.view === 'expired'
     })
+    view.showEvidenceLink = !search.example
+    if (search.example) {
+      var facts = require('../../utils/present').exampleFacts(search.records)
+      view.exampleEmpty = !facts.hit
+      view.showDownload = false
+      view.showEvidence = false
+      view.evidenceName = ''
+      view.evidencePlatforms = []
+      view.platformLine = facts.line
+      view.header = facts.sub
+      view.badge = facts.hit ? '已命中' : '未命中'
+      view.badgeCls = facts.hit ? 'ok' : 'miss'
+    }
     view.phase = 'ready'
     view.title = meta.name
     view.showBack = true
@@ -126,9 +147,9 @@ Page({
     wx.navigateTo({ url: '/pages/evidence/index?name=' + encodeURIComponent(this.data.evidenceName || '') + '&kind=recent' })
   },
   download: function () {
-    if (this.data.downloadLoading) return
+    if (this.data.example || this.data.downloadLoading) return
     this.setData({ downloadLoading: true })
-    var book = api.exportBook(this.data.name)
+    var book = api.exportBook(this.data.name, (this.query && this.query.id) || '')
     var self = this
     if (book && typeof book.then === 'function') {
       book.then(function (result) { self.saveBook(result) }).catch(function (error) {

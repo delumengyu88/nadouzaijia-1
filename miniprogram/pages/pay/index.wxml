@@ -8,6 +8,12 @@
 <view class="body" wx:if="{{phase == 'trial'}}">
   <view class="card"><view>{{trialMessage}}</view><view class="btn" bindtap="pay">立即支付</view></view>
 </view>
+<view class="body" wx:if="{{phase == 'sessionEnded'}}">
+  <view class="result">
+    <view class="result-title">登录状态已变化</view>
+    <view class="result-primary" bindtap="back">返回</view>
+  </view>
+</view>
 <view class="body" wx:if="{{phase == 'pending'}}">
   <view class="card">
     <view class="choice-top">
@@ -20,7 +26,7 @@
   </view>
   <view class="note">支付方式：微信支付</view>
   <view class="note" wx:if="{{orderNo}}">订单号 {{orderNo}}</view>
-  <view class="btn block" bindtap="pay">{{payText}}</view>
+  <button class="btn block" loading="{{payLoading}}" disabled="{{payLoading}}" bindtap="pay">{{payText}}</button>
   <view class="hint">支付即表示同意《会员服务协议》</view>
 </view>
 <view class="body" wx:elif="{{phase == 'paying'}}">
@@ -28,61 +34,83 @@
     <view class="center-title">正在拉起微信支付</view>
     <view class="center-sub">请在弹出的支付页完成付款，不要关闭本页。</view>
   </view>
-  <view class="note">订单号 {{orderNo}}</view>
-  <view class="btn block" data-outcome="success" bindtap="settle">支付成功</view>
-  <view class="btn block ghost" data-outcome="fail" bindtap="settle">支付失败</view>
-  <view class="btn block ghost" data-outcome="cancel" bindtap="settle">取消支付</view>
-  <view class="btn block ghost" data-outcome="timeout" bindtap="settle">等待回调</view>
-  <view class="btn block ghost" data-outcome="grant_error" bindtap="settle">发放异常</view>
+  <view class="note" wx:if="{{orderNo}}">订单号 {{orderNo}}</view>
+  <block wx:if="{{mockSettle}}">
+    <view class="btn block" data-outcome="success" bindtap="settle">支付成功</view>
+    <view class="btn block ghost" data-outcome="fail" bindtap="settle">支付失败</view>
+    <view class="btn block ghost" data-outcome="cancel" bindtap="settle">取消支付</view>
+    <view class="btn block ghost" data-outcome="timeout" bindtap="settle">等待回调</view>
+    <view class="btn block ghost" data-outcome="grant_error" bindtap="settle">发放异常</view>
+  </block>
 </view>
 <view class="body" wx:elif="{{phase == 'confirming'}}">
-  <view class="center-box">
-    <view class="center-title">支付确认中</view>
-    <view class="center-sub">正在等待支付结果，不要重复支付。</view>
+  <view class="result">
+    <icon wx:if="{{confirmSpin}}" type="waiting" size="56" color="#1D4E9E"/>
+    <icon wx:else type="info" size="56" color="#1D4E9E"/>
+    <view class="result-title">{{resultTitle || '正在确认支付结果…'}}</view>
+    <view class="result-sub" wx:if="{{confirmSpin}}">请勿关闭页面或重复支付</view>
+    <view class="result-sub" wx:elif="{{confirmTimeout}}">{{resultSub}}</view>
+    <view class="result-primary" wx:if="{{confirmTimeout && !confirmSpin}}" bindtap="refreshStatus">刷新</view>
   </view>
 </view>
 <view class="body" wx:elif="{{phase == 'granting'}}">
-  <view class="center-box">
-    <view class="center-title">权益发放中</view>
-    <view class="center-sub">付款已到账，正在发放。</view>
+  <view class="result">
+    <icon type="waiting" size="56" color="#1D4E9E"/>
+    <view class="result-title">权益发放中</view>
+    <view class="result-sub">付款已到账，正在发放。</view>
+    <view class="result-primary" wx:if="{{confirmTimeout && !confirmSpin}}" bindtap="refreshStatus">刷新</view>
   </view>
 </view>
 <view class="body" wx:elif="{{phase == 'granted'}}">
-  <view class="center-box">
-    <view class="tag ok">开通成功</view>
-    <view class="center-title" style="margin-top:24rpx;">{{successLine}}</view>
-    <view class="btn slim" bindtap="finish">返回报告</view>
+  <view class="result">
+    <icon type="success" size="56" color="#16A34A"/>
+    <view class="result-title">开通成功</view>
+    <view class="result-sub" wx:if="{{successLine}}">{{successLine}}</view>
+    <view class="result-primary" bindtap="finish">返回报告</view>
   </view>
 </view>
 <view class="body" wx:elif="{{phase == 'failed'}}">
-  <view class="center-box">
-    <view class="tag bad" wx:if="{{!allowRepay}}">支付未完成</view>
-    <view class="tag bad" wx:else>订单尚未支付</view>
-    <view class="center-sub" wx:if="{{!allowRepay}}">如已扣款，请稍后在「我的订单」查看，或联系客服。</view>
-    <view class="center-sub" wx:else>该笔订单未支付。重新支付将沿用原订单号。</view>
-    <view class="note">订单号 {{orderNo}}</view>
-    <view class="btn slim" wx:if="{{!allowRepay}}" bindtap="check">查看订单状态</view>
-    <view class="btn slim" wx:else bindtap="repay">重新支付</view>
-    <button class="link" open-type="contact" session-from="order:{{orderNo}}">联系客服</button>
+  <view class="result">
+    <icon type="warn" size="56" color="#DC2626"/>
+    <view class="result-title">支付失败</view>
+    <view class="result-sub" wx:if="{{!allowRepay}}">
+      <text>如已扣款，可在「我的订单」查看</text>
+      <text>或联系客服</text>
+    </view>
+    <view class="result-sub" wx:else>该笔订单未支付。重新支付将沿用原订单号。</view>
+    <view class="result-primary" wx:if="{{!allowRepay}}" bindtap="check">查看订单状态</view>
+    <view class="result-primary" wx:else bindtap="repay">重新支付</view>
+    <button class="result-link" open-type="contact" session-from="order:{{orderNo}}">联系客服</button>
   </view>
 </view>
 <view class="body" wx:elif="{{phase == 'cancelled'}}">
-  <view class="center-box">
-    <view class="center-title">订单已取消</view>
-    <view class="btn slim" bindtap="finish">返回会员中心</view>
+  <view class="result">
+    <icon type="info" size="56" color="#1D4E9E"/>
+    <view class="result-title">{{centerTitle || '订单已取消'}}</view>
+    <view class="result-primary" bindtap="finish">返回会员中心</view>
   </view>
 </view>
 <view class="body" wx:elif="{{phase == 'grant_error'}}">
-  <view class="center-box">
-    <view class="tag bad">发放异常</view>
-    <view class="center-sub">订单号 {{orderNo}}。付款可能已到账，权益尚未写入。请联系客服，不要重复支付。</view>
-    <button class="link" open-type="contact" session-from="order:{{orderNo}}">联系客服</button>
+  <view class="result">
+    <icon type="warn" size="56" color="#DC2626"/>
+    <view class="result-title">发放异常</view>
+    <view class="result-sub">付款可能已到账，权益尚未写入。请联系客服，不要重复支付。</view>
+    <button class="result-link" open-type="contact" session-from="order:{{orderNo}}">联系客服</button>
   </view>
 </view>
 <view class="body" wx:elif="{{phase == 'covered'}}">
-  <view class="center-box">
-    <view class="center-title">无需购买</view>
-    <view class="center-sub">你的 VIP 已覆盖，无需再买本节目档位。</view>
-    <view class="btn slim" bindtap="finish">返回报告</view>
+  <view class="result">
+    <icon type="info" size="56" color="#1D4E9E"/>
+    <view class="result-title">无需购买</view>
+    <view class="result-sub">你的 VIP 已覆盖，无需再买本节目档位。</view>
+    <view class="result-primary" bindtap="finish">返回报告</view>
+  </view>
+</view>
+<view class="body" wx:elif="{{phase == 'unavailable'}}">
+  <view class="result">
+    <icon type="info" size="56" color="#1D4E9E"/>
+    <view class="result-title">支付暂未开通</view>
+    <view class="result-sub">当前不能付款，请稍后再试。</view>
+    <view class="result-primary" bindtap="finish">返回</view>
   </view>
 </view>

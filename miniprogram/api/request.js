@@ -6,7 +6,9 @@ module.exports = function (path, data, options) {
   var base = String(config.apiBase || '').replace(/\/$/, '')
   if (!base) return Promise.reject(new Error('未配置服务地址'))
   var token = options.public ? '' : state.token()
-  if (!options.public && !token) return Promise.reject(new Error('请先登录'))
+  // optionalAuth sends a session when one exists, and still runs when it does not.
+  // Invite state is 200 for a missing token. Other calls still require a session.
+  if (!options.public && !options.optionalAuth && !token) return Promise.reject(new Error('请先登录'))
   return new Promise(function (resolve, reject) {
     // A synchronous throw must still settle the promise, or callers wait forever.
     try {
@@ -18,7 +20,7 @@ module.exports = function (path, data, options) {
         header: token ? { Authorization: 'Bearer ' + token } : {},
         success: function (res) {
           // Evidence uses readBody and judges `code`. Redeem uses exposeStatus and judges `detail`.
-          // Keep both options: they are added by different PRs and must survive a merge.
+          // Invite state uses optionalAuth. Keep one of each.
           if (options.readBody || options.exposeStatus) {
             if (res.statusCode === 401 && token) state.clearSession(token)
             if (options.exposeStatus) resolve({ statusCode: res.statusCode, data: res.data })
