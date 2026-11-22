@@ -26,6 +26,7 @@ This PR is the smallest backend later PRs can build on: import the hourly task e
 | `nadou.search` | `ProgramSearch` |
 | `nadou.query_export` | `QueryExport` workbook |
 | `nadou.main` | FastAPI app |
+| `nadou.payments` | WeChat Pay JSAPI orders, notification, and grant |
 | `nadou.seed` | Synthetic CSV + index rows through the importer |
 
 Normalization and parsing are classes. `SignedUrlProvider` is the seam the real CDN signer will replace; the API calls only that.
@@ -174,7 +175,7 @@ Manual grant or extend takes `regular` or `vip`, a day count, and a reason. The 
 
 ### Orders and reissue
 
-The order table is a read model until payment exists. `OrderLookup.by_order_number` and `GET /api/v1/admin/orders/by-number/{order_number}` find an order by its public number. Export is `GET /api/v1/admin/orders/export` (CSV, admin only).
+The workbench still reads orders; it does not take payment. `OrderLookup.by_order_number` and `GET /api/v1/admin/orders/by-number/{order_number}` find an order by its public number. Export is `GET /api/v1/admin/orders/export` (CSV, admin only). Mini program JSAPI payment is specified in [PAYMENTS.md](PAYMENTS.md). The server prices each tier. A verified WeChat notification, or a server-side order query, grants that order's original tier and duration through `EntitlementIssuer` and `OrderGrantWriter`. `amount` stays the yuan integer the workbench already shows. `amount_fen` is the WeChat charge in 分.
 
 `EntitlementIssuer.issue` grants the order's original tier and duration. `order_issuances.order_id` is unique, so a second call returns the existing grant instead of creating another entitlement. The issuer tries three times, then sets the order and the issuance to `发放异常` and notifies once. `POST /api/v1/admin/orders/{id}/reissue` (support or admin) runs that same path only for `发放异常`. The body cannot carry a tier or a duration; the issuance row keeps the snapshot taken on the first attempt. A repeated reissue returns the entitlement already issued.
 

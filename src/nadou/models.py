@@ -317,6 +317,16 @@ class Order(Base):
         CheckConstraint("tier IN ('regular', 'vip')", name="ck_orders_tier"),
         CheckConstraint("duration_days > 0", name="ck_orders_duration"),
         CheckConstraint("amount >= 0", name="ck_orders_amount"),
+        CheckConstraint(
+            "amount_fen IS NULL OR amount_fen >= 0",
+            name="ck_orders_amount_fen",
+        ),
+        CheckConstraint(
+            "product IS NULL OR product IN "
+            "('membership_regular', 'membership_vip', 'membership_test')",
+            name="ck_orders_product",
+        ),
+        UniqueConstraint("wechat_transaction_id", name="uq_orders_wechat_transaction_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -325,6 +335,7 @@ class Order(Base):
     user: Mapped[User] = relationship()
     tier: Mapped[str] = mapped_column(String(16), nullable=False)
     duration_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Yuan shown in the workbench. WeChat Pay compares amount_fen (分), not this column.
     amount: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
@@ -332,6 +343,10 @@ class Order(Base):
     paid_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
     refunded_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
     refund_reason: Mapped[str | None] = mapped_column(String(500))
+    product: Mapped[str | None] = mapped_column(String(32))
+    amount_fen: Mapped[int | None] = mapped_column(Integer)
+    prepay_id: Mapped[str | None] = mapped_column(String(64))
+    wechat_transaction_id: Mapped[str | None] = mapped_column(String(64))
 
 
 class OrderIssuance(Base):

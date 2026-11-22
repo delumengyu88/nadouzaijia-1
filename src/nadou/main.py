@@ -20,6 +20,7 @@ from nadou.auth import UserSessions, WeChatLogin, require_active, user_profile
 from nadou.config import get_settings
 from nadou.db import Database
 from nadou.models import User
+from nadou.payments.api import PaymentApi
 from nadou.schemas import SearchOut
 from nadou.search import EmptyQuery, ProgramSearch, UnknownUser
 from nadou.signed_url import FakeSignedUrlProvider, SignedUrlProvider
@@ -130,6 +131,7 @@ def create_app(
             "expires_at": grant.expires_at.isoformat(),
         }
 
+    PaymentApi.register(app, get_session, clock, alerts, grant_writer)
     AdminApi.register(app, get_session, clock, alerts, grant_writer)
 
     @app.get("/api/v1/queries/{query_id}/export")
