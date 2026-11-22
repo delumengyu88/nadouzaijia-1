@@ -1,1 +1,55 @@
-/* local */
+.code-box {
+  margin: 0 32rpx;
+  background: #fff;
+  border-radius: 16rpx;
+  border: 2rpx solid transparent;
+  display: flex;
+  align-items: center;
+  min-height: 88rpx;
+}
+.code-box.bad { border-color: #d64545; }
+.code-side { width: 88rpx; height: 88rpx; flex: none; }
+.code-input {
+  flex: 1;
+  height: 88rpx;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  letter-spacing: 8rpx;
+  text-align: center;
+  font-size: 36rpx;
+  font-weight: 600;
+}
+.code-clear {
+  width: 88rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  text-align: center;
+  font-size: 40rpx;
+  color: #8b95a3;
+  flex: none;
+}
+button.btn.off[disabled] {
+  background: #e6e9ee !important;
+  color: #a0a8b3 !important;
+  opacity: 1;
+}
+.success-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80rpx 48rpx 0;
+  text-align: center;
+}
+.success-title {
+  margin-top: 24rpx;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #1A1A1A;
+}
+.success-grant,
+.success-expiry {
+  margin-top: 12rpx;
+  font-size: 28rpx;
+  color: #666;
+}
