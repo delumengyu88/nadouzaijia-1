@@ -28,12 +28,14 @@
   </view>
   <view class="note" wx:if="{{examplesError}}">示例报告暂时无法加载。</view>
   <view class="ex" wx:for="{{examples}}" wx:key="name" data-name="{{item.name}}" bindtap="openExample">
-    <view class="thumb thumb-plain"></view>
+    <view class="thumb {{item.image || item.illustrated ? '' : 'thumb-plain'}}">
+      <image wx:if="{{item.image}}" src="{{item.image}}" mode="aspectFill" style="width:100%;height:100%;" />
+      <block wx:elif="{{item.illustrated}}"><view class="moon"></view><view class="hill"></view></block>
+    </view>
     <view class="ex-main">
       <view class="ex-name-row"><text class="ex-tag">示例</text><text class="ex-name">{{item.name}}</text></view>
       <view class="ex-line">{{item.line}}</view>
       <view class="ex-sub">{{item.sub}}</view>
-      <view class="ex-sub" wx:if="{{item.dateText}}">{{item.dateText}}</view>
     </view>
     <text class="chev">›</text>
   </view>
@@ -57,6 +59,7 @@
     <view class="dialog-title">{{announcement.title}}</view>
     <view class="dialog-body">{{announcement.body}}</view>
     <view class="btn" bindtap="closeAnnounce">{{announcement.buttonText}}</view>
+    <view class="announce-dismiss" bindtap="closeAnnounce">知道了</view>
   </view>
 </view>
 <view class="mask" wx:if="{{showDone && !showAnnounce && !showSplash && !announcement}}">

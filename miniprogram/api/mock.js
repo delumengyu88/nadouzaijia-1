@@ -240,11 +240,13 @@ function exampleSummary(name) {
 }
 
 function homeExamples() {
+  var factsOf = require('../utils/present').exampleFacts
   var cards = []
   catalog.examples.forEach(function (name) {
     var card = exampleSummary(name)
-    if (/^命中\s*0\s*条/.test(card.sub)) return
-    cards.push({ name: card.name, line: card.line, sub: card.sub, dateText: /·\s*\d{4}-\d{2}-\d{2}\s*$/.test(card.sub) ? '' : '—' })
+    var facts = factsOf(card.report.records)
+    if (!facts.hit) return
+    cards.push({ name: card.name, line: facts.line, sub: facts.sub, image: facts.image, illustrated: !facts.image })
   })
   return cards
 }
@@ -799,7 +801,11 @@ module.exports = {
       if (text.foldKey(title) === text.foldKey(name)) allowed = true
     })
     if (!allowed) return null
-    return exampleSummary(name).report
+    var summary = exampleSummary(name)
+    var facts = require('../utils/present').exampleFacts(summary.report.records)
+    summary.report.line = facts.line
+    summary.report.sub = facts.sub
+    return summary.report
   },
   programMeta: function (name) { return metaOf(name) },
   tierOfAccount: function () { return tierOf(acc()) },

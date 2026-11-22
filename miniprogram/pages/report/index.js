@@ -93,13 +93,16 @@ Page({
     })
     view.showEvidenceLink = !search.example
     if (search.example) {
-      if (publicExample) view.exampleEmpty = !(search.records && search.records.length)
+      var facts = require('../../utils/present').exampleFacts(search.records)
+      view.exampleEmpty = !facts.hit
       view.showDownload = false
       view.showEvidence = false
       view.evidenceName = ''
       view.evidencePlatforms = []
-      view.platformLine = search.line || ''
-      view.header = search.sub || ''
+      view.platformLine = facts.line
+      view.header = facts.sub
+      view.badge = facts.hit ? '已命中' : '未命中'
+      view.badgeCls = facts.hit ? 'ok' : 'miss'
     }
     view.phase = 'ready'
     view.title = meta.name

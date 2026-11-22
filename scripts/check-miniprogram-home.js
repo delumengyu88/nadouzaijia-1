@@ -91,7 +91,9 @@ assert(homeWxml.indexOf('showAnnounce && !showSplash') !== -1)
 assert(homeWxml.indexOf('wx:if="{{announcement && showAnnounce && !showSplash && !showPrivacy}}"') !== -1)
   assert(homeWxml.indexOf('showDone && !showAnnounce && !showSplash') !== -1)
   assert(homeWxml.indexOf('thumb-plain') !== -1)
-  assert(homeWxml.indexOf('{{item.dateText}}') !== -1)
+  assert(homeWxml.indexOf('{{item.image}}') !== -1)
+  assert(homeWxml.indexOf('announce-dismiss') !== -1)
+  assert(homeWxml.indexOf('dateText') === -1)
   assert(reportWxml.indexOf('wx:if="{{showEvidenceLink}}"') !== -1)
   assert(reportWxml.indexOf('{{badgeCls}}') !== -1)
   assert(reportWxml.indexOf('example && platformLine') !== -1)
@@ -129,7 +131,9 @@ async function main() {
   var zeroBody = await zero
   assert.strictEqual(zeroBody.platformTotal, null)
   assert.strictEqual(zeroBody.showPlatformTotal, false)
-  assert.strictEqual(zeroBody.examples.length, 0)
+  assert.strictEqual(zeroBody.examples.length, 1)
+  assert.strictEqual(zeroBody.examples[0].dateText, undefined)
+  assert.strictEqual(zeroBody.examples[0].sub, '命中 0 条记录')
 
   var missing = http.homeContent()
   ok({ platformTotal: null, examples: [], announcements: [] })
@@ -152,23 +156,16 @@ async function main() {
   var noted = await notes
   assert.strictEqual(noted.platformTotal, 18)
   assert.strictEqual(noted.showPlatformTotal, true)
-  assert.deepStrictEqual(noted.examples[0], { name: '海边来信', line: '涉及 2 个平台', sub: '命中 4 条记录 · 2026-08-13', dateText: '' })
-  var mixedCards = http.homeContent()
-  ok({
-    platformTotal: 4,
-    examples: [
-      { name: '空示例', line: '涉及 0 个平台', sub: '命中 0 条记录' },
-      { name: '无日期', line: '涉及 1 个平台', sub: '命中 2 条记录' },
-      { name: '海边来信', line: '涉及 2 个平台', sub: '命中 2 条记录 · 2026-08-13' }
-    ],
-    announcements: []
-  })
-  var mixed = await mixedCards
-  assert.deepStrictEqual(mixed.examples.map(function (item) { return item.name }), ['无日期', '海边来信'])
-  assert.strictEqual(mixed.examples[0].dateText, '—')
-  assert.strictEqual(mixed.examples[1].dateText, '')
-  assert.strictEqual(mixed.examples[1].line, '涉及 2 个平台')
-  assert.strictEqual(mixed.examples[1].sub, '命中 2 条记录 · 2026-08-13')
+  assert.deepStrictEqual(noted.examples[0], { name: '海边来信', line: '涉及 2 个平台', sub: '命中 4 条记录 · 2026-08-13' })
+  var facts = require('../miniprogram/utils/present').exampleFacts([
+    { platform: '广东移动', checked_at: null, thumbnail_url: null, hd_url: null, locked: null },
+    { platform: '浙江移动', checked_at: null, thumbnail_url: 'https://thumb.invalid/a.png', hd_url: null, locked: null }
+  ])
+  assert.strictEqual(facts.line, '涉及 2 个平台')
+  assert.strictEqual(facts.sub, '命中 2 条记录')
+  assert.strictEqual(facts.hit, true)
+  assert.strictEqual(facts.image, 'https://thumb.invalid/a.png')
+  assert(facts.sub.indexOf('·') === -1 && facts.sub.indexOf('—') === -1)
   assert.strictEqual(noted.announcements.length, 2)
   assert.strictEqual(noted.announcements[0].buttonText, '知道了')
   assert.strictEqual(noted.announcements[1].buttonText, '知道了')
@@ -228,7 +225,7 @@ async function main() {
   assert.strictEqual(nullBody.records[0].can_download_screenshot, null)
   assert.strictEqual(nullBody.records[0].locked, null)
   var view = present(nullBody, { name: '无日期' })
-  assert.strictEqual(view.groups[0].rows[0].date, '—')
+  assert.strictEqual(view.groups[0].rows[0].date, '')
   assert.strictEqual(view.groups[0].rows[0].ageLabel, '')
   assert.strictEqual(view.groups[0].rows[0].image, '')
   assert.strictEqual(view.groups[0].rows[0].plainThumb, true)
@@ -278,14 +275,26 @@ async function main() {
   assert.strictEqual(calls.length, before + 2)
   settleHome(homeBody({
     platformTotal: 18,
-    examples: [{ name: '海边来信', line: '涉及 2 个平台', sub: '命中 4 条记录 · 2026-08-13' }],
+    examples: [{ name: '海边来信', line: '涉及 0 个平台', sub: '命中 0 条记录' }],
     announcements: []
   }))
+  await drain()
+  fulfill('/app/examples/' + encodeURIComponent('海边来信'), {
+    name: '海边来信', example: true, outcome: 'miss', line: '涉及 0 个平台', sub: '命中 0 条记录',
+    records: [
+      { record_id: 'a', platform: '广东移动', checked_at: null, thumbnail_url: null, hd_url: null, locked: null },
+      { record_id: 'b', platform: '浙江移动', checked_at: null, thumbnail_url: 'https://thumb.invalid/sea.png', hd_url: null, locked: null }
+    ]
+  })
   await drain()
   assert.strictEqual(home.data.showSplash, true, 'splash still covers the first paint')
   assert.strictEqual(home.data.showPlatformTotal, true)
   assert.strictEqual(home.data.platformTotal, 18)
   assert.strictEqual(home.data.examples[0].name, '海边来信')
+  assert.strictEqual(home.data.examples[0].line, '涉及 2 个平台')
+  assert.strictEqual(home.data.examples[0].sub, '命中 2 条记录')
+  assert.strictEqual(home.data.examples[0].image, 'https://thumb.invalid/sea.png')
+  assert(home.data.examples[0].sub.indexOf('—') === -1)
   assert.strictEqual(home.data.announcement, null)
   home.finishSplash()
   assert.strictEqual(home.data.showSplash, false)
@@ -408,7 +417,8 @@ async function main() {
   })
   await drain()
   var row = nullPage.data.groups[0].rows[0]
-  assert.strictEqual(row.date, '—')
+  assert.strictEqual(row.date, '')
+  assert(JSON.stringify(nullPage.data).indexOf('—') === -1)
   assert.strictEqual(row.ageLabel, '')
   assert.strictEqual(row.image, '')
   assert.strictEqual(row.plainThumb, true)
@@ -427,10 +437,27 @@ async function main() {
     ]
   })
   await drain()
-  assert.strictEqual(counted.data.header, '命中 4 条记录 · 2026-08-13')
+  assert.strictEqual(counted.data.header, '命中 2 条记录 · 2026-08-13')
   assert.strictEqual(counted.data.platformLine, '涉及 2 个平台')
+  assert.strictEqual(counted.data.badge, '已命中')
   assert.strictEqual(counted.data.groups.length, 2)
-  assert.notStrictEqual(counted.data.header, '命中 2 条记录')
+  var undated = openReport({ example: '1', name: encodeURIComponent('无日期示例') })
+  ok({
+    name: '无日期示例', program_name: '无日期示例', example: true, outcome: 'miss',
+    platform_count: 0, line: '涉及 0 个平台', sub: '命中 0 条记录',
+    records: [
+      { record_id: 'u1', platform: '广东移动', checked_at: null, age_bucket: null, thumbnail_url: null, hd_url: null, locked: null },
+      { record_id: 'u2', platform: '浙江移动', checked_at: null, age_bucket: null, thumbnail_url: null, hd_url: null, locked: null }
+    ]
+  })
+  await drain()
+  assert.strictEqual(undated.data.badge, '已命中')
+  assert.strictEqual(undated.data.platformLine, '涉及 2 个平台')
+  assert.strictEqual(undated.data.header, '命中 2 条记录')
+  assert.strictEqual(undated.data.exampleEmpty, false)
+  assert.strictEqual(undated.data.groups[0].rows.length + undated.data.groups[1].rows.length, 2)
+  assert(undated.data.header.indexOf('·') === -1)
+  assert(JSON.stringify(undated.data.groups).indexOf('—') === -1)
   assert(!JSON.stringify(nullPage.data).includes('未知'))
 
   var shot = page(defs.viewer)
@@ -448,7 +475,7 @@ async function main() {
   assert.strictEqual(shot.data.image, '')
   assert.strictEqual(shot.data.plainShot, true)
   assert.strictEqual(shot.data.canSave, false)
-  assert.strictEqual(shot.data.date, '—')
+  assert.strictEqual(shot.data.date, '')
   assert.strictEqual(calls.some(function (opt) { return String(opt.url).indexOf('thumbnail') !== -1 }), false)
 
   var mock = require('../miniprogram/api/mock')

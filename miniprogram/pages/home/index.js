@@ -103,8 +103,25 @@ Page({
     this._homeSeq = seq
     httpApi.homeContent().then(function (content) {
       if (self._homeSeq !== seq) return
-      self._public = content
-      self.paint()
+      var cards = content.examples || []
+      if (!cards.length) {
+        self._public = content
+        self.paint()
+        return
+      }
+      var factsOf = require('../../utils/present').exampleFacts
+      Promise.all(cards.map(function (card) {
+        return httpApi.exampleReport(card.name).then(function (report) {
+          var facts = factsOf(report && report.records)
+          if (!facts.hit) return null
+          return { name: card.name, line: facts.line, sub: facts.sub, image: facts.image, illustrated: false }
+        }, function () { return null })
+      })).then(function (ready) {
+        if (self._homeSeq !== seq) return
+        content.examples = ready.filter(Boolean)
+        self._public = content
+        self.paint()
+      })
     }, function () {
       if (self._homeSeq !== seq) return
       self._public = { examples: [], announcements: [], showPlatformTotal: false, platformTotal: null }

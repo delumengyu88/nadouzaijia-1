@@ -1,2 +1,3 @@
 /* local */
 .thumb.thumb-plain { background: #d5dde8; }
+.announce-dismiss { margin-top: 20rpx; text-align: center; color: #8b95a3; font-size: 28rpx; line-height: 1.6; }

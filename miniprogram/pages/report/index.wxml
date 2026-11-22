@@ -59,7 +59,7 @@
           </view>
           <view class="rec-sub" wx:if="{{row.sub}}">{{row.sub}}</view>
           <view class="ex-sub" wx:if="{{row.category}}">{{row.category}}</view>
-          <view class="rec-date"><text>{{row.date}}</text><text class="age-tag" wx:if="{{row.ageLabel}}">{{row.ageLabel}}</text></view>
+          <view class="rec-date" wx:if="{{row.date || row.ageLabel}}"><text wx:if="{{row.date}}">{{row.date}}</text><text class="age-tag" wx:if="{{row.ageLabel}}">{{row.ageLabel}}</text></view>
         </view>
       </view>
     </block>

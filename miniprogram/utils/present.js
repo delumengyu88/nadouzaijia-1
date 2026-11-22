@@ -48,7 +48,7 @@ function toRow(rec, programName, mock, publicExample) {
     category: rec.category || '',
     time: (rec.timestamps || [])[0] || extra.time || '',
     clock: checked ? checked.slice(11, 16) : (publicExample ? '' : (extra.clock || '')),
-    date: checked ? checked.slice(0, 10) : (publicExample ? '—' : (extra.date || '')),
+    date: checked ? checked.slice(0, 10) : (publicExample ? '' : (extra.date || '')),
     ageLabel: ageLabelOf(rec.age_bucket, publicExample),
     badge: badge,
     low: !!(extra.low || rec.access === 'lowres'),
@@ -143,4 +143,22 @@ function present(search, meta) {
   }
 }
 
-module.exports = { present: present, findRow: findRow, otherLast: otherLast, OTHER: OTHER }
+function exampleFacts(records) {
+  var rows = (records || []).filter(function (rec) { return rec && rec.locked !== true })
+  var platforms = []
+  var latest = ''
+  var image = ''
+  rows.forEach(function (rec) {
+    var platform = rec.platform
+    if (platform && platform !== OTHER && platform !== '平台未识别' && platforms.indexOf(platform) === -1) platforms.push(platform)
+    var day = rec.checked_at ? String(rec.checked_at).slice(0, 10) : ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day > latest) latest = day
+    if (!image && /^https:\/\//.test(rec.thumbnail_url || '')) image = String(rec.thumbnail_url)
+    else if (!image && /^https:\/\//.test(rec.hd_url || '')) image = String(rec.hd_url)
+  })
+  var sub = '命中 ' + rows.length + ' 条记录'
+  if (latest) sub += ' · ' + latest
+  return { line: '涉及 ' + platforms.length + ' 个平台', sub: sub, hit: rows.length > 0, image: image }
+}
+
+module.exports = { present: present, findRow: findRow, otherLast: otherLast, exampleFacts: exampleFacts, OTHER: OTHER }
