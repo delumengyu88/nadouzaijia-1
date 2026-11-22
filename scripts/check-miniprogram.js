@@ -1006,6 +1006,10 @@ try {
   Object.keys(evidenceIds).forEach(function (id) {
     var detail = open('pages/evidence-detail/index', { id: id }, 'load')
     expect(detail.data.name, 'evidence ' + id)
+    if (id === '5' || id === '6') {
+      expect(detail.data.badge === (id === '5' ? '已交付' : '已完成'), 'mock staff status ' + id)
+      expect(!/确认|查收/.test(detail.data.message) && !detail.confirm, 'no customer receipt action ' + id)
+    }
     if (evidenceIds[id] === 'P12-failed-refunded') expect(detail.data.hasRefund && detail.data.refundAmount === 680, 'refund line')
     if (evidenceIds[id] === 'P12-failed') expect(!detail.data.hasRefund && detail.data.badge === '取证失败', 'failed without refund')
     cover(evidenceIds[id])
