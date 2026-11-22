@@ -7,6 +7,253 @@ function notReady() {
   return Promise.resolve({ ok: false, message: '服务暂不可用，请改用本地数据' })
 }
 
+// 支付结果只认服务端订单状态。客户端回调不能把订单标成已支付。
+class PayClient {
+  static remember(order, pay, token) {
+    if (!order || !order.orderNo || !token || token !== state.token()) return
+    var previousPay = PayClient.saved(order.orderNo)
+    PayClient.sessions[order.orderNo] = { token: token, pay: pay || previousPay || null }
+  }
+
+  static saved(orderNo) {
+    var row = PayClient.sessions[orderNo]
+    return row && row.token === state.token() ? row.pay : null
+  }
+
+  static yuan(fen) {
+    if (typeof fen !== 'number' || fen !== Math.floor(fen) || fen < 0) return ''
+    var whole = Math.floor(fen / 100)
+    var cents = fen % 100
+    if (!cents) return '¥' + whole
+    var text = cents < 10 ? '0' + cents : String(cents)
+    return '¥' + whole + '.' + text
+  }
+
+  static phaseOf(body) {
+    var status = body && body.status
+    if (body && (body.granted === true || status === '已发放')) return 'granted'
+    if (status === '发放异常') return 'grant_error'
+    if (status === '已支付') return 'granting'
+    if (status === '已退款' || status === '已取消') return 'cancelled'
+    if (status === '待支付') return 'pending'
+    return 'pending'
+  }
+
+  static viewFromServer(body) {
+    var phase = PayClient.phaseOf(body)
+    var priceText = PayClient.yuan(body.amount_fen)
+    var title = body.title || '订单'
+    return {
+      orderNo: body.order_number,
+      product: body.tier || '',
+      code: phase,
+      status: phase,
+      serverStatus: body.status,
+      card: title,
+      title: title,
+      priceText: priceText,
+      blurb: body.duration_days ? ('有效期 ' + body.duration_days + ' 天') : '',
+      renewLine: '',
+      coverLine: '',
+      payText: priceText ? ('立即支付 ' + priceText) : '立即支付',
+      allowCheck: false,
+      allowRepay: false,
+      showPay: phase === 'pending',
+      successLine: phase === 'granted' ? (title + '已发放') : '',
+      navTitle: body.status === '已退款' ? '已退款' : '',
+      centerTitle: body.status === '已退款' ? '订单已退款' : ''
+    }
+  }
+
+  static payParams(body) {
+    var keys = ['timeStamp', 'nonceStr', 'package', 'signType', 'paySign']
+    var pay = {}
+    var i
+    for (i = 0; i < keys.length; i++) {
+      if (typeof body[keys[i]] !== 'string' || !body[keys[i]]) return null
+      pay[keys[i]] = body[keys[i]]
+    }
+    return pay
+  }
+
+  static detailText(body) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return ''
+    if (typeof body.detail === 'string') return body.detail
+    if (body.order_number) return ''
+    if (typeof body.code === 'string') return body.code
+    if (typeof body.message === 'string') return body.message
+    return ''
+  }
+
+  static normalize(body) {
+    if (body && Array.isArray(body.detail)) return { ok: false, code: 'invalid', message: '档位无效' }
+    var detail = PayClient.detailText(body)
+    if (detail.indexOf('未配置') !== -1) return { ok: false, code: 'unconfigured', message: '支付暂未开通' }
+    if (detail === '未登录' || detail === 'authentication required') return { ok: false, code: 'login', message: '请先登录' }
+    if (detail === '档位无效') return { ok: false, code: 'invalid_tier', message: '档位无效' }
+    if (detail === '缺少微信 openid') return { ok: false, code: 'openid', message: '缺少微信 openid' }
+    if (detail === '微信支付下单失败') return { ok: false, code: 'upstream', message: '微信支付下单失败' }
+    if (detail === '订单不存在') return { ok: false, code: 'missing', message: '订单不存在' }
+    if (detail === '微信支付查询失败') return { ok: false, code: 'query_failed', message: '微信支付查询失败' }
+    if (detail === '金额不符') return { ok: false, code: 'amount', message: '金额不符' }
+    if (detail === '支付校验失败') return { ok: false, code: 'verify', message: '支付校验失败' }
+    if (detail === '订单创建失败') return { ok: false, code: 'create_failed', message: '订单创建失败' }
+    if (detail === 'account is disabled') return { ok: false, code: 'disabled', message: '账号不可用' }
+    if (body && typeof body.order_number === 'string' && body.order_number) {
+      var order = PayClient.viewFromServer(body)
+      return { ok: true, code: order.code, order: order, pay: PayClient.payParams(body) }
+    }
+    if (detail) return { ok: false, code: 'failed', message: detail }
+    return { ok: false, code: 'unknown', message: '服务暂不可用' }
+  }
+
+  static request(method, path, data) {
+    var config = require('../config')
+    var tokenState = require('./state')
+    var base = String(config.apiBase || '').replace(/\/$/, '')
+    if (!base) return Promise.resolve({ ok: false, code: 'offline', message: '未配置服务地址' })
+    var token = tokenState.token()
+    if (!token) return Promise.resolve({ ok: false, code: 'login', message: '请先登录' })
+    return new Promise(function (resolve) {
+      try {
+        wx.request({
+          url: base + path,
+          method: method,
+          timeout: 15000,
+          data: data === undefined ? {} : data,
+          header: { Authorization: 'Bearer ' + token },
+          success: function (res) {
+            if (tokenState.token() !== token) {
+              resolve({ ok: false, code: 'session_changed', message: '登录状态已变化' })
+              return
+            }
+            var normalized = PayClient.normalize(res && res.data)
+            if (normalized.code === 'login') tokenState.clearSession(token)
+            resolve(normalized)
+          },
+          fail: function () { resolve({ ok: false, code: 'network', message: '网络异常，请重试' }) }
+        })
+      } catch (error) {
+        resolve({ ok: false, code: 'network', message: '网络异常，请重试' })
+      }
+    })
+  }
+
+  static orderPath(orderNo) {
+    return '/api/v1/pay/orders/' + encodeURIComponent(orderNo || '')
+  }
+
+  static read(orderNo) {
+    return PayClient.request('GET', PayClient.orderPath(orderNo))
+  }
+
+  static sync(orderNo) {
+    return PayClient.request('POST', PayClient.orderPath(orderNo) + '/sync')
+  }
+
+  static failedView(orderNo, result) {
+    return {
+      orderNo: orderNo,
+      code: result.code || 'failed',
+      status: 'failed',
+      allowCheck: true,
+      allowRepay: false,
+      showPay: false,
+      message: result.message || ''
+    }
+  }
+}
+PayClient.sessions = {}
+
+function homePlatformTotal(value) {
+  if (typeof value !== 'number' || !isFinite(value) || value <= 0) return null
+  return value
+}
+
+function homeExamples(list) {
+  if (!Array.isArray(list)) return []
+  var out = []
+  list.forEach(function (item) {
+    if (!item || item.name == null || !String(item.name).trim()) return
+    out.push({
+      name: String(item.name),
+      line: item.line == null ? '' : String(item.line),
+      sub: item.sub == null ? '' : String(item.sub)
+    })
+  })
+  return out
+}
+
+function homeAnnouncements(list) {
+  if (!Array.isArray(list)) return []
+  var out = []
+  list.forEach(function (item) {
+    if (!item) return
+    var title = item.title == null ? '' : String(item.title)
+    var body = item.body == null ? '' : String(item.body)
+    if (!title && !body) return
+    var button = item.button_text == null ? '' : String(item.button_text).trim()
+    out.push({
+      id: item.id == null ? '' : String(item.id),
+      title: title,
+      body: body,
+      buttonText: button || '知道了'
+    })
+  })
+  return out
+}
+
+function emptyToNull(value) {
+  if (value == null || value === '') return null
+  return value
+}
+
+function adaptRecord(rec) {
+  if (!rec) return null
+  return {
+    record_id: rec.record_id == null ? '' : String(rec.record_id),
+    platform: rec.platform == null ? '' : String(rec.platform),
+    platform_subtype: rec.platform_subtype == null ? '' : String(rec.platform_subtype),
+    network_type: rec.network_type == null ? '' : String(rec.network_type),
+    category: rec.category == null ? '' : String(rec.category),
+    frame_count: typeof rec.frame_count === 'number' ? rec.frame_count : undefined,
+    timestamps: Array.isArray(rec.timestamps) ? rec.timestamps.map(String) : [],
+    checked_at: emptyToNull(rec.checked_at) == null ? null : String(rec.checked_at),
+    age_bucket: emptyToNull(rec.age_bucket) == null ? null : String(rec.age_bucket),
+    thumbnail_url: emptyToNull(rec.thumbnail_url) == null ? null : String(rec.thumbnail_url),
+    hd_url: emptyToNull(rec.hd_url) == null ? null : String(rec.hd_url),
+    access: emptyToNull(rec.access),
+    can_download_report: rec.can_download_report == null ? null : !!rec.can_download_report,
+    can_download_screenshot: rec.can_download_screenshot == null ? null : !!rec.can_download_screenshot,
+    locked: rec.locked == null ? null : !!rec.locked
+  }
+}
+
+function adaptExample(body) {
+  var src = body || {}
+  var records = []
+  ;(src.records || []).forEach(function (rec) {
+    var row = adaptRecord(rec)
+    if (row) records.push(row)
+  })
+  return {
+    name: src.name == null ? '' : String(src.name),
+    program_name: src.program_name == null ? '' : String(src.program_name),
+    example: true,
+    publicExample: true,
+    outcome: src.outcome || (records.length ? 'hit' : 'miss'),
+    platform_count: typeof src.platform_count === 'number' ? src.platform_count : 0,
+    unverified_source_count: typeof src.unverified_source_count === 'number' ? src.unverified_source_count : 0,
+    line: src.line == null ? '' : String(src.line),
+    sub: src.sub == null ? '' : String(src.sub),
+    records: records,
+    evidence_program_name: '',
+    evidence_platforms: [],
+    locked_summary: shape.emptySummary(),
+    locked_window: { count: 0, start: '', end: '' }
+  }
+}
+
 // POST /api/v1/invite-codes/redeem puts the domain code in `detail`
 // (invalid, expired, used, bound). Map that string, never the HTTP status.
 var INVITE_ERRORS = {
@@ -126,8 +373,8 @@ module.exports = {
   login: require('./auth').login,
   switchAccount: function () { return this.profile() },
   accountKind: function () { return state.currentId() },
-  profile: function () { return require('./mock').profile() },
-  memberCenter: function () { return require('./mock').memberCenter() },
+  profile: function () { return require('./identity').loadProfile() },
+  memberCenter: function () { return require('./identity').loadMemberCenter() },
   membershipPlans: function () { return require('./mock').membershipPlans() },
   setDraft: function (value) { state.load().draft = String(value || ''); state.save() },
   getDraft: function () { return state.load().draft || '' },
@@ -145,17 +392,86 @@ module.exports = {
       return shape.sanitizeSearch(body)
     })
   },
-  exampleReport: function () { return null },
+  homeContent: function () {
+    return request('/api/v1/app/home', {}, { public: true }).then(function (body) {
+      var src = body || {}
+      var total = homePlatformTotal(src.platformTotal)
+      return {
+        platformTotal: total,
+        showPlatformTotal: total !== null,
+        examples: homeExamples(src.examples),
+        announcements: homeAnnouncements(src.announcements)
+      }
+    })
+  },
+  exampleReport: function (name) {
+    var title = String(name || '').trim()
+    if (!title) return Promise.resolve(null)
+    return request('/api/v1/app/examples/' + encodeURIComponent(title), {}, { public: true }).then(function (body) {
+      return adaptExample(body)
+    })
+  },
   programMeta: function (name) { return { name: name, type: '', year: '' } },
   tierOfAccount: function () { return state.userId() ? 'free' : 'guest' },
-  checkout: function () { return notReady() },
-  getOrder: function () { return null },
-  listOrders: function () { return [] },
-  startPay: function () { return notReady() },
+  checkout: function (product) {
+    var tier = typeof product === 'string' ? product : ''
+    var token = state.token()
+    return PayClient.request('POST', '/api/v1/pay/orders', { tier: tier }).then(function (result) {
+      if (result.ok) PayClient.remember(result.order, result.pay, token)
+      return result
+    })
+  },
+  getOrder: function (orderNo) {
+    if (!orderNo) return Promise.resolve(null)
+    return PayClient.read(orderNo).then(function (result) { return result.ok ? result.order : null })
+  },
+  listOrders: function () {
+    return request('/api/v1/pay/orders').then(function (body) {
+      if (!Array.isArray(body)) throw new Error('服务暂不可用')
+      return body
+    })
+  },
+  startPay: function (orderNo) {
+    var pay = PayClient.saved(orderNo)
+    return PayClient.read(orderNo).then(function (result) {
+      if (!result.ok) return { ok: false, code: result.code, message: result.message }
+      var order = result.order
+      if (order.code === 'granted' || order.code === 'granting' || order.code === 'grant_error') {
+        return { ok: false, code: order.code, message: '请勿重复支付', order: order }
+      }
+      if (!pay) return { ok: false, code: 'no_params', message: '请重新下单', order: order }
+      var paying = Object.assign({}, order, { status: 'paying', code: 'paying', showPay: false })
+      return { ok: true, code: 'paying', order: paying, pay: pay }
+    })
+  },
   setOrderStatus: function () { return null },
-  settle: function () { return notReady() },
-  checkStatus: function () { return null },
-  repay: function () { return notReady() },
+  settle: function (orderNo, outcome) {
+    // outcome 只在原型里模拟结果。线上忽略它，避免把订单标成已支付。
+    return PayClient.sync(orderNo).then(function (result) {
+      if (result.ok) return { ok: true, code: result.code, order: result.order }
+      return { ok: false, code: result.code, message: result.message, order: result.code === 'unconfigured' ? null : PayClient.failedView(orderNo, result) }
+    })
+  },
+  checkStatus: function (orderNo) {
+    if (!orderNo) return Promise.resolve(null)
+    return PayClient.sync(orderNo).then(function (result) {
+      if (result.ok) return result.order
+      if (result.code === 'unconfigured') return { orderNo: orderNo, code: 'unconfigured', status: 'unavailable' }
+      return PayClient.failedView(orderNo, result)
+    })
+  },
+  repay: function (orderNo) {
+    var pay = PayClient.saved(orderNo)
+    return PayClient.sync(orderNo).then(function (result) {
+      if (!result.ok) return { ok: false, code: result.code, message: result.message, order: result.code === 'unconfigured' ? null : PayClient.failedView(orderNo, result) }
+      var order = result.order
+      if (order.code !== 'pending') return { ok: false, code: order.code, message: '订单已支付，不能再次支付', order: order }
+      if (!pay) return { ok: false, code: 'no_params', message: '请重新下单', order: order }
+      var paying = Object.assign({}, order, { status: 'paying', code: 'paying', showPay: false, allowRepay: false })
+      paying.sameNo = paying.orderNo === orderNo
+      return { ok: true, code: 'paying', order: paying, pay: pay }
+    })
+  },
   inviteState: function () { return loadInviteState() },
   redeem: function (raw) {
     var code = raw == null ? '' : String(raw)

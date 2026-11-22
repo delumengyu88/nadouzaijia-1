@@ -14,7 +14,10 @@ global.wx = {
   setStorageSync: function (key, value) { storage[key] = JSON.parse(JSON.stringify(value)) },
   removeStorageSync: function (key) { delete storage[key] },
   getSystemInfoSync: function () { return { statusBarHeight: 20 } },
-  request: function (opt) { requests.push(opt) },
+  request: function (opt) {
+    if (opt.url.endsWith('/auth/me')) opt.success({statusCode: 200, data:{id:'user-1',tier:'free'}})
+    else requests.push(opt)
+  },
   navigateTo: function () {},
   navigateBack: function () {},
   switchTab: function () {},
@@ -136,9 +139,10 @@ async function main() {
   assert.strictEqual(profile.data.bindText, '')
   await answer({ guest: false, bound: true, bindText: '邀请码 ABCD****' })
   assert.strictEqual(profile.data.bindText, '邀请码 ABCD****')
+  assert.strictEqual(profile.data.heading, '免费用户')
   assert.strictEqual(profile.data.inviteMask, 'ABCD****')
   assert.strictEqual(profile.data.bound, true)
-  assert.strictEqual(http.profile().tier, 'free')
+  assert.strictEqual((await http.profile()).tier, 'free')
 
   var expired = http.inviteState()
   var again = http.inviteState()
@@ -156,7 +160,7 @@ async function main() {
   var second = await again
   assert.strictEqual(first.bound, true)
   assert.strictEqual(second.bindText, '邀请码 WXYZ****')
-  assert.strictEqual(http.profile().tier, 'free')
+  assert.strictEqual((await http.profile()).tier, 'free')
 
   var banned = http.inviteState()
   var bannedReq = await answer({ detail: 'account is disabled' }, 403)

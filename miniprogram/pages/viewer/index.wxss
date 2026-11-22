@@ -1,3 +1,5 @@
+/* local */
+.shot.shot-plain { background: #d5dde8; }
 /* Gray control keeps the reason on the label. It is not a download entry. */
 .btn.reason {
   width: auto;
