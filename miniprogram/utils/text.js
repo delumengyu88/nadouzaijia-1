@@ -1,4 +1,4 @@
-var STOP_WORDS = require('../stop-words.json')
+var STOP_WORDS = require('../stop-words.js')
 
 function foldKey(input) {
   var s = toHalf(String(input || ''))
