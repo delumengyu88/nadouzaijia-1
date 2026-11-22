@@ -17,6 +17,12 @@ module.exports = function (path, data, options) {
         data: data || {},
         header: token ? { Authorization: 'Bearer ' + token } : {},
         success: function (res) {
+          // Redeem reads the body `detail` code and must not collapse it to a status error.
+          if (options.exposeStatus) {
+            if (res.statusCode === 401 && token) state.clearSession(token)
+            resolve({ statusCode: res.statusCode, data: res.data })
+            return
+          }
           if (res.statusCode >= 200 && res.statusCode < 300) resolve(res.data || {})
           else {
             // An old in-flight request must not erase a newly logged-in account.

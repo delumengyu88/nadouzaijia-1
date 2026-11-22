@@ -24,19 +24,38 @@ Page({
     else wx.switchTab({ url: '/pages/profile/index' })
   },
   onCode: function (e) { this.setData({ code: e.detail.value }) },
+  showResult: function (result, code) {
+    if (result && result.ok) {
+      this.setData({ phase: 'success', headline: result.headline, sub: result.sub, hasVip: result.hasVip })
+      return
+    }
+    var kind = result && result.code
+    var phase = kind === 'bound' ? 'bound' : (kind === 'limited' ? 'rate' : 'error')
+    this.setData({
+      phase: phase,
+      message: (result && result.message) || '网络异常，请重试',
+      code: code
+    })
+  },
   submit: function () {
-    if (this.data.phase === 'bound' || this.data.phase === 'rate') return
+    if (this._busy || this.data.phase === 'bound' || this.data.phase === 'rate' || this.data.phase === 'redeeming') return
     var code = this.data.code
-    this.setData({ phase: 'redeeming', code: code })
     var self = this
+    if (require('../../config').mode === 'live') {
+      this._busy = true
+      this.setData({ phase: 'redeeming', code: code })
+      Promise.resolve().then(function () { return api.redeem(code) }).then(function (result) {
+        self._busy = false
+        self.showResult(result, code)
+      }, function () {
+        self._busy = false
+        self.setData({ phase: 'error', message: '网络异常，请重试', code: code })
+      })
+      return
+    }
+    this.setData({ phase: 'redeeming', code: code })
     nav.later(500, function () {
-      var result = api.redeem(code)
-      if (result.ok) {
-        self.setData({ phase: 'success', headline: result.headline, sub: result.sub, hasVip: result.hasVip })
-        return
-      }
-      var phase = result.code === 'bound' ? 'bound' : (result.code === 'limited' ? 'rate' : 'error')
-      self.setData({ phase: phase, message: result.message, code: code })
+      self.showResult(api.redeem(code), code)
     })
   },
   reset: function () { this.setData({ phase: 'form', message: '', code: '' }) },
