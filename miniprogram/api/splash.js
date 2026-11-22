@@ -14,12 +14,25 @@ function markSeen() {
   state.save()
 }
 
-// 开屏要不要出现，只看这里。
-// 当前：后台没有明确关掉，并且这台设备还没看完一次。
-// 以后若要改成每次启动都展示，只改这个函数。
+function launchData() {
+  var app = getApp()
+  if (!app.globalData) app.globalData = {}
+  return app.globalData
+}
+
+// 只存在这次进程里。冷启动时 App.onLaunch 会清掉，不写本地存储。
+function shownThisLaunch() {
+  return !!launchData().splashShownThisLaunch
+}
+
+function markShownThisLaunch() {
+  launchData().splashShownThisLaunch = true
+}
+
+// 开屏要不要出现，只看这里：后台明确关闭才不展示，其余都展示。
+// 同一次冷启动里已经展示过，由 App 内存标记另外判断。
 function shouldShow(enabled) {
-  if (enabled === false) return false
-  return !seen()
+  return enabled !== false
 }
 
 function readEnabled(body) {
@@ -52,6 +65,8 @@ function loadEnabled() {
 module.exports = {
   seen: seen,
   markSeen: markSeen,
+  shownThisLaunch: shownThisLaunch,
+  markShownThisLaunch: markShownThisLaunch,
   shouldShow: shouldShow,
   loadEnabled: loadEnabled,
   readEnabled: readEnabled

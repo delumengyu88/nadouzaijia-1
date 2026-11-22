@@ -264,7 +264,11 @@ global.wx = {
     wx._tabBarLog.push('show')
   }
 }
-global.getApp = function () { return { globalData: {} } }
+global.getApp = function () {
+  if (!global.__app) global.__app = { globalData: {} }
+  if (!global.__app.globalData) global.__app.globalData = {}
+  return global.__app
+}
 global.App = function (def) { global.__app = def }
 global.Component = function (def) { global.__component = def }
 global.getCurrentPages = function () { return [{}, {}] }
@@ -315,7 +319,7 @@ function expect(cond, message) {
 function boot(account, opts) {
   api.reset()
   api.switchAccount(account)
-  if (!opts || opts.splash !== false) api.markSplashSeen()
+  getApp().globalData.splashShownThisLaunch = !opts || opts.splash !== false
   if (!opts || opts.announce !== false) api.markAnnounceSeen()
 }
 
@@ -367,15 +371,22 @@ try {
   expect(homeWxml.indexOf('wx:if="{{!splashFailed}}"') !== -1 && homeWxml.indexOf('那豆在架') !== -1,
     'text splash keeps the brand on the same cover')
   flush()
-  expect(home.data.showSplash && !api.splashSeen(), 'image timeout must not mark splash seen')
+  expect(home.data.showSplash && !api.splashSeen(), 'image timeout must not write splashSeen')
   home.splashFailed()
-  expect(home.data.showSplash && home.data.splashFailed && !api.splashSeen(), 'image error must not mark splash seen')
+  expect(home.data.showSplash && home.data.splashFailed && !api.splashSeen(), 'image error must not write splashSeen')
   cover('P01')
   home.finishSplash()
-  expect(!home.data.showSplash && home.data.showAnnounce && api.splashSeen(), 'skip marks splash seen and announcement follows')
+  expect(!home.data.showSplash && home.data.showAnnounce && !api.splashSeen(), 'skip ends splash without writing storage')
+  expect(getApp().globalData.splashShownThisLaunch, 'splash counts for this cold start')
   expect(wx._tabBarLog[wx._tabBarLog.length - 1] === 'show', 'splash end shows the custom tab bar')
+  home.onShow()
+  expect(!home.data.showSplash, 'returning from background does not show splash again')
   var second = open('pages/home/index', {}, 'show')
-  expect(!second.data.showSplash, 'second launch does not show splash')
+  expect(!second.data.showSplash, 'switching back to home does not show splash again')
+  getApp().onLaunch()
+  expect(!getApp().globalData.splashShownThisLaunch, 'cold start clears the memory flag')
+  var cold = open('pages/home/index', {}, 'show')
+  expect(cold.data.showSplash && !api.splashSeen(), 'next cold start shows splash without storage')
   cover('P02')
   home.closeAnnounce()
 
@@ -393,17 +404,21 @@ try {
     for (step = 0; step < 4; step++) ticks[0].fn()
     expect(timed.data.showSplash && timed.data.seconds === 1 && !api.splashSeen(), 'countdown has not finished early')
     ticks[0].fn()
-    expect(!timed.data.showSplash && api.splashSeen(), 'countdown end marks splash seen')
+    expect(!timed.data.showSplash && !api.splashSeen() && getApp().globalData.splashShownThisLaunch,
+      'countdown end hides splash without writing storage')
     var afterCountdown = open('pages/home/index', {}, 'show')
-    expect(!afterCountdown.data.showSplash, 'second launch after countdown does not show splash')
+    expect(!afterCountdown.data.showSplash, 'same launch does not show splash after countdown')
   } finally {
     global.setInterval = savedInterval
   }
 
   var splashApi = require(path.join(root, 'api/splash'))
   boot('guest', { splash: false, announce: false })
-  expect(splashApi.shouldShow(true) === true && splashApi.shouldShow(undefined) === true, 'first launch shows when switch is on')
+  expect(splashApi.shouldShow(true) === true && splashApi.shouldShow(undefined) === true, 'switch on shows splash')
   expect(splashApi.shouldShow(false) === false, 'switch off does not show')
+  api.markSplashSeen()
+  expect(splashApi.shouldShow(true) === true, 'splashSeen storage is not a display condition')
+  boot('guest', { splash: false, announce: false })
   var splashSource = fs.readFileSync(path.join(root, 'api/splash.js'), 'utf8')
   expect(splashSource.indexOf('http://') === -1 && splashSource.indexOf('https://') === -1, 'splash config has no hardcoded host')
   expect(splashSource.indexOf("'/api/v1/app/config'") !== -1, 'splash config path')

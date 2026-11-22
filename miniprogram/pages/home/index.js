@@ -18,9 +18,18 @@ function skipMetrics() {
 
 Page({
   data: { showBrand: true, title: '', examples: [], taps: 0, showSplash: false, seconds: 5, splashFailed: false },
+  splashVisible: function () {
+    if (!splash.shouldShow(this.splashEnabled)) return false
+    if (this._splashLive) return true
+    return !splash.shownThisLaunch()
+  },
   onShow: function () {
-    var show = splash.shouldShow(this.splashEnabled)
-    if (show) this.holdTabBar()
+    var show = this.splashVisible()
+    if (show) {
+      splash.markShownThisLaunch()
+      this._splashLive = true
+      this.holdTabBar()
+    }
     this.paint()
     if (show) {
       this.armSplash()
@@ -40,7 +49,7 @@ Page({
     data.title = ''
     data.showBack = false
     Object.keys(home).forEach(function (key) { data[key] = home[key] })
-    data.showSplash = splash.shouldShow(this.splashEnabled)
+    data.showSplash = this.splashVisible()
     data.seconds = this.data.seconds || 5
     data.splashFailed = !!this.data.splashFailed
     if (data.showSplash) {
@@ -105,6 +114,7 @@ Page({
   },
   dropSplash: function () {
     this.splashEnabled = false
+    this._splashLive = false
     this.clearSplashTimers()
     this.releaseTabBar()
     this.paint()
@@ -112,8 +122,8 @@ Page({
   finishSplash: function () {
     if (this._splashDone || !this.data.showSplash) return
     this._splashDone = true
+    this._splashLive = false
     this.clearSplashTimers()
-    splash.markSeen()
     this.releaseTabBar()
     this.paint()
   },
