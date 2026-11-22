@@ -30,6 +30,36 @@ class Settings(BaseSettings):
     )
     wx_appid: str = Field(default="", validation_alias="NADOU_WX_APPID")
     wx_appsecret: SecretStr = Field(default=SecretStr(""), validation_alias="NADOU_WX_APPSECRET")
+    wechat_mch_id: str = Field(default="", validation_alias="NADOU_WECHAT_MCH_ID")
+    wechat_api_v3_key: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="NADOU_WECHAT_API_V3_KEY",
+    )
+    wechat_mch_private_key_path: str = Field(
+        default="",
+        validation_alias="NADOU_WECHAT_MCH_PRIVATE_KEY_PATH",
+    )
+    wechat_mch_cert_serial: str = Field(
+        default="",
+        validation_alias="NADOU_WECHAT_MCH_CERT_SERIAL",
+    )
+    wechat_pay_public_key_path: str = Field(
+        default="",
+        validation_alias="NADOU_WECHAT_PAY_PUBLIC_KEY_PATH",
+    )
+    wechat_pay_public_key_id: str = Field(
+        default="",
+        validation_alias="NADOU_WECHAT_PAY_PUBLIC_KEY_ID",
+    )
+    wechat_notify_url: str = Field(default="", validation_alias="NADOU_WECHAT_NOTIFY_URL")
+    wechat_pay_test_tier: bool = Field(
+        default=False,
+        validation_alias="NADOU_WECHAT_PAY_TEST_TIER",
+    )
+    wechat_pay_test_users: str = Field(
+        default="",
+        validation_alias="NADOU_WECHAT_PAY_TEST_USERS",
+    )
     data_source: str = Field(
         default="demo",
         validation_alias=AliasChoices("NADOU_DATA_SOURCE"),

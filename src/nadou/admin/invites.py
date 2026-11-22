@@ -9,6 +9,7 @@ from nadou.admin.audit import AuditWriter
 from nadou.admin.errors import WorkbenchError
 from nadou.admin.phone import PhoneMask
 from nadou.models import Entitlement, InviteCode, Order, StaffAccount, User
+from nadou.payments.catalog import excluded_from_workbench_stats
 
 
 class InviteAlphabet:
@@ -79,6 +80,8 @@ class InviteStats:
         paid_at: dict[str, list[datetime]] = {}
         for order in orders:
             if order.status not in InviteStats.PAID:
+                continue
+            if excluded_from_workbench_stats(order.product):
                 continue
             when = order.paid_at or order.created_at
             paid_at.setdefault(order.user_id, []).append(when)
