@@ -35,7 +35,7 @@ var EVIDENCE_TEXT = {
   accepted: '',
   pay: '请按客服指引完成线下付款，付款不在小程序内完成。',
   working: '',
-  delivered: '材料已线下交付，请确认查收。',
+  delivered: '材料已线下交付。',
   done: '',
   failed: '',
   closed: '',
@@ -635,7 +635,6 @@ function viewEvidence(item) {
     refundMethod: item.refundMethod || '',
     refundTime: item.refundTime || '',
     canWithdraw: item.status === 'submitted',
-    canConfirm: item.status === 'delivered',
     contactFrom: 'evidence:' + item.no,
     phoneText: maskPhone(item.phone) || '—',
     quoteText: '—',
@@ -1037,19 +1036,6 @@ module.exports = {
     if (!found) return { ok: false, message: '申请不存在' }
     if (found.status !== 'submitted') return { ok: false, message: '当前状态不能撤回' }
     found.status = 'cancelled'
-    save()
-    return { ok: true, detail: viewEvidence(found) }
-  },
-  confirmEvidence: function (id) {
-    var account = acc()
-    if (!account) return { ok: false, message: '请先登录' }
-    var found = null
-    account.evidence.forEach(function (item) {
-      if (item.id === id) found = item
-    })
-    if (!found) return { ok: false, message: '申请不存在' }
-    if (found.status !== 'delivered') return { ok: false, message: '当前状态不能确认' }
-    found.status = 'done'
     save()
     return { ok: true, detail: viewEvidence(found) }
   },

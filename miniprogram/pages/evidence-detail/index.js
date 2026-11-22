@@ -16,7 +16,6 @@ var EMPTY = {
   reason: '',
   hasRefund: false,
   canWithdraw: false,
-  canConfirm: false,
   showPayBanner: false,
   steps: [],
   times: [],
@@ -80,16 +79,12 @@ Page({
   },
   withdraw: function () {
     var self = this
-    this.ask('确定撤回这份取证申请？', function () { self.runAction('withdrawEvidence') })
+    this.ask('确定撤回这份取证申请？', function () { self.withdrawRequest() })
   },
-  confirm: function () {
-    var self = this
-    this.ask('确定已经收到取证材料？', function () { self.runAction('confirmEvidence') })
-  },
-  runAction: function (method) {
+  withdrawRequest: function () {
     if (this.data.acting) return
     this.setData({ acting: true })
-    var result = api[method](this.id)
+    var result = api.withdrawEvidence(this.id)
     var self = this
     function done(res) {
       self.setData({ acting: false })
