@@ -2,7 +2,7 @@ var api = require('../../api/index')
 var nav = require('../../utils/nav')
 
 Page({
-  data: { title: '兑换邀请码', showBack: true, phase: 'loading', code: '', loginLoading: false, loginError: '' },
+  data: { title: '兑换邀请码', showBack: true, phase: 'loading', code: '', fieldError: false, loginLoading: false, loginError: '' },
   onLoad: function (query) {
     this._query = query || {}
     var layout = nav.layout('invite', this.query)
@@ -66,10 +66,18 @@ Page({
     if (getCurrentPages().length > 1) wx.navigateBack()
     else wx.switchTab({ url: '/pages/profile/index' })
   },
-  onCode: function (e) { this.setData({ code: e.detail.value }) },
+  onCode: function (e) { this.setData({ code: e.detail.value, fieldError: false }) },
+  clearCode: function () { this.setData({ code: '', fieldError: false }) },
   showResult: function (result, code) {
     if (result && result.ok) {
-      this.setData({ phase: 'success', headline: result.headline, sub: result.sub, hasVip: result.hasVip })
+      var expiry = result.expiry || ''
+      this.setData({
+        phase: 'success',
+        headline: '兑换成功',
+        sub: expiry ? ('有效至 ' + expiry) : '',
+        hasVip: result.hasVip,
+        fieldError: false
+      })
       return
     }
     var kind = result && result.code
@@ -77,30 +85,32 @@ Page({
     this.setData({
       phase: phase,
       message: (result && result.message) || '网络异常，请重试',
-      code: code
+      code: code,
+      fieldError: phase === 'error'
     })
   },
   submit: function () {
     if (this._busy || this.data.phase === 'bound' || this.data.phase === 'rate' || this.data.phase === 'redeeming' || this.data.phase === 'loading' || this.data.phase === 'guest' || this.data.phase === 'unavailable') return
-    var code = this.data.code
+    var code = this.data.code || ''
+    if (code.length < 8) return
     var self = this
     if (require('../../config').mode === 'live') {
       this._busy = true
-      this.setData({ phase: 'redeeming', code: code })
+      this.setData({ phase: 'redeeming', code: code, fieldError: false })
       Promise.resolve().then(function () { return api.redeem(code) }).then(function (result) {
         self._busy = false
         self.showResult(result, code)
       }, function () {
         self._busy = false
-        self.setData({ phase: 'error', message: '网络异常，请重试', code: code })
+        self.setData({ phase: 'error', message: '网络异常，请重试', code: code, fieldError: true })
       })
       return
     }
-    this.setData({ phase: 'redeeming', code: code })
+    this.setData({ phase: 'redeeming', code: code, fieldError: false })
     nav.later(500, function () {
       self.showResult(api.redeem(code), code)
     })
   },
-  reset: function () { this.setData({ phase: 'form', message: '', code: '' }) },
-  profile: function () { wx.switchTab({ url: '/pages/profile/index' }) }
+  profile: function () { wx.switchTab({ url: '/pages/profile/index' }) },
+  home: function () { wx.switchTab({ url: '/pages/home/index' }) }
 })

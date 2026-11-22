@@ -6,11 +6,15 @@
 </view>
 <view style="height: {{navHeight}}px;"></view>
 <view class="body" wx:if="{{phase == 'success'}}">
-  <view class="center-box">
-    <view class="tag ok">兑换成功</view>
-    <view class="center-title" style="margin-top:28rpx;">{{headline}}</view>
-    <view class="center-sub" wx:if="{{sub}}">{{sub}}</view>
-    <view class="btn slim" bindtap="profile">查看个人中心</view>
+  <view class="success-wrap">
+    <icon type="success" size="56" color="#16A34A" />
+    <view class="success-title">兑换成功</view>
+    <view class="success-sub">
+      <view>已发放普通会员 30 天</view>
+      <view wx:if="{{sub}}">{{sub}}</view>
+    </view>
+    <button class="success-primary" bindtap="profile">查看个人中心</button>
+    <button class="success-link" bindtap="home">返回首页</button>
   </view>
 </view>
 <view class="body" wx:elif="{{phase == 'loading'}}">
@@ -24,11 +28,14 @@
   <view class="center-box"><view class="center-title">{{message}}</view></view>
 </view>
 <view class="body" wx:else>
-  <view class="note" wx:if="{{phase == 'form'}}">8 位字母或数字</view>
-  <view class="note" wx:if="{{phase == 'rate'}}">8 位字母或数字</view>
-  <input class="field code-input" value="{{code}}" bindinput="onCode" disabled="{{phase == 'bound' || phase == 'rate' || phase == 'redeeming'}}" maxlength="8" />
+  <view class="note">8 位字母或数字</view>
+  <view class="code-box {{fieldError ? 'bad' : ''}}">
+    <view class="code-side"></view>
+    <input class="code-input" value="{{code}}" bindinput="onCode" disabled="{{phase == 'bound' || phase == 'rate' || phase == 'redeeming'}}" maxlength="8" />
+    <view class="code-clear" wx:if="{{code && phase != 'bound' && phase != 'rate' && phase != 'redeeming'}}" catchtap="clearCode">×</view>
+    <view class="code-side" wx:else></view>
+  </view>
   <view class="note" wx:if="{{phase == 'redeeming'}}" style="color:#1D4E9E;text-align:center;">正在兑换…</view>
   <view class="err-box" wx:if="{{phase == 'error' || phase == 'bound' || phase == 'rate'}}">{{message}}</view>
-  <button class="btn block {{phase == 'bound' || phase == 'rate' ? 'off' : ''}}" bindtap="submit" loading="{{phase == 'redeeming'}}" disabled="{{phase == 'redeeming'}}">兑换</button>
-  <view class="btn block plain" wx:if="{{phase == 'error'}}" bindtap="reset">重新输入</view>
+  <button class="btn block {{(phase == 'bound' || phase == 'rate' || code.length < 8) && phase != 'redeeming' ? 'off' : ''}}" bindtap="submit" loading="{{phase == 'redeeming'}}" disabled="{{phase == 'redeeming' || phase == 'bound' || phase == 'rate' || code.length < 8}}">兑换</button>
 </view>

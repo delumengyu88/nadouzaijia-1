@@ -61,15 +61,13 @@ function refreshMembership() {
 function inviteSuccess(body, user) {
   var expiry = beijingDay(body && body.expires_at)
   var hasVip = !!(user && user.tier === 'vip')
-  var headline = '已发放普通会员 30 天'
-  if (hasVip && expiry) headline += '，有效至 ' + expiry
   return {
     ok: true,
     code: 'success',
     expiry: expiry,
     hasVip: hasVip,
-    headline: headline,
-    sub: hasVip ? '' : (expiry ? '有效至 ' + expiry : '')
+    headline: '兑换成功',
+    sub: expiry ? ('有效至 ' + expiry) : ''
   }
 }
 
