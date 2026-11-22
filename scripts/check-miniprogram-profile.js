@@ -12,7 +12,10 @@ global.wx = {
   getStorageSync: function (key) { return storage[key] },
   setStorageSync: function (key, value) { storage[key] = JSON.parse(JSON.stringify(value)) },
   getSystemInfoSync: function () { return { statusBarHeight: 20 } },
-  request: function (opts) { requests.push(opts) },
+  request: function (opts) {
+    if (opts.url.endsWith('/invite-codes/state')) opts.success({statusCode: 200, data: {guest:false,bound:false,bindText:'兑换邀请码'}})
+    else requests.push(opts)
+  },
   navigateTo: function () {},
   switchTab: function () {},
   showToast: function () {}

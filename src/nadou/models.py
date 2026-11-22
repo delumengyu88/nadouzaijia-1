@@ -4,6 +4,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -388,12 +389,26 @@ class OrderIssuance(Base):
 
 
 class MemberQuery(Base):
-    """One member lookup. The id is the 查询编号 on the exported workbook."""
+    """One member lookup. The id is the 查询编号 on the exported workbook.
+
+    ``user_id`` stays nullable so rows written before this column existed
+    still load. A row with no owner cannot be listed, opened, or exported.
+    ``seen_at`` is when that user opened a finished query.
+    ``ix_member_queries_user_id_created_at`` is the access path for a later
+    retention delete; this process does not delete expired rows.
+    """
 
     __tablename__ = "member_queries"
+    __table_args__ = (Index("ix_member_queries_user_id_created_at", "user_id", "created_at"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("users.id", name="fk_member_queries_user_id"),
+    )
+    seen_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+    user: Mapped[User | None] = relationship()
     programs: Mapped[list["QueryProgram"]] = relationship(
         back_populates="query",
         order_by="QueryProgram.position",

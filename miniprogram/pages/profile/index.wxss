@@ -4,6 +4,8 @@
   padding-bottom: 16px;
 }
 .row { padding-top: 24rpx; padding-bottom: 24rpx; }
+.invite-row { min-height: 102rpx; box-sizing: border-box; }
+.invite-bound { margin-left: 16rpx; color: #646A73; font-size: 28rpx; line-height: 40rpx; }
 .card .choice-top { min-width: 0; }
 .nick {
   flex: 1;
