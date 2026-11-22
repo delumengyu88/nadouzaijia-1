@@ -50,6 +50,9 @@ Page({
     this.programName = decode(query.name)
     this.orderNo = query.id || ''
     this.livePayFlow = require('../../config').mode === 'live'
+    if (this.livePayFlow && (this.orderNo ? /^XV/.test(this.orderNo) : require('../../config').virtualPayment)) {
+      this.setData({paymentNote: require('../../api/xpay').paymentNote()})
+    }
     this._session = this.livePayFlow ? state.token() : ''
     this._pollToken = 0
     var layout = nav.layout('pay', this.query)
@@ -219,7 +222,7 @@ Page({
         return
       }
       if (result.code === 'unsupported') {
-        self.setData({ phase: 'unavailable', title: '微信版本不支持', resultSub: result.message, payLoading: false, showPay: false })
+        self.setData({ phase: 'unavailable', title: '当前设备无法支付', resultSub: result.message, payLoading: false, showPay: false })
         return
       }
       if (result.code === 'covered') {
@@ -267,8 +270,14 @@ Page({
     }
     try {
       if (pay.mode === 'short_series_goods') {
+        var virtual = require('../../api/xpay')
+        var reason = virtual.clientError(pay)
+        if (reason) {
+          self.setData({ phase: 'unavailable', title: '暂时无法购买', resultSub: reason, payLoading: false, showPay: false })
+          return
+        }
         wx.requestVirtualPayment(Object.assign({}, pay, { success: done, fail: function (error) {
-          var message = require('../../api/xpay').configurationError(error)
+          var message = virtual.configurationError(error)
           if (!message) { done(); return }
           if (once || !self.activeSession()) return
           once = true

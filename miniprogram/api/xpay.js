@@ -1,15 +1,37 @@
 var state = require('./state')
 
-function clientError() {
+function deviceInfo() {
+  if (typeof wx.getDeviceInfo === 'function') return wx.getDeviceInfo()
+  return wx.getSystemInfoSync ? wx.getSystemInfoSync() : {}
+}
+
+function isAppleDevice(device) {
+  return String(device.platform || '').toLowerCase() === 'ios'
+}
+
+function clientError(pay) {
   if (typeof wx.requestVirtualPayment !== 'function') return '当前微信版本不支持虚拟支付，请更新微信后再试。'
-  var legacy = {}
-  if (!wx.getDeviceInfo || !wx.getAppBaseInfo) legacy = wx.getSystemInfoSync ? wx.getSystemInfoSync() : {}
-  var device = wx.getDeviceInfo ? wx.getDeviceInfo() : legacy
-  if (String(device.platform || '').toLowerCase() !== 'ios') return ''
-  var info = wx.getAppBaseInfo ? wx.getAppBaseInfo() : legacy
+  var device = deviceInfo()
+  if (!isAppleDevice(device)) return ''
+  var system = /(?:iOS|iPadOS)\s*(\d+)/i.exec(String(device.system || ''))
+  if (!system || Number(system[1]) < 15) return 'Apple 支付需 iOS 15 或更高版本，请检查设备系统版本。'
+  var info = wx.getAppBaseInfo ? wx.getAppBaseInfo() : (wx.getSystemInfoSync ? wx.getSystemInfoSync() : {})
   var parts = String(info.version || '').split('.').map(function (part) { return parseInt(part, 10) || 0 })
-  if (parts[0] > 8 || (parts[0] === 8 && (parts[1] > 0 || parts[2] >= 68))) return ''
-  return 'iOS 需微信 8.0.68 或更高版本，请更新微信后再试。'
+  if (!(parts[0] > 8 || (parts[0] === 8 && (parts[1] > 0 || parts[2] >= 68)))) {
+    return 'iOS 需微信 8.0.68 或更高版本，请更新微信后再试。'
+  }
+  if (!pay) return ''
+  var data
+  try { data = JSON.parse(pay.signData) } catch (error) { return '支付订单信息不完整，请重试。' }
+  if (!data || (data.env !== 0 && data.env !== 1) || !Number.isSafeInteger(data.goodsPrice) ||
+      data.goodsPrice <= 0 || data.buyQuantity !== 1) return '支付订单信息不完整，请重试。'
+  if (data.env === 1) return 'Apple 支付不支持沙箱，请联系运营人员。'
+  if (data.goodsPrice < 100) return 'Apple 支付单笔最低 1 元，当前商品无法在此设备购买。'
+  return ''
+}
+
+function paymentNote() {
+  return isAppleDevice(deviceInfo()) ? 'Apple 支付仅支持中国大陆 App Store 账户。' : '支付方式：微信虚拟支付'
 }
 
 function configurationError(error) {
@@ -53,4 +75,4 @@ function params(body) {
   return { mode: value.mode, signData: value.signData, paySig: value.paySig, signature: value.signature }
 }
 
-module.exports = { checkout: checkout, params: params, configurationError: configurationError }
+module.exports = { checkout: checkout, params: params, configurationError: configurationError, clientError: clientError, paymentNote: paymentNote }

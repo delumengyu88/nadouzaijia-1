@@ -24,7 +24,7 @@
     <view class="ex-line" wx:if="{{renewLine}}">{{renewLine}}</view>
     <view class="ex-line" wx:if="{{coverLine}}">{{coverLine}}</view>
   </view>
-  <view class="note">支付方式：微信支付</view>
+  <view class="note">{{paymentNote || '支付方式：微信支付'}}</view>
   <view class="note" wx:if="{{orderNo}}">订单号 {{orderNo}}</view>
   <button class="btn block" loading="{{payLoading}}" disabled="{{payLoading}}" bindtap="pay">{{payText}}</button>
   <view class="hint">支付即表示同意《会员服务协议》</view>

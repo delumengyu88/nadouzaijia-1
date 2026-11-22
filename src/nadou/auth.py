@@ -44,8 +44,8 @@ class WeChatLogin:
     @staticmethod
     def exchange_session(code: str) -> tuple[str, str]:
         settings = get_settings()
-        if not settings.wx_appid or not settings.wx_appsecret:
-            raise HTTPException(503, "WeChat login is unavailable")
+        if not settings.wx_appid or not settings.wx_appsecret.get_secret_value():
+            raise HTTPException(503, "微信登录未配置")
         try:
             response = httpx.get(
                 WeChatLogin.SESSION_URL,
@@ -62,11 +62,11 @@ class WeChatLogin:
             body = response.json()
         except (httpx.HTTPError, ValueError):
             # Never expose upstream URLs, credentials, session_key or error bodies.
-            raise HTTPException(503, "WeChat login is unavailable") from None
+            raise HTTPException(503, "微信登录服务暂不可用，请稍后重试") from None
         if not isinstance(body, dict):
-            raise HTTPException(503, "WeChat login is unavailable")
+            raise HTTPException(503, "微信登录服务暂不可用，请稍后重试")
         if body.get("errcode") in (40029, 40163):
-            raise HTTPException(401, "invalid WeChat code")
+            raise HTTPException(401, "微信登录凭证已失效，请重新登录")
         openid = body.get("openid")
         if (
             body.get("errcode")
@@ -76,7 +76,7 @@ class WeChatLogin:
             or not isinstance(body.get("session_key"), str)
             or not body["session_key"]
         ):
-            raise HTTPException(503, "WeChat login is unavailable")
+            raise HTTPException(503, "微信登录服务暂不可用，请稍后重试")
         return openid, body["session_key"]
 
     @staticmethod

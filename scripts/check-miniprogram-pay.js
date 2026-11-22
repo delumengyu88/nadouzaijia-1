@@ -449,6 +449,7 @@ async function main() {
 
   resetTransport()
   config.virtualPayment = true
+  wx.getDeviceInfo = function () { return { platform: 'android', system: 'Android 14' } }
   var virtualCall = null
   var virtualRequests = 0
   wx.requestVirtualPayment = function (options) { virtualRequests++; virtualCall = options }
@@ -460,7 +461,7 @@ async function main() {
   assert.strictEqual(pending[0].url, '/test-api/api/v1/xpay/orders')
   assert.deepStrictEqual(pending[0].data,{tier:'membership_regular',code:'fresh-fixture-code'})
   var virtualOrder = orderBody('待支付', {order_number:'XV-fixture', virtual_payment:{
-    mode:'short_series_goods',signData:'{"env":1}',paySig:'fixture-signature',signature:'fixture-user-signature'
+    mode:'short_series_goods',signData:'{"env":1,"goodsPrice":1,"buyQuantity":1}',paySig:'fixture-signature',signature:'fixture-user-signature'
   }})
   respond(200,virtualOrder)
   await drain()
@@ -483,7 +484,7 @@ async function main() {
   await drain()
   assert.strictEqual(page.data.phase,'granted')
   resetTransport()
-  wx.getDeviceInfo = function () { return { platform: 'ios' } }
+  wx.getDeviceInfo = function () { return { platform: 'ios', system: 'iOS 15.0' } }
   wx.getAppBaseInfo = function () { return { version: '8.0.67' } }
   var checkingClient = api.checkout('membership_regular')
   await drain()
@@ -492,8 +493,33 @@ async function main() {
   assert.strictEqual(oldClient.code, 'unsupported')
   assert.ok(oldClient.message.indexOf('8.0.68') >= 0)
   wx.getAppBaseInfo = function () { return { version: '8.0.100' } }
+  wx.getDeviceInfo = function () { return { platform: 'ios', system: 'iOS 14.8' } }
+  var oldSystem = api.checkout('membership_regular')
+  await drain()
+  assert.strictEqual(pending.length, 0, 'iOS 14 must not create an order')
+  assert.ok((await oldSystem).message.indexOf('iOS 15') >= 0)
+  wx.getDeviceInfo = function () { return { platform: 'ios', system: 'iPadOS 15.0' } }
+  for (var fixture of [
+    {env:1, price:100, hint:'沙箱'},
+    {env:0, price:99, hint:'1 元'}
+  ]) {
+    page = createPage()
+    page.onLoad({product:'membership_regular'})
+    page.pay()
+    await drain()
+    var blocked = Object.assign({}, virtualOrder, {virtual_payment:Object.assign({},virtualOrder.virtual_payment,{
+      signData:JSON.stringify({env:fixture.env,goodsPrice:fixture.price,buyQuantity:1})
+    })})
+    respond(200,blocked)
+    await drain()
+    assert.strictEqual(page.data.phase, 'unavailable')
+    assert.ok(page.data.resultSub.indexOf(fixture.hint) >= 0)
+    assert.strictEqual(virtualRequests, 1, 'cashier must not open')
+  }
+  virtualOrder.virtual_payment.signData = JSON.stringify({env:0,goodsPrice:100,buyQuantity:1})
   page = createPage()
   page.onLoad({product:'membership_regular'})
+  assert.ok(page.data.paymentNote.indexOf('中国大陆') >= 0)
   page.pay()
   await drain()
   respond(200,virtualOrder)
