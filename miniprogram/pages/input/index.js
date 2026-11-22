@@ -3,14 +3,15 @@ var nav = require('../../utils/nav')
 var SheetReader = require('../../utils/sheet')
 
 var FAIL = {
-  xlsx: '仅支持 .xlsx，请另存后再上传。',
+  xlsx: '仅支持 .xlsx 文件',
   empty: '文件为空，请重新选择。',
   size: '文件超过 5MB，请拆分后再上传。',
-  col: '未找到「节目名称」列，请检查表头后重试。',
+  col: '未找到「节目名称」列，请确认它在表格前 10 行内',
   rows: '超过 500 行，请删减后再上传。',
   read: '文件读取失败，请重新选择文件。',
   limit: '已超过 500 个节目名，仅保留前 500 个。'
 }
+var RESELECT = { xlsx: 1, col: 1, read: 1 }
 
 Page({
   data: { title: '输入片单', showBack: true, phase: 'edit', raw: '', items: [] },
@@ -23,6 +24,7 @@ Page({
     data.failText = ''
     data.box = ''
     data.fromFile = false
+    data.showReselect = false
     this.fromFile = false
     this.setData(data)
     var self = this
@@ -42,12 +44,14 @@ Page({
     else wx.switchTab({ url: '/pages/home/index' })
   },
   showFail: function (code) {
+    var key = FAIL[code] ? code : 'read'
     this.setData({
       phase: 'fail',
       fromFile: !!this.fromFile,
+      showReselect: !!this.fromFile || !!RESELECT[key],
       raw: '',
       items: [],
-      failText: FAIL[code] || FAIL.read,
+      failText: FAIL[key],
       box: ''
     })
   },
@@ -120,7 +124,7 @@ Page({
   },
   reset: function () {
     this.fromFile = false
-    this.setData({ phase: 'edit', failText: '', fromFile: false, raw: api.getDraft() })
+    this.setData({ phase: 'edit', failText: '', fromFile: false, showReselect: false, raw: api.getDraft() })
   },
   remove: function (e) {
     var index = Number(e.currentTarget.dataset.index)

@@ -57,21 +57,50 @@ load(p, put('/tmp/name-owner.xlsx', [['2026 片单'], [], ['序号', '版权方'
 assert.strictEqual(p.data.phase, 'preview')
 assert.deepStrictEqual(p.data.items.map(function (i) { return [i.name, i.owner] }), [['星河旧梦', '云豆传媒'], ['南岭追光 & 续', '']])
 
-// 3. 两列都没有：提示缺的是「节目名称」列。
+var COL = '未找到「节目名称」列，请确认它在表格前 10 行内'
+var READ = '文件读取失败，请重新选择文件。'
+var XLSX = '仅支持 .xlsx 文件'
+function expectPrompt(page, text) {
+  assert.strictEqual(page.data.phase, 'fail')
+  assert.strictEqual(page.data.failText, text)
+  assert.strictEqual(page.data.showReselect, true)
+  var opened = pickerOpened
+  page.upload()
+  assert.strictEqual(pickerOpened, opened + 1)
+  assert.strictEqual(page.data.phase, 'fail')
+  assert.strictEqual(page.data.failText, text)
+}
+
+// 3. 两列都没有：提示缺的是「节目名称」列，并说明只在前 10 行找表头。
 p = page()
 load(p, put('/tmp/none.xlsx', [['片名', '出品方'], ['星河旧梦', '云豆传媒']]))
-assert.strictEqual(p.data.phase, 'fail')
-assert.strictEqual(p.data.failText, '未找到「节目名称」列，请检查表头后重试。')
+expectPrompt(p, COL)
 
 // 只有版权方没有节目名称，同样提示缺「节目名称」列。
 p = page()
 load(p, put('/tmp/owner-only.xlsx', [['版权方'], ['云豆传媒']]))
-assert.strictEqual(p.data.failText, '未找到「节目名称」列，请检查表头后重试。')
+expectPrompt(p, COL)
+
+// 第 10 行的表头能找到；第 11 行的表头找不到，提示与「前 10 行」一致。
+function headerOnRow(row) {
+  var rows = []
+  for (var n = 1; n < row; n++) rows.push(['备注'])
+  rows.push(['节目名称'])
+  rows.push(['星河旧梦'])
+  return rows
+}
+p = page()
+load(p, put('/tmp/row10.xlsx', headerOnRow(10)))
+assert.strictEqual(p.data.phase, 'preview')
+assert.strictEqual(p.data.items[0].name, '星河旧梦')
+p = page()
+load(p, put('/tmp/row11.xlsx', headerOnRow(11)))
+expectPrompt(p, COL)
 
 // 读取失败的其他原因：不是 zip、文件读不到、超过 500 行、只有表头。
 files['/tmp/broken.xlsx'] = new Uint8Array([1, 2, 3, 4]).buffer
 p = page(); load(p, { name: 'broken.xlsx', size: 4, path: '/tmp/broken.xlsx' })
-assert.strictEqual(p.data.failText, '文件读取失败，请重新选择文件。')
+expectPrompt(p, READ)
 p = page(); load(p, { name: 'gone.xlsx', size: 10, path: '/tmp/gone.xlsx' })
 assert.strictEqual(p.data.phase, 'fail')
 var many = [['节目名称']]
@@ -81,7 +110,7 @@ assert.strictEqual(p.data.failText, '超过 500 行，请删减后再上传。')
 p = page(); load(p, put('/tmp/header.xlsx', [['节目名称']]))
 assert.strictEqual(p.data.failText, '文件为空，请重新选择。')
 p = page(); load(p, { name: 'a.xls', size: 10, path: '/tmp/a.xls' })
-assert.strictEqual(p.data.failText, '仅支持 .xlsx，请另存后再上传。')
+expectPrompt(p, XLSX)
 
 // 解压：deflate 各种压缩级别和策略都能还原（Excel/WPS 导出都是 deflate）。
 var big = Buffer.from(Array.from({ length: 2000 }, function (_, n) { return '<c r="A' + n + '"><v>节目' + (n % 13) + '</v></c>' }).join(''))
@@ -113,12 +142,12 @@ p.onInput({ detail: { value: '   ' } })
 p.showParsed('---')
 assert.strictEqual(p.data.phase, 'preview')
 assert.strictEqual(p.data.fromFile, false)
-// 粘贴内容没有有效节目名时，失败页回到输入框，不走重新选文件。
+// 粘贴没有有效节目名时，用的是读取失败文案，下面同样是「重新选择」。
 p.showParsed('123')
-assert.strictEqual(p.data.phase, 'fail')
 assert.strictEqual(p.data.fromFile, false)
+expectPrompt(p, READ)
 
-// 页面模板：文件失败时「重新选择」绑定 upload。
+// 页面模板：三种失败提示下的「重新选择」都绑定 upload。
 var wxml = require('fs').readFileSync(require('path').join(__dirname, '../miniprogram/pages/input/index.wxml'), 'utf8')
-assert(/wx:if="\{\{fromFile\}\}" bindtap="upload">重新选择</.test(wxml))
+assert(/wx:if="\{\{showReselect\}\}" bindtap="upload">重新选择</.test(wxml))
 console.log('upload sheet: name-only, name+owner, missing column, read failures and re-pick checks ok')
