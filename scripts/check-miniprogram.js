@@ -41,6 +41,12 @@ function readJson(rel) {
   return JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8'))
 }
 
+var frontendStopWords = readJson('stop-words.json')
+var backendStopWords = JSON.parse(fs.readFileSync(path.join(repo, 'src/nadou/stop_words.json'), 'utf8'))
+if (JSON.stringify(frontendStopWords) !== JSON.stringify(backendStopWords)) {
+  fail('miniprogram stop words must exactly match backend defaults')
+}
+
 var packageBytes = walk(root, []).reduce(function (sum, file) { return sum + fs.statSync(file).size }, 0)
 console.log('Main package source bytes: ' + packageBytes)
 if (packageBytes >= 2 * 1024 * 1024) fail('main package must be below 2 MB')
