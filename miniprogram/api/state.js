@@ -123,7 +123,7 @@ function seedEvidence() {
       status: status,
       day: day,
       contact: '林可',
-      phone: '13800002610',
+      phone: '13912345678',
       note: '请尽量取近期播出记录。',
       org: '',
       reason: '',

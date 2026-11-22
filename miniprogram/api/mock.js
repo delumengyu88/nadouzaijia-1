@@ -42,17 +42,7 @@ var EVIDENCE_TEXT = {
   cancelled: ''
 }
 
-var EVIDENCE_BADGE = {
-  submitted: '已提交',
-  accepted: '已受理',
-  pay: '待付款（线下）',
-  working: '取证中',
-  delivered: '已交付',
-  done: '已完成',
-  failed: '取证失败',
-  closed: '已关闭',
-  cancelled: '已取消'
-}
+var EVIDENCE_BADGE = require('./evidence').badge
 
 function save() { state.save() }
 function acc() { return state.account() }
@@ -631,7 +621,24 @@ function viewEvidence(item) {
     refundTime: item.refundTime || '',
     canWithdraw: item.status === 'submitted',
     canConfirm: item.status === 'delivered',
-    contactFrom: 'evidence:' + item.no
+    contactFrom: 'evidence:' + item.no,
+    phoneText: maskPhone(item.phone) || '—',
+    quoteText: '—',
+    reasonText: item.reason || '—',
+    platformText: item.platform || '—',
+    noteText: item.note || '—',
+    refundText: item.refundAmount > 0 ? ('¥' + item.refundAmount) : '—',
+    times: [
+      { label: '提交', value: item.day || '—' },
+      { label: '受理', value: '—' },
+      { label: '报价', value: '—' },
+      { label: '付款', value: '—' },
+      { label: '交付', value: '—' },
+      { label: '完成', value: '—' },
+      { label: '失败', value: '—' },
+      { label: '关闭', value: '—' },
+      { label: '取消', value: '—' }
+    ]
   }
 }
 
@@ -940,6 +947,7 @@ module.exports = {
       vipUnchanged: account.paidVipExpiry === vipBefore
     }
   },
+  evidenceSampleName: function () { return '雾港来信' },
   listEvidence: function () {
     var account = acc()
     if (!account) return []
@@ -948,6 +956,7 @@ module.exports = {
       return {
         id: view.id,
         name: view.name,
+        platform: item.platform || '',
         badge: view.badge,
         badgeCls: view.badgeCls,
         line: view.hasRefund ? '已全额退款 ¥' + view.refundAmount : view.day
