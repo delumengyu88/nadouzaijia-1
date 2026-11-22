@@ -7,7 +7,7 @@
 <view style="height: {{navHeight}}px;"></view>
 <view class="body" wx:if="{{phase == 'success'}}">
   <view class="success-wrap">
-    <icon type="success" size="56" color="#16A34A" />
+    <view class="success-mark"><view class="success-tick"></view></view>
     <view class="success-title">兑换成功</view>
     <view class="success-sub">
       <view>已发放普通会员 30 天</view>

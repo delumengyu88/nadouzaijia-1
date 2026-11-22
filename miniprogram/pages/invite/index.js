@@ -43,7 +43,7 @@ Page({
       phase: phase,
       message: (result && result.message) || '网络异常，请重试',
       code: code,
-      fieldError: phase === 'error'
+      fieldError: kind === 'invalid' || kind === 'expired' || kind === 'used'
     })
   },
   submit: function () {
@@ -59,7 +59,7 @@ Page({
         self.showResult(result, code)
       }, function () {
         self._busy = false
-        self.setData({ phase: 'error', message: '网络异常，请重试', code: code, fieldError: true })
+        self.setData({ phase: 'error', message: '网络异常，请重试', code: code, fieldError: false })
       })
       return
     }

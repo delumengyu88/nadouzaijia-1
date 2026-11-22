@@ -41,6 +41,24 @@ button.btn.off[disabled] {
   padding-top: 128rpx;
   text-align: center;
 }
+.success-mark {
+  width: 112rpx;
+  height: 112rpx;
+  border: 4rpx solid #16A34A;
+  border-radius: 50%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.success-tick {
+  width: 32rpx;
+  height: 18rpx;
+  margin-top: -6rpx;
+  border-left: 4rpx solid #16A34A;
+  border-bottom: 4rpx solid #16A34A;
+  transform: rotate(-45deg);
+}
 .success-title {
   margin-top: 32rpx;
   font-size: 40rpx;
