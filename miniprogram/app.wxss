@@ -597,3 +597,5 @@ button::after {
   border-radius: 16rpx;
 }
 .shot.low { filter: blur(1px); opacity: 0.95; }
+
+.trial-banner { padding: 6rpx 24rpx; text-align: center; font-size: 22rpx; line-height: 30rpx; color: #87601C; background: #FFF4D8; }

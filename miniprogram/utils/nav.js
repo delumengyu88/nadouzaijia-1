@@ -1,4 +1,4 @@
-function layout() {
+function layout(page, query) {
   var status = 20
   var nav = 44
   try {
@@ -11,7 +11,7 @@ function layout() {
       }
     }
   } catch (err) {}
-  return { statusBarHeight: status, navHeight: status + nav }
+  return { statusBarHeight: status, navHeight: status + nav, trialData: require('./trial').mockPage(page, query) }
 }
 
 function selectTab(page, index) {

@@ -4,7 +4,7 @@ var nav = require('../../utils/nav')
 Page({
   data: { title: '取证申请', showBack: true, rows: [] },
   onShow: function () {
-    var data = nav.layout()
+    var data = nav.layout('evidence-list', this.query)
     data.title = '取证申请'
     data.showBack = true
     data.rows = api.listEvidence()

@@ -5,6 +5,7 @@
   </view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
+<view class="trial-banner" wx:if="{{trialData}}">体验数据</view>
 <view class="body" wx:if="{{phase == 'success'}}">
   <view class="center-box">
     <view class="tag ok">兑换成功</view>

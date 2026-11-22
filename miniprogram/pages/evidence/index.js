@@ -9,11 +9,11 @@ function decode(value) {
 Page({
   data: { title: '委托取证', showBack: true, phase: 'form', phone: '13800002610', phoneShown: '138****2610', note: '' },
   onLoad: function (query) {
-    var layout = nav.layout()
+    var layout = nav.layout('evidence', this.query)
     var kind = query.kind === 'recent' ? 'recent' : 'normal'
     this.setData({
       statusBarHeight: layout.statusBarHeight,
-      navHeight: layout.navHeight,
+      navHeight: layout.navHeight, trialData: layout.trialData,
       showBack: true,
       title: '委托取证',
       phase: query.view === 'duplicate' ? 'duplicate' : 'form',

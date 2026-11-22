@@ -4,10 +4,11 @@ var nav = require('../../utils/nav')
 Page({
   data: { useMock: require('../../config').mode !== 'live', title: '个人中心', showSheet: false },
   onShow: function () {
-    var data = nav.layout()
+    var data = nav.layout('profile', this.query)
     var info = api.profile()
     data.title = '个人中心'
     data.showSheet = false
+    data.useMock = require('../../config').trialMode && require('../../config').mode !== 'live'
     Object.keys(info).forEach(function (key) { data[key] = info[key] })
     this.setData(data)
     nav.selectTab(this, 2)

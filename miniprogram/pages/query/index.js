@@ -6,7 +6,7 @@ Page({
   onLoad: function (query) {
     this.id = query.id || ''
     this.view = api.isLive ? '' : query.view || ''
-    this.setData(Object.assign(nav.layout(), { title: '查询结果', showBack: true }))
+    this.setData(Object.assign(nav.layout('query', this.query), { title: '查询结果', showBack: true }))
     if (this.view === 'queued' || this.view === 'running' || this.view === 'allfail' || this.view === 'allmiss') {
       this.renderSpecial(this.view)
       return

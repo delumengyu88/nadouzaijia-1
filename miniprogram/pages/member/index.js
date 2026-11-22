@@ -11,7 +11,7 @@ function labelFor(tier, selected, guest) {
 Page({
   data: { title: '会员中心', selected: 'membership_vip' },
   onShow: function () {
-    var data = nav.layout()
+    var data = nav.layout('member', this.query)
     var info = api.memberCenter()
     data.title = '会员中心'
     data.selected = this.data.selected || 'membership_vip'
@@ -28,6 +28,7 @@ Page({
     })
   },
   go: function () {
+    if (require('../../utils/trial').blockPayment()) return
     if (this.data.guest) {
       api.login()
       this.onShow()

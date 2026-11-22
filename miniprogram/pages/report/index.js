@@ -12,7 +12,7 @@ Page({
   onLoad: function (query) {
     if (api.isLive) query.view = ''
     this.query = query || {}
-    this.setData(Object.assign(nav.layout(), { showBack: true, phase: 'loading', title: decode(query.name) }))
+    this.setData(Object.assign(nav.layout('report', this.query), { showBack: true, phase: 'loading', title: decode(query.name) }))
     if (query.view === 'loading') return
     if (query.view === 'loadfail') {
       this.setData({ phase: 'fail' })
@@ -73,7 +73,7 @@ Page({
     view.phase = 'ready'
     view.title = meta.name
     view.showBack = true
-    var layout = nav.layout()
+    var layout = nav.layout('report', this.query)
     view.statusBarHeight = layout.statusBarHeight
     view.navHeight = layout.navHeight
     this.setData(view)
@@ -94,9 +94,11 @@ Page({
     wx.navigateTo({ url: '/pages/viewer/index?id=' + id + '&name=' + encodeURIComponent(this.data.name) + '&example=' + example })
   },
   buyMember: function () {
+    if (require('../../utils/trial').blockPayment()) return
     wx.navigateTo({ url: '/pages/pay/index?product=membership_regular&name=' + encodeURIComponent(this.data.name) })
   },
   buySingle: function () {
+    if (require('../../utils/trial').blockPayment()) return
     wx.navigateTo({ url: '/pages/pay/index?product=single_program_30d&name=' + encodeURIComponent(this.data.name) })
   },
   applyEvidence: function () {

@@ -4,7 +4,7 @@ var nav = require('../../utils/nav')
 Page({
   data: { title: '查询记录', showBack: true, rows: [] },
   onShow: function () {
-    var data = nav.layout()
+    var data = nav.layout('records', this.query)
     data.title = '查询记录'
     data.showBack = true
     data.rows = api.listRecords()

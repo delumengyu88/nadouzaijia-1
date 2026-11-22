@@ -5,6 +5,7 @@
   </view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
+<view class="trial-banner" wx:if="{{trialData}}">体验数据</view>
 <view class="body">
   <view class="center-box" wx:if="{{empty}}">
     <view class="center-title">暂无查询记录</view>

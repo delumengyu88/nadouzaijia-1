@@ -4,11 +4,11 @@ var nav = require('../../utils/nav')
 Page({
   data: { title: '兑换邀请码', showBack: true, phase: 'form', code: '' },
   onLoad: function (query) {
-    var layout = nav.layout()
+    var layout = nav.layout('invite', this.query)
     var state = api.inviteState()
     this.setData({
       statusBarHeight: layout.statusBarHeight,
-      navHeight: layout.navHeight,
+      navHeight: layout.navHeight, trialData: layout.trialData,
       showBack: true,
       title: '兑换邀请码',
       phase: state.bound ? 'bound' : 'form',

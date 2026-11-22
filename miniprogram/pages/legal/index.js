@@ -4,7 +4,7 @@ var nav = require('../../utils/nav')
 Page({
   data: { title: '协议与隐私', showBack: true, rows: [] },
   onLoad: function () {
-    var data = nav.layout()
+    var data = nav.layout('legal', this.query)
     data.title = '协议与隐私'
     data.showBack = true
     data.rows = api.agreements()

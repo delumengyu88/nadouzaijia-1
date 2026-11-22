@@ -10,11 +10,12 @@ function decode(value) {
 Page({
   data: { title: '截图', showBack: true },
   onLoad: function (query) {
+    this.query = query
     var name = decode(query.name)
     var search = query.example === '1' ? api.exampleReport(name) : api.searchProgram(name)
     var self = this
     if (search && typeof search.then === 'function') {
-      this.setData(Object.assign(nav.layout(), { missing: true }))
+      this.setData(Object.assign(nav.layout('viewer', this.query), { missing: true }))
       search.then(function (result) { self.applySearch(result, query) }).catch(function () {
         self.setData({ missing: true })
       })
@@ -37,10 +38,10 @@ Page({
     var programOnly = row && row.access === 'full' && !row.can_download_screenshot
     if (query.view === 'free') { low = true; canSave = false; programOnly = false }
     if (query.view === 'nodl') { low = false; canSave = false; programOnly = true }
-    var layout = nav.layout()
+    var layout = nav.layout('viewer', this.query)
     this.setData({
       statusBarHeight: layout.statusBarHeight,
-      navHeight: layout.navHeight,
+      navHeight: layout.navHeight, trialData: layout.trialData,
       title: '截图',
       showBack: true,
       platform: (row && row.platform) || extra.platform || '平台未识别',
@@ -77,6 +78,7 @@ Page({
     })
   },
   upgrade: function () {
+    if (require('../../utils/trial').blockPayment()) return
     wx.navigateTo({ url: '/pages/pay/index?product=membership_vip' })
   }
 })

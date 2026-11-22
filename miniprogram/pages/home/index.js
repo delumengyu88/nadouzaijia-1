@@ -12,7 +12,7 @@ Page({
     if (this.splashLoadTimer) clearTimeout(this.splashLoadTimer)
   },
   paint: function () {
-    var data = nav.layout()
+    var data = nav.layout('home', this.query)
     var home = api.homeState()
     data.showBrand = true
     data.title = ''

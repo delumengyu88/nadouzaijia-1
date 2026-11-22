@@ -5,6 +5,10 @@
   </view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
+<view class="trial-banner" wx:if="{{trialData}}">体验数据</view>
+<view class="body" wx:if="{{phase == 'trial'}}">
+  <view class="card"><view>{{trialMessage}}</view><view class="btn" bindtap="pay">立即支付</view></view>
+</view>
 <view class="body" wx:if="{{phase == 'pending'}}">
   <view class="card">
     <view class="choice-top">
