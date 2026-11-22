@@ -22,7 +22,7 @@ function walk(dir, out) {
 
 var banned = ['待确认', '疑似命中', '确认命中', '别名', '匹配方式', '命中类型', '顺延', 'VIP 结束后生效']
 walk(root, []).forEach(function (file) {
-  if (path.extname(file) === '.png') return
+  if (['.png', '.webp'].indexOf(path.extname(file)) !== -1) return
   var text = fs.readFileSync(file, 'utf8')
   var rel = path.relative(root, file)
   banned.forEach(function (word) {
@@ -41,6 +41,9 @@ function readJson(rel) {
   return JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8'))
 }
 
+var packageBytes = walk(root, []).reduce(function (sum, file) { return sum + fs.statSync(file).size }, 0)
+console.log('Main package source bytes: ' + packageBytes)
+if (packageBytes >= 2 * 1024 * 1024) fail('main package must be below 2 MB')
 var app = readJson('app.json')
 var project = readJson('project.config.json')
 if (project.appid !== 'touristappid') fail('appid is ' + project.appid)

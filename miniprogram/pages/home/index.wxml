@@ -45,12 +45,13 @@
 </view>
 </view>
 <view class="splash-cover" wx:if="{{showSplash}}">
-  <view class="stage-mid">
-    <view class="stage-title">那豆在架</view>
-    <view class="stage-sub">已收录平台片单检索</view>
-    <view class="stage-line"></view>
+  <image wx:if="{{!splashFailed}}" class="splash-bg" src="/assets/p01-splash-bg.webp" mode="aspectFill" bindload="splashLoaded" binderror="splashFailed" />
+  <view class="splash-copy">
+    <view class="splash-title">那豆在架</view>
+    <view class="splash-tagline"><text>全平台片单检索，</text><text class="splash-highlight">永久免费</text></view>
   </view>
-  <view class="splash-skip" bindtap="finishSplash">跳过 {{seconds}}</view>
+  <view class="splash-logo"><view></view></view>
+  <view class="splash-skip" style="top: {{splashSkipTop}}px; right: {{splashSkipRight}}px;" bindtap="finishSplash">跳过 {{seconds}}</view>
 </view>
 <view class="mask" wx:if="{{showAnnounce && !showSplash}}">
   <view class="dialog">
