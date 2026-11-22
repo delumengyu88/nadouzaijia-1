@@ -87,6 +87,6 @@
     <view class="row-title">有最新记录，可委托取证</view>
     <view class="btn" bindtap="evidence">委托取证</view>
   </view>
-  <button class="btn block plain" wx:if="{{showDownload}}" bindtap="download" loading="{{downloadLoading}}" disabled="{{downloadLoading}}">下载本页有权限的报告</button>
+  <button class="btn block plain" wx:if="{{showDownload}}" bindtap="download" loading="{{downloadLoading}}" disabled="{{downloadLoading}}">下载报告</button>
   <view class="foot-gap"></view>
 </view>

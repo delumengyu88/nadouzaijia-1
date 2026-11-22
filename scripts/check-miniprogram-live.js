@@ -110,6 +110,7 @@ async function main() {
     return { writeFile: function (opt) { if (opt && opt.success) opt.success() } }
   }
   var reportWxml = require('fs').readFileSync(require('path').join(__dirname, '../miniprogram/pages/report/index.wxml'), 'utf8')
+  assert(/<button[^>]*wx:if="{{showDownload}}"[^>]*bindtap="download"[^>]*>下载报告<\/button>/.test(reportWxml))
   assert(/<button\b[^>]*bindtap="download"[^>]*loading="\{\{downloadLoading\}\}"[^>]*disabled="\{\{downloadLoading\}\}"/.test(reportWxml),
     'download button binds loading and disabled')
   var sheet = Object.assign({}, def, {
