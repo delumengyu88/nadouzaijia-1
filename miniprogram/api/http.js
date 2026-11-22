@@ -1,9 +1,83 @@
 var shape = require('./shape')
 var state = require('./state')
 var request = require('./request')
+var evidence = require('./evidence')
 
 function notReady() {
   return Promise.resolve({ ok: false, message: '服务暂不可用，请改用本地数据' })
+}
+
+// POST /api/v1/invite-codes/redeem puts the domain code in `detail`
+// (invalid, expired, used, bound). Map that string, never the HTTP status.
+var INVITE_ERRORS = {
+  invalid: '邀请码无效，请核对后再试。',
+  expired: '邀请码已过期，不能再兑换。',
+  used: '邀请码已被使用。',
+  bound: '已绑定过邀请码，不能再填'
+}
+
+function inviteErrorCode(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return ''
+  return typeof body.detail === 'string' ? body.detail : ''
+}
+
+function beijingDay(iso) {
+  var instant = Date.parse(iso)
+  if (!(instant > Date.now())) return ''
+  return new Date(instant + 8 * 3600 * 1000).toISOString().slice(0, 10)
+}
+
+function rememberInvite(code, expiresAt) {
+  var data = state.load()
+  var id = state.currentId()
+  if (!data.accounts || !id || id === 'guest' || !data.accounts[id]) return
+  var account = data.accounts[id]
+  account.inviteBound = true
+  if (code) account.inviteCode = String(code)
+  var day = beijingDay(expiresAt)
+  if (day) account.inviteExpiry = day
+  state.save()
+}
+
+function storeProfile(user) {
+  if (!user || typeof user !== 'object' || !user.id) return null
+  var data = state.load()
+  if (!data.auth) return user
+  data.auth.user = {
+    id: user.id,
+    tier: user.tier,
+    vip_expires_at: user.vip_expires_at || null,
+    regular_expires_at: user.regular_expires_at || null
+  }
+  state.save()
+  return data.auth.user
+}
+
+function refreshMembership() {
+  return request('/api/v1/auth/me').then(function (user) {
+    return storeProfile(user) || user
+  })
+}
+
+function inviteSuccess(body, user) {
+  var expiry = beijingDay(body && body.expires_at)
+  var hasVip = !!(user && user.tier === 'vip')
+  return {
+    ok: true,
+    code: 'success',
+    expiry: expiry,
+    hasVip: hasVip,
+    headline: '兑换成功',
+    sub: expiry ? ('有效至 ' + expiry) : ''
+  }
+}
+
+function inviteFailure(code) {
+  if (!code) return null
+  var message = INVITE_ERRORS[code]
+  if (!message) return { ok: false, code: 'unknown', message: '网络异常，请重试' }
+  if (code === 'bound') rememberInvite()
+  return { ok: false, code: code, message: message }
 }
 
 module.exports = {
@@ -33,6 +107,7 @@ module.exports = {
   accountKind: function () { return state.currentId() },
   profile: function () { return require('./mock').profile() },
   memberCenter: function () { return require('./mock').memberCenter() },
+  membershipPlans: function () { return require('./mock').membershipPlans() },
   setDraft: function (value) { state.load().draft = String(value || ''); state.save() },
   getDraft: function () { return state.load().draft || '' },
   parseTitles: function (raw) { return require('../utils/text').parseTitles(raw) },
@@ -65,13 +140,54 @@ module.exports = {
   settle: function () { return notReady() },
   checkStatus: function () { return null },
   repay: function () { return notReady() },
-  inviteState: function () { return { guest: !state.userId(), bound: false } },
-  redeem: function () { return notReady() },
-  listEvidence: function () { return [] },
-  evidenceDetail: function () { return null },
-  createEvidence: function () { return notReady() },
-  withdrawEvidence: function () { return notReady() },
-  confirmEvidence: function () { return notReady() },
+  inviteState: function () {
+    var account = state.account()
+    return { guest: !state.userId(), bound: !!(account && account.inviteBound) }
+  },
+  redeem: function (raw) {
+    var code = raw == null ? '' : String(raw)
+    return request('/api/v1/invite-codes/redeem', { code: code }, { method: 'POST', exposeStatus: true })
+      .then(function (res) {
+        var failure = inviteFailure(inviteErrorCode(res && res.data))
+        if (failure) return failure
+        if (!res || res.statusCode < 200 || res.statusCode >= 300) {
+          return { ok: false, code: 'unknown', message: '网络异常，请重试' }
+        }
+        var cached = state.load().auth && state.load().auth.user
+        var expiresAt = res.data && res.data.expires_at
+        return refreshMembership().then(function (user) {
+          rememberInvite(code, expiresAt)
+          return inviteSuccess(res.data, user || cached)
+        }, function () {
+          rememberInvite(code, expiresAt)
+          return inviteSuccess(res.data, cached)
+        })
+      }, function () {
+        return { ok: false, code: 'unknown', message: '网络异常，请重试' }
+      })
+  },
+  listEvidence: function () {
+    return request('/api/v1/evidence-requests', null, { method: 'GET', readBody: true }).then(function (body) {
+      var rows = evidence.listRows(body)
+      if (!rows) return Promise.reject(new Error('网络异常，请重试'))
+      return rows.map(evidence.presentList)
+    })
+  },
+  evidenceDetail: function (id) {
+    return request('/api/v1/evidence-requests/' + encodeURIComponent(id || ''), null, { method: 'GET', readBody: true }).then(function (body) {
+      if (!body || typeof body !== 'object' || Array.isArray(body) || body.code || !body.id) return null
+      return evidence.presentDetail(body)
+    }, function () { return null })
+  },
+  createEvidence: function (form) {
+    return request('/api/v1/evidence-requests', evidence.createPayload(form || {}), { method: 'POST', readBody: true }).then(function (body) {
+      return evidence.createOutcome(body)
+    }, function () {
+      return evidence.createOutcome(null)
+    })
+  },
+  withdrawEvidence: function (id) { return evidence.postAction(request, id, 'withdraw') },
+  confirmEvidence: function (id) { return evidence.postAction(request, id, 'confirm') },
   agreements: function () {
     return [
       { id: 'user', title: '用户协议' },

@@ -1,1 +1,15 @@
-/* local */
+.field.type-field { display: flex; align-items: center; justify-content: space-between; padding-right: 32rpx; }
+.field.type-field .chev { margin-left: 0; }
+.req { color: #d64545; margin-left: 6rpx; }
+.field-error { margin: 12rpx 32rpx 0; color: #d64545; font-size: 26rpx; line-height: 1.5; }
+.field.field-bad { border: 2rpx solid #d64545; }
+.done { display: flex; flex-direction: column; align-items: center; text-align: center; padding-top: 128rpx; }
+.done-title { margin-top: 32rpx; font-size: 40rpx; font-weight: 700; color: #1F2329; line-height: 1.4; }
+.done-sub { margin-top: 16rpx; padding: 0 64rpx; max-height: 80rpx; overflow: hidden; font-size: 28rpx; line-height: 40rpx; color: #646A73; }
+.done-primary { width: 480rpx; height: 88rpx; line-height: 88rpx; margin: 48rpx 0 0; padding: 0; background: #1D4E9E; color: #fff; border-radius: 16rpx; font-size: 30rpx; font-weight: 600; }
+.done-link { margin: 24rpx 0 0; padding: 0; background: transparent; color: #1D4E9E; font-size: 28rpx; line-height: 40rpx; }
+.dup-actions { display: flex; margin-top: 28rpx; }
+.dup-btn { flex: 1; height: 88rpx; margin: 0; border-radius: 16rpx; font-size: 28rpx; font-weight: 600; text-align: center; box-sizing: border-box; }
+.dup-btn + .dup-btn { margin-left: 16rpx; }
+.dup-ghost { background: #fff; color: #1D4E9E; border: 2rpx solid #1D4E9E; line-height: 84rpx; }
+.dup-primary { background: #1D4E9E; color: #fff; border: 2rpx solid #1D4E9E; line-height: 84rpx; }
