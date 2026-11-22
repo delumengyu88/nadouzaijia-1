@@ -349,17 +349,20 @@ function profile() {
 function memberCenter() {
   var account = acc()
   var tier = tierOf(account)
-  var statusLine = ''
-  if (account && tier === 'vip') statusLine = '当前 VIP，有效至 ' + account.paidVipExpiry
+  var until = ''
+  if (account && tier === 'vip') until = account.paidVipExpiry
   else if (account && tier === 'regular') {
-    var until = date.active(account.paidRegularExpiry) ? account.paidRegularExpiry : account.inviteExpiry
-    statusLine = '当前普通会员，有效至 ' + until
-  } else if (account) statusLine = '当前免费用户'
+    until = date.active(account.paidRegularExpiry) ? account.paidRegularExpiry : account.inviteExpiry
+  }
   return {
     guest: !account,
     tier: tier,
-    statusLine: statusLine
+    statusLine: require('../utils/member').statusLine(tier, until)
   }
+}
+
+function membershipPlans() {
+  return require('../utils/member').plansFromProducts(PRODUCTS)
 }
 
 function queryView(query) {
@@ -675,6 +678,7 @@ module.exports = {
   accountKind: function () { return state.currentId() },
   profile: profile,
   memberCenter: memberCenter,
+  membershipPlans: membershipPlans,
   setDraft: function (value) {
     state.load().draft = String(value || '')
     save()
