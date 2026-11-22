@@ -1,6 +1,6 @@
 <view class="tab-page profile-page">
 <view class="nav" style="padding-top: {{statusBarHeight}}px;">
-  <view class="nav-bar"><view class="nav-title">{{title}}</view></view>
+  <view class="nav-bar"><view class="nav-title">我的</view></view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
 <view class="body">

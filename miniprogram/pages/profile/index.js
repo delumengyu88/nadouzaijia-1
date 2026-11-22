@@ -8,12 +8,12 @@ function inviteMask(text) {
 }
 
 Page({
-  data: { useMock: require('../../config').mode !== 'live', title: '个人中心', showSheet: false },
+  data: { useMock: require('../../config').mode !== 'live', title: '我的', showSheet: false },
   onShow: function () {
     var data = nav.layout('profile', this.query)
     var info = api.profile()
     var live = require('../../config').mode === 'live'
-    data.title = '个人中心'
+    data.title = '我的'
     data.showSheet = false
     data.useMock = require('../../config').mode === 'mock'
     Object.keys(info).forEach(function (key) { data[key] = info[key] })
