@@ -37,6 +37,11 @@ walk(root, []).forEach(function (file) {
   }
 })
 
+var homeWxml = fs.readFileSync(path.join(root, 'pages/home/index.wxml'), 'utf8')
+;['已收录平台片单检索', '个平台'].forEach(function (word) {
+  if (homeWxml.indexOf(word) !== -1) fail('pages/home/index.wxml must not contain ' + word)
+})
+
 function readJson(rel) {
   return JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8'))
 }

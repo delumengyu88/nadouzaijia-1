@@ -24,7 +24,6 @@ module.exports = {
       doneText: '',
       doneQueryId: '',
       examples: [],
-      platformTotal: 0,
       draft: state.load().draft || ''
     }
   },

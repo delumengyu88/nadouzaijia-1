@@ -305,7 +305,6 @@ function homeState() {
     doneQueryId: unseen ? unseen.id : '',
     examplesError: !!session.examplesError,
     examples: session.examplesError ? [] : homeExamples(),
-    platformTotal: 26,
     draft: session.draft || ''
   }
 }
