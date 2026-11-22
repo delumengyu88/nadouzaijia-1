@@ -484,7 +484,9 @@ function findQuery(id) {
 function nextNo(prefix) {
   var session = state.load()
   session.seq += 1
-  return prefix + date.today().replace(/-/g, '') + date.pad2(session.seq)
+  var seq = String(session.seq)
+  while (seq.length < 3) seq = '0' + seq
+  return prefix + date.today().replace(/-/g, '') + seq
 }
 
 function reusable(status) {

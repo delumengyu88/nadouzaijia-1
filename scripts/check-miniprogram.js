@@ -1117,6 +1117,10 @@ if (redeemCheck.status !== 0) fail(redeemCheck.stderr || redeemCheck.stdout || '
 var uploadCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-upload.js')], { encoding: 'utf8' })
 console.log(uploadCheck.stdout || '')
 if (uploadCheck.status !== 0) fail(uploadCheck.stderr || uploadCheck.stdout || 'upload check failed')
+var payCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-pay.js')], { encoding: 'utf8' })
+console.log(payCheck.stdout || '')
+if (payCheck.status !== 0) fail(payCheck.stderr || payCheck.stdout || 'pay check failed')
+
 var ordersCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-orders.js')], { encoding: 'utf8' })
 console.log(ordersCheck.stdout || '')
 if (ordersCheck.status !== 0) fail(ordersCheck.stderr || ordersCheck.stdout || 'orders check failed')
