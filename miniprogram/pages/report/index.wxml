@@ -24,7 +24,7 @@
   <view class="pad" style="margin-top:12rpx;">
     <view class="choice-top">
       <text class="h1" style="font-size:40rpx;">{{name}}</text>
-      <text class="tag ok">{{badge}}</text>
+      <view><text class="tag ok">{{badge}}</text><text class="evidence-link" bindtap="applyEvidence">{{appliedId ? '已申请 ›' : '委托取证 ›'}}</text></view>
     </view>
     <view class="sub">{{header}}</view>
     <view class="choice-top" wx:if="{{showLocked}}" style="margin-top:16rpx;">

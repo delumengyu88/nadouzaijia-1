@@ -461,6 +461,7 @@ function describeItem(item) {
     badge: '已命中',
     badgeCls: 'ok',
     line: line,
+    evidencePlatform: found.records.filter(function (rec) { return !rec.locked && rec.platform }).map(function (rec) { return rec.platform }).filter(function (name, i, all) { return all.indexOf(name) === i }).join('、'),
     failed: false,
     missed: false,
     hit: true
@@ -987,6 +988,7 @@ module.exports = {
       contact: contact,
       phone: phone,
       note: String(form.note || '').slice(0, 500),
+      platform: form.kind === 'recent' ? '' : text.displayOf(form.platform || ''),
       org: text.displayOf(form.org || ''),
       reason: '',
       refundAmount: 0,

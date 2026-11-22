@@ -574,6 +574,18 @@ try {
   form.submit()
   expect(form.data.phase === 'duplicate', 'duplicate evidence')
   cover('P11-duplicate')
+  report = open('pages/report/index', { name: encodeURIComponent('星河旧梦') }, 'load')
+  flush()
+  expect(report.data.appliedId === form.data.newId, 'submitted program shows applied link')
+  var navigated = ''
+  wx.navigateTo = function (opts) { navigated = opts.url }
+  report.applyEvidence()
+  expect(navigated === '/pages/evidence-detail/index?id=' + form.data.newId, 'applied link opens P12')
+  cover('P08-applied')
+  form = open('pages/evidence/index', { name: encodeURIComponent('测试片'), platform: encodeURIComponent('测试平台') }, 'load')
+  expect(form.data.name === '测试片' && form.data.platform === '测试平台', 'evidence prefills name and platform')
+  query.evidence({ currentTarget: { dataset: { name: '测试片', platform: '测试平台' } } })
+  expect(navigated.indexOf('&platform=' + encodeURIComponent('测试平台')) !== -1, 'P07 passes permitted platform')
 
   invite = open('pages/invite/index', {}, 'load')
   expect(invite.data.phase === 'bound', 'bound invite')
@@ -656,6 +668,7 @@ var screens = {
   'P07-queued': 'pages/query/index queued',
   'P07-results': 'pages/query/index done mixed',
   'P07-retry': 'pages/query/index partial failure retry',
+  'P08-applied': 'pages/report/index applied link',
   'P08-empty': 'pages/report/index phase empty',
   'P08-expired': 'pages/report/index expired locked',
   'P08-loadfail': 'pages/report/index phase fail',
@@ -723,7 +736,7 @@ if (missing.length) {
   console.error('not covered: ' + missing.join(', '))
   failed = true
 }
-if (names.length !== 78) fail('expected 78 screens, mapped ' + names.length)
+if (names.length !== 79) fail('expected 79 screens, mapped ' + names.length)
 
 if (failed) process.exit(1)
 console.log('miniprogram check ok')

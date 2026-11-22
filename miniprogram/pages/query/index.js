@@ -75,6 +75,7 @@ Page({
     })
   },
   openHit: function (e) {
+    if (!e.currentTarget.dataset.hit) return
     var name = e.currentTarget.dataset.name
     wx.navigateTo({ url: '/pages/report/index?name=' + encodeURIComponent(name) + '&id=' + (this.id || '') })
   },
@@ -83,7 +84,7 @@ Page({
     wx.navigateTo({ url: '/pages/input/index' })
   },
   evidence: function (e) {
-    wx.navigateTo({ url: '/pages/evidence/index?name=' + encodeURIComponent(e.currentTarget.dataset.name) + '&kind=normal' })
+    wx.navigateTo({ url: '/pages/evidence/index?name=' + encodeURIComponent(e.currentTarget.dataset.name) + '&kind=normal&platform=' + encodeURIComponent(e.currentTarget.dataset.platform || '') })
   },
   retry: function (e) {
     api.retryItem(this.id, e.currentTarget.dataset.name)

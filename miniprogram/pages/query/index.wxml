@@ -21,16 +21,16 @@
 <view class="body" wx:else>
   <view class="err-box" wx:if="{{showFailBanner}}">{{failBanner}}</view>
   <view class="note" wx:if="{{!showFailBanner}}">{{head}}</view>
-  <view class="card" wx:for="{{items}}" wx:key="name">
+  <view class="card" wx:for="{{items}}" wx:key="name" data-name="{{item.name}}" data-hit="{{item.hit}}" bindtap="openHit">
     <view class="choice-top">
       <text class="row-title">{{item.name}}</text>
       <text class="tag {{item.badgeCls}}">{{item.badge}}</text>
     </view>
     <view class="ex-line">{{item.line}}</view>
-    <view wx:if="{{item.hit}}" data-name="{{item.name}}" bindtap="openHit" class="link" style="text-align:left;">查看报告</view>
+    <view wx:if="{{item.hit}}" class="evidence-link" data-name="{{item.name}}" data-platform="{{item.evidencePlatform}}" catchtap="evidence">委托取证 ›</view>
     <view class="choice-top" wx:if="{{item.missed}}" style="margin-top:16rpx;">
       <view class="btn ghost" style="width:48%;margin-top:0;" data-name="{{item.name}}" bindtap="requery">修改后重查</view>
-      <view class="btn plain" style="width:48%;margin-top:0;" data-name="{{item.name}}" bindtap="evidence">申请取证</view>
+      <view class="btn plain" style="width:48%;margin-top:0;" data-name="{{item.name}}" bindtap="evidence">委托取证</view>
     </view>
     <view class="btn" wx:if="{{item.failed && itemRetry}}" data-name="{{item.name}}" bindtap="retry">重试</view>
   </view>

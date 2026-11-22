@@ -20,6 +20,13 @@ Page({
     var self = this
     nav.later(280, function () { self.load() })
   },
+  onShow: function () { this.refreshApplication() },
+  refreshApplication: function () {
+    var name = this.data.name
+    var normalize = require('../../utils/text').foldKey
+    var found = api.listEvidence().filter(function (item) { return normalize(item.name) === normalize(name || '') })[0]
+    this.setData({ appliedId: found ? found.id : '' })
+  },
   back: function () {
     if (getCurrentPages().length > 1) wx.navigateBack()
     else wx.switchTab({ url: '/pages/home/index' })
@@ -58,6 +65,7 @@ Page({
     view.statusBarHeight = layout.statusBarHeight
     view.navHeight = layout.navHeight
     this.setData(view)
+    this.refreshApplication()
   },
   retry: function () { this.load() },
   ask: function () {
@@ -78,6 +86,14 @@ Page({
   },
   buySingle: function () {
     wx.navigateTo({ url: '/pages/pay/index?product=single_program_30d&name=' + encodeURIComponent(this.data.name) })
+  },
+  applyEvidence: function () {
+    if (this.data.appliedId) {
+      wx.navigateTo({ url: '/pages/evidence-detail/index?id=' + encodeURIComponent(this.data.appliedId) })
+      return
+    }
+    var platforms = (this.data.groups || []).filter(function (group) { return !group.unknown }).map(function (group) { return group.platform })
+    wx.navigateTo({ url: '/pages/evidence/index?kind=normal&name=' + encodeURIComponent(this.data.name) + '&platform=' + encodeURIComponent(platforms.join('、')) })
   },
   evidence: function () {
     wx.navigateTo({ url: '/pages/evidence/index?name=' + encodeURIComponent(this.data.name) + '&kind=recent' })
