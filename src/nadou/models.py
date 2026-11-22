@@ -85,6 +85,15 @@ class User(Base):
     entitlements: Mapped[list["Entitlement"]] = relationship(back_populates="user")
 
 
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False, index=True)
+
+
 class Entitlement(Base):
     __tablename__ = "entitlements"
     __table_args__ = (

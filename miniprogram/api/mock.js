@@ -668,6 +668,8 @@ module.exports = {
   },
   switchAccount: function (id) {
     var session = state.load()
+    if (require('../config').mode !== 'mock') return profile()
+    state.clearSession()
     if (id !== 'guest' && id !== 'free' && id !== 'member') return profile()
     session.current = id
     save()

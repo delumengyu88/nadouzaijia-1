@@ -91,10 +91,7 @@ Page({
     wx.navigateTo({ url: '/pages/input/index?auto=1' })
   },
   login: function () {
-    api.login()
-    this.setData({ needLogin: false })
-    this.onShow()
-    wx.showToast({ title: '已登录', icon: 'none' })
+    return require('../../utils/login')(this, this.onShow)
   },
   upload: function () {
     var self = this

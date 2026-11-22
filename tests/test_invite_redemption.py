@@ -26,7 +26,7 @@ def codes(workbench, count=2):
 
 def redeem(workbench, user, code):
     return workbench.client.post(
-        "/api/v1/invite-codes/redeem", headers={"X-User-Id": user.id}, json={"code": code}
+        "/api/v1/invite-codes/redeem", headers=workbench.client.auth(user.id), json={"code": code}
     )
 
 

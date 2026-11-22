@@ -25,13 +25,15 @@
       <text class="link" style="margin:0 0 0 16rpx;" data-index="{{index}}" bindtap="remove">删除</text>
     </view>
   </view>
-  <view class="btn block" bindtap="confirm">确认查询</view>
+  <button class="btn block" bindtap="confirm" loading="{{loginLoading}}" disabled="{{loginLoading}}">确认查询</button>
+  <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
 </view>
 <view class="body" wx:elif="{{phase == 'limit'}}">
   <view class="err-box">{{failText}}</view>
   <textarea class="area" style="margin:24rpx 32rpx 0;width:auto;display:block;min-height:280rpx;" value="{{raw}}" disabled maxlength="-1" />
   <view class="hint">{{count}}/500</view>
-  <view class="btn block" bindtap="confirm">开始查询</view>
+  <button class="btn block" bindtap="confirm" loading="{{loginLoading}}" disabled="{{loginLoading}}">开始查询</button>
+  <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
 </view>
 <view class="body" wx:else>
   <view class="err-box">{{failText}}</view>

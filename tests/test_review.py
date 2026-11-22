@@ -84,8 +84,9 @@ def test_review_only_is_a_miss_without_counts_prices_or_leaks(
         )
         put(session, title, task)
     session.commit()
-    response = make_client(session, clock).get(
-        "/api/v1/programs/search", params={"name": title}, headers={"X-User-Id": "review-user"}
+    client = make_client(session, clock)
+    response = client.get(
+        "/api/v1/programs/search", params={"name": title}, headers=client.auth("review-user")
     )
     assert response.status_code == 200
     body = response.json()
@@ -112,7 +113,7 @@ def test_mixed_review_is_excluded_from_summary_and_user_export(session, clock, r
     session.commit()
     client = make_client(session, clock)
     body = client.get(
-        "/api/v1/programs/search", params={"name": "家庭"}, headers={"X-User-Id": "review-vip"}
+        "/api/v1/programs/search", params={"name": "家庭"}, headers=client.auth("review-vip")
     ).json()
     ids = [r["record_id"] for g in body["platform_groups"] for r in g["records"]]
     assert ids == [visible.id]

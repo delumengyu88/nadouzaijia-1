@@ -87,7 +87,7 @@ docker compose up --build -d
 
 Open http://localhost:8000/admin/ and sign in as `演示管理员` / `demo-pass-2026` or `演示客服` / `demo-pass-2026`.
 
-Copy `.env.example` only when you run the API on the host instead of in Compose. `NADOU_ALLOW_DEV_SEED` defaults off; Compose turns it on for the local database. `X-User-Id` is a local stand-in until WeChat login.
+Copy `.env.example` only when you run the API on the host instead of in Compose. `NADOU_ALLOW_DEV_SEED` defaults off; Compose turns it on for the local database. `X-User-Id` is ignored in every environment. User APIs require an expiring Bearer session from WeChat login; the development seed flag never bypasses authentication.
 
 The workbench API is under `/api/v1/admin`. Staff sign in with a username and password; the session is an httpOnly cookie, and the same token is accepted as a bearer. See [docs/DESIGN.md](docs/DESIGN.md) for roles, lockout, audit, evidence, and orders.
 
@@ -124,3 +124,14 @@ python -m nadou export-review > data/review.csv
 ```
 
 列为 task_id、片名、平台、命中帧数、时间戳；时间戳列保存 JSON 数组，保留全部命中时间。该文件被 data/ 默认忽略规则覆盖，不提交。命令不改复核状态，不导出图片地址。回滚 0007 会将待复核记录转为原有隐藏的 `dispute`，避免自动变成可计费记录；不能恢复迁移前的可见状态。
+
+
+## WeChat login
+
+Set `NADOU_WX_APPID` and `NADOU_WX_APPSECRET` in the server environment; `.env.example` intentionally leaves both blank. Run `alembic upgrade head` before starting the API (0008 adds `user_sessions`). Production uses `APP_ENV=production` and `NADOU_ALLOW_DEV_SEED=0`, alongside the existing `DATABASE_URL` configuration.
+
+The mini program sends `POST /api/v1/auth/wechat/login` with `{ "code": "<wx.login code>" }`. The server exchanges it with WeChat and creates or finds the user by openid. The response contains `token`, `token_type: "bearer"`, `expires_at`, and `user` (`id`, `tier`, membership expiry timestamps). `GET /api/v1/auth/me` returns the same user projection for an authenticated session. The server never returns or persists WeChat's session_key and never returns the AppSecret or openid to the client.
+
+Send `Authorization: Bearer <token>` for search/report data, query exports, invite redemption and `/auth/me`. Sessions last seven days; only their SHA-256 digest is stored in the database. Missing, invalid or expired sessions return 401; banned accounts return 403. An invalid/used WeChat code returns 401, malformed input 422, and missing server configuration or upstream failure 503. Staff sessions remain separate and cannot be substituted with a user session.
+
+Keep `touristappid` and an empty `apiBase` in source control. Real WeChat login testing requires the matching mini program identity in local developer settings and a locally configured reachable API; no real credentials or deployment addresses belong in the repository. Python tests mock the WeChat network call, while `node scripts/check-miniprogram.js` includes login state checks for all three adapters. Test identities are minted only by `tests/user_helpers.py`, without a development authentication route.

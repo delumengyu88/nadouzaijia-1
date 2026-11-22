@@ -193,20 +193,61 @@ function reset() {
 }
 
 function currentId() {
+  if (require('../config').mode !== 'mock' || load().current.indexOf('wx:') === 0) {
+    return token() ? 'wx:' + load().auth.user.id : 'guest'
+  }
   return load().current
 }
 
 function account() {
   var state = load()
-  if (state.current === 'guest') return null
-  return state.accounts[state.current]
+  var id = currentId()
+  if (id === 'guest') return null
+  var account = state.accounts[id]
+  if (state.auth && id === 'wx:' + state.auth.user.id) syncMembership(account, state.auth.user)
+  return account
 }
 
 function userId() {
-  var id = currentId()
-  var ids = require('../config').testUserIds || {}
-  if (id === 'member' || id === 'free') return ids[id] || ''
-  return ''
+  return token() ? load().auth.user.id : ''
+}
+
+function token() {
+  var auth = load().auth
+  if (!auth || !auth.token || !auth.user || !auth.user.id) return ''
+  if (!(Date.parse(auth.expires_at) > Date.now())) { clearSession(); return '' }
+  return auth.token
+}
+
+function clearSession(expectedToken) {
+  var data = load()
+  if (expectedToken && (!data.auth || data.auth.token !== expectedToken)) return
+  data.auth = null
+  data.current = 'guest'
+  save()
+}
+
+function membershipDay(expiry) {
+  var instant = Date.parse(expiry)
+  if (!(instant > Date.now())) return ''
+  return new Date(instant + 8 * 3600 * 1000).toISOString().slice(0, 10)
+}
+
+function syncMembership(account, user) {
+  // Keep full timestamps in auth; dates are only for Beijing display labels.
+  account.paidVipExpiry = membershipDay(user.vip_expires_at)
+  account.paidRegularExpiry = membershipDay(user.regular_expires_at)
+}
+
+function setSession(auth) {
+  var data = load()
+  var id = 'wx:' + auth.user.id
+  var account = data.accounts[id] || blankAccount()
+  syncMembership(account, auth.user)
+  data.accounts[id] = account
+  data.current = id
+  data.auth = { token: auth.token, expires_at: auth.expires_at, user: auth.user }
+  save()
 }
 
 module.exports = {
@@ -216,5 +257,8 @@ module.exports = {
   account: account,
   currentId: currentId,
   userId: userId,
+  token: token,
+  setSession: setSession,
+  clearSession: clearSession,
   blankAccount: blankAccount
 }

@@ -397,3 +397,27 @@ def test_review_migration_backfills_existing_rows(monkeypatch):
         with engine.begin() as connection:
             connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
         engine.dispose()
+
+
+def test_user_session_round_trip_and_expiry(pg_session):
+    from datetime import timedelta
+
+    from fastapi import HTTPException
+    from sqlalchemy import select
+
+    from nadou.auth import UserSessions
+    from nadou.models import User, UserSession
+
+    now = datetime(2026, 11, 22, 12, 0, tzinfo=RecordAge.TZ)
+    user = User(id="pg-login-user", created_at=now)
+    pg_session.add(user)
+    pg_session.flush()
+    token = UserSessions.issue(pg_session, user, now)
+    pg_session.expire_all()
+    stored = pg_session.scalar(select(UserSession).where(UserSession.user_id == user.id))
+    assert stored.expires_at == now + timedelta(days=7)
+    assert stored.token_hash != token
+    assert UserSessions.resolve(pg_session, "Bearer " + token, now).id == user.id
+    with pytest.raises(HTTPException) as error:
+        UserSessions.resolve(pg_session, "Bearer " + token, stored.expires_at)
+    assert error.value.status_code == 401

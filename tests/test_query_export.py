@@ -3,7 +3,6 @@ from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from urllib.parse import quote
 
-from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 from PIL import Image, ImageDraw
 
@@ -27,6 +26,7 @@ from nadou.platform_names import PlatformNames
 from nadou.query_export import HitColumns, PartNames, RestStatus
 from nadou.signed_url import FakeSignedUrlProvider
 from nadou.text import RecordAge
+from tests.user_helpers import UserClient
 
 COLUMNS = (
     "平台",
@@ -171,11 +171,11 @@ def make_client(session, clock, frames=None, max_bytes=None, urls=None):
         frames=frames,
         export_max_bytes=max_bytes,
     )
-    return TestClient(app)
+    return UserClient(app, session, clock)
 
 
 def export(client, query_id, user_id=None):
-    headers = {"X-User-Id": user_id} if user_id else {}
+    headers = client.auth(user_id)
     return client.get(f"/api/v1/queries/{query_id}/export", headers=headers)
 
 
@@ -319,14 +319,16 @@ def test_rejects_callers_who_cannot_export(session, clock, client):
     )
     for user_id in denied:
         response = export(client, "q-auth", user_id)
-        assert response.status_code == 403, user_id
+        assert response.status_code == (401 if user_id is None else 403), user_id
         assert not response.content.startswith(b"PK")
         assert "命中结果" not in response.text
 
     missing_user = export(client, "q-auth", "missing-user")
-    assert missing_user.status_code == 404
-    blank = client.get("/api/v1/queries/q-auth/export", headers={"X-User-Id": "   "})
-    assert blank.status_code == 403
+    assert missing_user.status_code == 401
+    blank = client.get(
+        "/api/v1/queries/q-auth/export", headers={"Authorization": "", "X-User-Id": "   "}
+    )
+    assert blank.status_code == 401
     unknown_query = export(client, "q-missing", "user-vip")
     assert unknown_query.status_code == 404
 

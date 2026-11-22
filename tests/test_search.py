@@ -127,7 +127,7 @@ def test_server_filters_every_tier(session, client, clock):
 
     def fetch(user_id=None):
         session.commit()
-        headers = {"X-User-Id": user_id} if user_id else {}
+        headers = client.auth(user_id) if user_id else {}
         response = client.get("/api/v1/programs/search", params={"name": PROGRAM}, headers=headers)
         assert response.status_code == 200, response.text
         return response.json()
@@ -151,7 +151,7 @@ def test_server_filters_every_tier(session, client, clock):
     other = client.get(
         "/api/v1/programs/search",
         params={"name": "其他节目"},
-        headers={"X-User-Id": "user-p90"},
+        headers=client.auth("user-p90"),
     ).json()
     assert other["locked_records"][0]["locked"] is True
     assert "plat-other" not in json.dumps(other)
@@ -413,7 +413,7 @@ def test_screenshot_does_not_spill_and_unknown_user(session, client, clock):
     body = client.get(
         "/api/v1/programs/search",
         params={"name": PROGRAM},
-        headers={"X-User-Id": "user-one-shot"},
+        headers=client.auth("user-one-shot"),
     ).json()
     rows = by_id(body)
     assert rows["rec-shot"]["access"] == "screenshot"
@@ -424,9 +424,9 @@ def test_screenshot_does_not_spill_and_unknown_user(session, client, clock):
     missing = client.get(
         "/api/v1/programs/search",
         params={"name": PROGRAM},
-        headers={"X-User-Id": "missing-user"},
+        headers=client.auth("missing-user"),
     )
-    assert missing.status_code == 404
+    assert missing.status_code == 401
     blank = client.get("/api/v1/programs/search", params={"name": "   "})
     assert blank.status_code == 400
 
@@ -465,7 +465,7 @@ def test_unknown_age_is_not_a_fresh_hit(session, client, clock):
     vip = client.get(
         "/api/v1/programs/search",
         params={"name": "无时间节目"},
-        headers={"X-User-Id": "user-vip-time"},
+        headers=client.auth("user-vip-time"),
     ).json()
     vip_unknown = by_id(vip)["rec-no-time"]
     assert vip_unknown["locked"] is True
@@ -572,7 +572,7 @@ def test_locked_summary_by_entitlement(session, client, clock):
     session.commit()
 
     def fetch(user_id=None):
-        headers = {"X-User-Id": user_id} if user_id else {}
+        headers = client.auth(user_id) if user_id else {}
         response = client.get("/api/v1/programs/search", params={"name": program}, headers=headers)
         assert response.status_code == 200, response.text
         return response.json()
@@ -877,7 +877,7 @@ def test_category_only_revealed_on_permitted_records(session, client, clock):
     response = client.get(
         "/api/v1/programs/search",
         params={"name": "类别节目"},
-        headers={"X-User-Id": "category-user"},
+        headers=client.auth("category-user"),
     )
     rows = by_id(response.json())
     assert rows["cat-open"]["category"] == "共识类别"

@@ -63,7 +63,11 @@ def test_demo_pages_and_api_hide_banned_labels(workbench):
     ).json()
     detail = call(workbench, "GET", f"/api/v1/admin/users/{user[0]['id']}", token).text
     blobs.append(detail)
-    search = workbench.client.get("/api/v1/programs/search", params={"name": "示例节目"})
+    search = workbench.client.get(
+        "/api/v1/programs/search",
+        params={"name": "示例节目"},
+        headers=workbench.client.auth(user[0]["id"]),
+    )
     blobs.append(search.text)
     joined = "\n".join(blobs)
     for word in BANNED:
@@ -296,7 +300,7 @@ def test_invite_clock_stays_beside_vip(workbench):
     ).json()
     redeemed = workbench.client.post(
         "/api/v1/invite-codes/redeem",
-        headers={"X-User-Id": user.id},
+        headers=workbench.client.auth(user.id),
         json={"code": created[0]["code"]},
     )
     assert redeemed.status_code == 200, redeemed.text
@@ -315,7 +319,7 @@ def test_invite_clock_stays_beside_vip(workbench):
     assert invite.expires_at == workbench.clock.now + timedelta(days=30)
     again = workbench.client.post(
         "/api/v1/invite-codes/redeem",
-        headers={"X-User-Id": user.id},
+        headers=workbench.client.auth(user.id),
         json={"code": created[1]["code"]},
     )
     assert again.status_code == 409

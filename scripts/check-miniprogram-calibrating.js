@@ -47,7 +47,10 @@ function respond(outcome) {
 }
 async function main() {
   var api = require('../miniprogram/api')
-  api.reset(); api.switchAccount('member')
+  api.reset()
+  if (config.mode === 'mock') api.switchAccount('member')
+  else require('../miniprogram/api/state').setSession({ token: 'test-member-token',
+    expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: 'member', tier: 'vip' } })
   config.calibrating = false
   var existing = await api.checkout('membership_vip')
   var orderNo = existing.ok ? existing.order.orderNo : 'unavailable'

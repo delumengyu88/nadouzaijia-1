@@ -18,6 +18,7 @@ from nadou.models import (  # noqa: F401
     Task,
     User,
 )
+from tests.user_helpers import UserClient
 
 BEIJING = ZoneInfo("Asia/Shanghai")
 
@@ -43,7 +44,7 @@ def session(tmp_path):
 @pytest.fixture
 def client(session, clock):
     app = create_app(database=Database(engine=session.get_bind()), now=lambda: clock)
-    return TestClient(app)
+    return UserClient(app, session, clock, default_user=True)
 
 
 class MutableClock:
@@ -66,7 +67,7 @@ def workbench(session, clock):
     StaffDirectory.create(session, "wb-admin", "admin-pass-1", "admin", clock)
     StaffDirectory.create(session, "wb-support", "support-pass-1", "support", clock)
     session.commit()
-    with TestClient(app) as client:
+    with UserClient(app, session, clock) as client:
         admin_token = _login(client, "wb-admin", "admin-pass-1")
         support_token = _login(client, "wb-support", "support-pass-1")
         yield SimpleNamespace(

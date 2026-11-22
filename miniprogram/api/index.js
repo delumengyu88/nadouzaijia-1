@@ -9,4 +9,5 @@ var client = Object.assign({}, api, mode === 'mock' ? {} : require('./live'))
     return original.apply(this, arguments)
   }
 })
+client.login = require('./auth').login
 module.exports = client

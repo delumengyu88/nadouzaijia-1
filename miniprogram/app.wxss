@@ -597,3 +597,9 @@ button::after {
   border-radius: 16rpx;
 }
 .shot.low { filter: blur(1px); opacity: 0.95; }
+
+/* Login feedback stays below its button, including the P18 guest state. */
+.login-link { margin:0; padding:0; color:#2456a6; background:transparent; font-size:28rpx; line-height:1.6; }
+.login-link::after { border:0; }
+.login-error { margin-top:16rpx; color:#dc2626; font-size:26rpx; line-height:1.5; text-align:center; }
+button.btn[disabled] { opacity:.65; }

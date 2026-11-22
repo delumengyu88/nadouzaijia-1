@@ -231,7 +231,11 @@ global.wx = {
   redirectTo: function () {},
   switchTab: function () {},
   navigateBack: function () {},
-  request: function () {},
+  login: function (opts) { opts.success({ code: 'check-code' }) },
+  request: function (opts) { opts.success({ statusCode: 200, data: {
+    token: 'check-token', token_type: 'bearer', expires_at: new Date(Date.now() + 86400000).toISOString(),
+    user: { id: 'check-user', tier: 'free' }
+  } }) },
   chooseMessageFile: function () {},
   getFileSystemManager: function () { return { writeFile: function (opt) { if (opt && opt.success) opt.success() } } },
   env: { USER_DATA_PATH: '/tmp' },
@@ -253,6 +257,7 @@ if (defaults.mode !== 'hybrid' || defaults.trialMode !== true || defaults.calibr
 require(path.join(root, 'config')).mode = 'mock'
 require(path.join(root, 'config')).trialMode = false
 require(path.join(root, 'config')).calibrating = false
+require(path.join(root, 'config')).apiBase = '/test-api'
 var defs = {}
 var currentRel = ''
 global.Page = function (def) { defs[currentRel] = def }
@@ -300,6 +305,7 @@ function open(rel, query, life) {
   return page
 }
 
+async function main() {
 try {
   var titlesUtil = require(path.join(root, 'utils/text'))
   var approvedWords = require(path.join(root, 'stop-words.json'))
@@ -344,8 +350,10 @@ try {
   home.setData({ draft: '星河旧梦' })
   home.start()
   expect(home.data.needLogin, 'guest query should ask for login')
-  home.login()
-  expect(api.accountKind() === 'free', 'login should enter the free account')
+  await home.login()
+  expect(!api.profile().guest && api.profile().tier === 'free', 'login should enter the free account')
+  // Commerce below is an offline prototype flow, separate from real session membership.
+  api.switchAccount('free')
   home = open('pages/home/index', {}, 'show')
   expect(home.data.banner === 'free', 'free home banner')
   cover('P04-nomember')
@@ -611,7 +619,7 @@ try {
   expect(profile.data.guest, 'guest profile')
   cover('P13-guest')
   memberPage = open('pages/member/index', {}, 'show')
-  expect(memberPage.data.guest && memberPage.data.payLabel === '登录后开通', 'guest member center')
+  expect(memberPage.data.guest && memberPage.data.payLabel === '微信登录', 'guest member center')
   cover('P18-guest')
 
   boot('free')
@@ -771,5 +779,13 @@ if (liveCheck.status !== 0) fail(liveCheck.stderr || 'hybrid check failed')
   console.log(calibrationCheck.stdout || '')
   if (calibrationCheck.status !== 0) fail(calibrationCheck.stderr || 'calibration check failed: ' + mode)
 })
+;['mock', 'hybrid', 'live'].forEach(function (mode) {
+  var loginCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-login.js'), mode], { encoding: 'utf8' })
+  console.log(loginCheck.stdout || '')
+  if (loginCheck.status !== 0) fail(loginCheck.stderr || 'login check failed: ' + mode)
+})
 if (failed) process.exit(1)
 console.log('miniprogram check ok')
+
+}
+main().catch(function (error) { console.error(error); process.exitCode = 1 })

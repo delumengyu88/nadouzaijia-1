@@ -5,6 +5,7 @@ def test_schema_has_no_zip_or_download_tables():
     names = set(Base.metadata.tables)
     assert names == {
         "users",
+        "user_sessions",
         "entitlements",
         "tasks",
         "index_records",

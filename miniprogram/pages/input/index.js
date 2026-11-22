@@ -100,7 +100,7 @@ Page({
   },
   confirm: function () {
     if (api.accountKind() === 'guest') {
-      api.login()
+      return require('../../utils/login')(this, function () {})
     }
     var names = (this.data.items || []).map(function (item) { return item.name })
     var created = api.createQuery(names)

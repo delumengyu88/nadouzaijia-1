@@ -1,11 +1,13 @@
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Annotated
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, StringConstraints
 from sqlalchemy.orm import Session
 
 from nadou.admin.api import AdminApi
@@ -14,13 +16,19 @@ from nadou.admin.errors import WorkbenchError
 from nadou.admin.invites import InviteRedemption
 from nadou.admin.notify import NotifierFactory
 from nadou.admin.schemas import InviteRedeemIn
+from nadou.auth import UserSessions, WeChatLogin, require_active, user_profile
 from nadou.config import get_settings
 from nadou.db import Database
+from nadou.models import User
 from nadou.schemas import SearchOut
 from nadou.search import EmptyQuery, ProgramSearch, UnknownUser
 from nadou.signed_url import FakeSignedUrlProvider, SignedUrlProvider
 
 _BEIJING = ZoneInfo("Asia/Shanghai")
+
+
+class WeChatLoginIn(BaseModel):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=512)]
 
 
 def create_app(
@@ -51,6 +59,36 @@ def create_app(
         finally:
             session.close()
 
+    def current_user(
+        authorization: str | None = Header(default=None),
+        session: Session = Depends(get_session, scope="function"),
+    ) -> User:
+        return UserSessions.resolve(session, authorization, clock())
+
+    @app.post("/api/v1/auth/wechat/login")
+    def wechat_login(
+        payload: WeChatLoginIn,
+        session: Session = Depends(get_session, scope="function"),
+    ):
+        openid = WeChatLogin.exchange(payload.code)
+        now = clock()
+        user = WeChatLogin.user(session, openid, now)
+        require_active(user, now)
+        token = UserSessions.issue(session, user, now)
+        return {
+            "token": token,
+            "token_type": "bearer",
+            "expires_at": (now + UserSessions.TTL).isoformat(),
+            "user": user_profile(session, user, now),
+        }
+
+    @app.get("/api/v1/auth/me")
+    def me(
+        user: User = Depends(current_user),
+        session: Session = Depends(get_session, scope="function"),
+    ):
+        return user_profile(session, user, clock())
+
     @app.get("/health")
     @app.get("/healthz")
     def health() -> dict[str, str]:
@@ -64,13 +102,10 @@ def create_app(
     def search_program(
         name: str,
         session: Session = Depends(get_session, scope="function"),
-        x_user_id: str | None = Header(default=None),
+        user: User = Depends(current_user),
     ):
-        caller = x_user_id.strip() if x_user_id else None
-        if not caller:
-            caller = None
         try:
-            return ProgramSearch(session, urls, clock()).search(name, caller)
+            return ProgramSearch(session, urls, clock()).search(name, user.id)
         except EmptyQuery:
             raise HTTPException(status_code=400, detail="name is required") from None
         except UnknownUser:
@@ -80,15 +115,12 @@ def create_app(
     def redeem_invite(
         payload: InviteRedeemIn,
         session: Session = Depends(get_session, scope="function"),
-        x_user_id: str | None = Header(default=None),
+        user: User = Depends(current_user),
     ):
-        caller = x_user_id.strip() if x_user_id else ""
-        if not caller:
-            raise HTTPException(status_code=400, detail="user is required")
         try:
             grant = InviteRedemption(
                 session, AuditWriter(session, clock(), None, None), clock()
-            ).redeem(payload.code, caller)
+            ).redeem(payload.code, user.id)
         except WorkbenchError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from None
         return {
@@ -104,20 +136,17 @@ def create_app(
     def export_query(
         query_id: str,
         session: Session = Depends(get_session, scope="function"),
-        x_user_id: str | None = Header(default=None),
+        user: User = Depends(current_user),
     ):
         # Imported here so the workbench process does not load the image stack at startup.
         from nadou.frames import GeneratedFrameReader, SignedDerivedFrameSource
         from nadou.query_export import ExportForbidden, ExportLimits, QueryExport, UnknownQuery
 
-        caller = x_user_id.strip() if x_user_id else None
-        if not caller:
-            caller = None
         frame_source = frames or SignedDerivedFrameSource(urls, GeneratedFrameReader())
         max_bytes = ExportLimits.MAX_BYTES if export_max_bytes is None else export_max_bytes
         try:
             exported = QueryExport(session, frame_source, clock(), max_bytes).export(
-                query_id, caller
+                query_id, user.id
             )
         except UnknownUser:
             raise HTTPException(status_code=404, detail="user not found") from None

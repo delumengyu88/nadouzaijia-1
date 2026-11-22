@@ -13,7 +13,7 @@
   <view class="banner run" wx:if="{{banner == 'running'}}" bindtap="openRunning">
     <text>{{bannerText}}</text><text class="chev">›</text>
   </view>
-  <view class="banner" wx:elif="{{banner == 'guest'}}"><text>未登录</text><text class="link" bindtap="login">登录</text></view>
+  <view class="banner" wx:elif="{{banner == 'guest'}}"><text>未登录</text><view><button class="login-link" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">微信登录</button><view class="login-error" wx:if="{{loginError}}">{{loginError}}</view></view></view>
   <view class="banner" wx:elif="{{banner == 'free'}}">{{bannerText}}</view>
   <view class="card">
     <view class="card-title">输入片单</view>
@@ -75,6 +75,7 @@
   <view class="dialog">
     <view class="dialog-title">登录后继续</view>
     
-    <view class="btn" bindtap="login">登录</view>
+    <button class="btn" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">微信登录</button>
+    <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
   </view>
 </view>
