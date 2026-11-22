@@ -1072,3 +1072,28 @@ def test_category_is_from_each_visible_index_record(session, clock):
     assert {row[2] for row in rows} == {None, "共识类别"}
     assert {row[3] for row in rows} == {"节目类型值"}
     workbook.close()
+
+
+def test_stop_words_cannot_be_exported_as_hits(session, clock):
+    add_user(session, "stop-member", clock, "vip")
+    titles = ["怪", "爱情", "家庭", "远方", "狗", "父亲", "母亲", "爱情故事集"]
+    for index, title in enumerate(titles):
+        add_record(
+            session,
+            task_id=f"stop-task-{index}",
+            record_id=f"stop-rec-{index}",
+            program=title,
+            when=at_age(clock, 100),
+        )
+    add_query(
+        session,
+        clock,
+        "stop-query",
+        [{"uploaded": title, "resolution": "exact"} for title in titles],
+    )
+    session.commit()
+    response = export(make_client(session, clock), "stop-query", "stop-member")
+    workbook = load_workbook(BytesIO(response.content))
+    _, rows, _ = hit_table(workbook["命中结果"])
+    assert {row[4] for row in rows} == set(titles[2:])
+    workbook.close()

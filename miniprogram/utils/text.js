@@ -1,17 +1,4 @@
-var HEADER = {
-  节目名: 1,
-  节目名称: 1,
-  片名: 1,
-  序号: 1,
-  时长: 1,
-  导演: 1,
-  主演: 1,
-  集数: 1,
-  日期: 1,
-  名称: 1,
-  平台: 1,
-  类型: 1
-}
+var STOP_WORDS = require('../stop-words.json')
 
 function foldKey(input) {
   var s = toHalf(String(input || ''))
@@ -33,9 +20,14 @@ function displayOf(input) {
   return s
 }
 
+function isStopped(title) {
+  var key = foldKey(title)
+  return STOP_WORDS.some(function (word) { return foldKey(word) === key })
+}
+
 function looksJunk(line) {
   if (!line) return true
-  if (HEADER[line] || HEADER[line.toLowerCase()]) return true
+  if (isStopped(line)) return true
   if (/^\d+$/.test(line)) return true
   if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(line)) return true
   if (/^\d+\s*(分钟|秒|集)$/.test(line)) return true
@@ -113,6 +105,7 @@ function codeWellFormed(code) {
 
 module.exports = {
   foldKey: foldKey,
+  isStopped: isStopped,
   displayOf: displayOf,
   parseTitles: parseTitles,
   normalizeCode: normalizeCode,

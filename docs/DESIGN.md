@@ -256,3 +256,18 @@ There are no ORM entities, seed writes, lookup queries, or management screens fo
 Only `PlatformNames` in code maintains platform equivalences. Historical query resolution
 values remain readable, but export uses the normalized uploaded title, and unresolved
 historical entries are failures rather than hits. Historical data cleanup is deferred.
+
+## Configurable stop words (first approved batch)
+
+`src/nadou/stop_words.json` contains exactly the 102 approved entries. With no
+configuration, search and workbook export reject these normalized whole titles.
+No substring, one-character length, or fuzzy-title matching rule is introduced.
+家庭、远方、狗、父亲、母亲 remain searchable; other short-title rules are deferred.
+
+For an explicitly reviewed replacement list, set `NADOU_STOP_WORDS_PATH` to a local
+UTF-8 JSON array of strings and restart the process. Missing or malformed files fail
+closed rather than silently disabling filtering. An empty list explicitly disables
+filtering; do not deploy such a list without business approval. There is no editing UI.
+The mini program's bundled `miniprogram/stop-words.json` is the same first batch;
+when an approved list changes, synchronize the bundle and rebuild it. The backend
+remains authoritative. Tests verify the two checked-in lists stay identical.

@@ -17,6 +17,7 @@ from nadou.importer import TestTaskFilter
 from nadou.models import Entitlement, IndexRecord, MemberQuery, QueryProgram, Task, User
 from nadou.normalize import ProgramNormalizer
 from nadou.platform_names import PlatformNames
+from nadou.program_titles import ProgramTitleGuard
 from nadou.search import ProgramSearch, UnknownUser
 from nadou.text import RecordAge
 
@@ -500,7 +501,7 @@ class QueryExport:
             if item.resolution not in RecordWindow.HIT_RESOLUTIONS:
                 continue
             canonical = self._title(programs, item)
-            if canonical:
+            if canonical and ProgramTitleGuard.is_billable(canonical):
                 names.add(canonical)
         by_program, tasks = self._load(names)
         hits: list[HitRow] = []

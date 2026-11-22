@@ -11,6 +11,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://nadou:nadou_dev_password@localhost:5432/nadou"
     app_env: str = "local"
+    stop_words_path: str = Field(default="", validation_alias="NADOU_STOP_WORDS_PATH")
     allow_dev_seed: bool = Field(
         default=False,
         validation_alias=AliasChoices("NADOU_ALLOW_DEV_SEED"),

@@ -848,7 +848,7 @@ def test_fragment_titles_are_not_billable(session, client, clock):
         assert found["outcome"] == "hit"
         assert found["platform_groups"][0]["records"][0]["record_id"] == "frag-ok-rec"
     finally:
-        ProgramTitleGuard.set_stop_words(frozenset())
+        ProgramTitleGuard.set_stop_words(None)
 
 
 def test_no_zip_or_download_route(client):
@@ -915,3 +915,23 @@ def test_retired_mappings_cannot_change_search(session, client, clock):
     body = client.get("/api/v1/programs/search", params={"name": "规范名称"}).json()
     assert body["platform_groups"][0]["records"][0]["platform"] == "广东移动"
     assert client.get("/api/v1/admin/aliases").status_code == 404
+
+
+def test_approved_stop_words_never_hit_but_real_short_titles_do(session, client, clock):
+    titles = ["怪", "爱情", "家庭", "远方", "狗", "父亲", "母亲", "爱情故事集"]
+    for index, title in enumerate(titles):
+        add_hit(
+            session,
+            task_id=f"stop-task-{index}",
+            record_id=f"stop-rec-{index}",
+            program=title,
+            when=at_age(clock, 200),
+        )
+    session.commit()
+    for title in titles:
+        body = client.get("/api/v1/programs/search", params={"name": title}).json()
+        assert body["outcome"] == ("miss" if title in {"怪", "爱情"} else "hit")
+        if title in {"怪", "爱情"}:
+            assert body["platform_count"] == 0
+            assert body["platform_groups"] == []
+            assert body["locked_records"] == []

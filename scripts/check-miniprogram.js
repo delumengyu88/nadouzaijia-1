@@ -283,6 +283,16 @@ function open(rel, query, life) {
 }
 
 try {
+  var titlesUtil = require(path.join(root, 'utils/text'))
+  var approvedWords = require(path.join(root, 'stop-words.json'))
+  expect(approvedWords.length === 102, '102 approved stop words')
+  approvedWords.forEach(function (word) {
+    expect(titlesUtil.isStopped('　' + word + ' '), 'normalized stop word: ' + word)
+    expect(!titlesUtil.isStopped(word + '测试片'), 'whole words only: ' + word)
+  })
+  var protectedTitles = ['家庭', '远方', '狗', '父亲', '母亲', '甲乙', '日期', '名称']
+  expect(titlesUtil.parseTitles(protectedTitles.join('\n')).items.length === protectedTitles.length,
+    'do not filter other short titles')
   var shape = require(path.join(root, 'api/shape'))
   var presenter = require(path.join(root, 'utils/present'))
   var categoryBody = shape.sanitizeSearch({ outcome: 'hit', platform_count: 1,

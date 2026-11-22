@@ -165,6 +165,7 @@ function lockedBody(foundName, meta) {
 }
 
 function searchRaw(name, options) {
+  if (text.isStopped(name)) return missBody(name)
   var key = text.foldKey(name)
   var foundName = ''
   Object.keys(catalog.programs).forEach(function (title) {
