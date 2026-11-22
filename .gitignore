@@ -5,6 +5,9 @@ __pycache__/
 .mypy_cache/
 *.pyc
 .env
+# Merchant private keys and WeChat Pay certificates. Never commit.
+*.pem
+*.key
 dist/
 build/
 *.egg-info/

@@ -26,3 +26,4 @@
   <view class="btn slim" wx:if="{{downloadEntry}}" bindtap="save">下载到相册</view>
   <view class="btn reason" wx:if="{{blockedReason}}" bindtap="upgrade">{{blockedReason}}</view>
 </view>
+<privacy-popup />

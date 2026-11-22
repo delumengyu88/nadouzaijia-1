@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from nadou.admin.audit import AuditWriter
 from nadou.admin.errors import WorkbenchError
 from nadou.admin.phone import PhoneMask
-from nadou.models import Entitlement, InviteCode, User
+from nadou.models import Entitlement, InviteCode, Order, OrderIssuance, User
+from nadou.payments.catalog import TEST_PRODUCTS
 
 
 class EntitlementBook:
@@ -22,16 +23,22 @@ class EntitlementBook:
 
     @staticmethod
     def revenue_entitlements(session: Session) -> list[Entitlement]:
-        return list(
-            session.scalars(
-                select(Entitlement).where(
-                    or_(
-                        Entitlement.source.is_(None),
-                        Entitlement.source == EntitlementBook.ORDER,
-                    )
-                )
-            ).all()
+        counted = or_(
+            Entitlement.source.is_(None),
+            Entitlement.source == EntitlementBook.ORDER,
         )
+        query = select(Entitlement).where(counted)
+        if TEST_PRODUCTS:
+            excluded = (
+                select(OrderIssuance.entitlement_id)
+                .join(Order, Order.id == OrderIssuance.order_id)
+                .where(
+                    Order.product.in_(TEST_PRODUCTS),
+                    OrderIssuance.entitlement_id.is_not(None),
+                )
+            )
+            query = query.where(Entitlement.id.not_in(excluded))
+        return list(session.scalars(query).all())
 
 
 class UserView:
