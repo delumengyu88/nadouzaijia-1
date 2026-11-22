@@ -13,7 +13,7 @@
     </view>
   </view>
   <view class="benefit {{perk.ok ? '' : 'no'}}" wx:for="{{plan.perks}}" wx:for-item="perk" wx:key="text">
-    <text wx:if="{{perk.ok}}" class="perk-mark">✓</text>
+    <text class="perk-mark {{perk.ok ? '' : 'gap'}}">✓</text>
     <text>{{perk.text}}</text>
   </view>
 </view>

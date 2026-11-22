@@ -65,7 +65,7 @@ function statusLine(tier, until) {
   if (tier === 'vip') return 'VIP 至 ' + until
   if (tier === 'regular') return '普通会员 至 ' + until
   if (tier === 'guest') return '未登录'
-  return '免费用户'
+  return '免费 · 可看 180 天以上低清记录'
 }
 
 function screenUsage(layout) {
