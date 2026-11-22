@@ -58,14 +58,15 @@ The API shows `其他平台` (`PlatformNames.OTHER`) only on records the caller 
 2. `GET /api/v1/programs/search?name=` — canonicalize `name`, return that program's counted records filtered for the caller.
 3. `GET /api/v1/queries/{query_id}/export` — workbook for one saved query. See below. Same `X-User-Id` stand-in.
 4. `GET /api/v1/app/config` — public splash switch for the mini program. No login. See below.
-5. `GET /api/v1/app/home` — public home content for the mini program. No login. See below.
-6. `GET /api/v1/app/examples/{name}` — public example report for one homepage example. No login. See below.
-7. `GET /api/v1/pay/orders` — the signed-in user's orders, newest first. See below. One order is the existing `GET /api/v1/pay/orders/{order_number}`.
-8. `POST /api/v1/evidence-requests` — 登录用户提交委托取证。见下方「用户侧委托取证」。
-9. `GET /api/v1/evidence-requests` — 只返回当前用户的工单，按 `created_at` 倒序。
-10. `GET /api/v1/evidence-requests/{id}` — 本人工单详情。非本人或不存在都是 404。
-11. `POST /api/v1/evidence-requests/{id}/withdraw` — 仅「已提交」可撤回为「已取消」。
-12. `POST /api/v1/evidence-requests/{id}/confirm` — 仅「已交付」可确认为「已完成」。
+5. `GET /api/v1/invite-codes/state` — whether the caller has redeemed an invite code. See below.
+6. `GET /api/v1/app/home` — public home content for the mini program. No login. See below.
+7. `GET /api/v1/app/examples/{name}` — public example report for one homepage example. No login. See below.
+8. `GET /api/v1/pay/orders` — the signed-in user's orders, newest first. See below. One order is the existing `GET /api/v1/pay/orders/{order_number}`.
+9. `POST /api/v1/evidence-requests` — 登录用户提交委托取证。见下方「用户侧委托取证」。
+10. `GET /api/v1/evidence-requests` — 只返回当前用户的工单，按 `created_at` 倒序。
+11. `GET /api/v1/evidence-requests/{id}` — 本人工单详情。非本人或不存在都是 404。
+12. `POST /api/v1/evidence-requests/{id}/withdraw` — 仅「已提交」可撤回为「已取消」。
+13. `POST /api/v1/evidence-requests/{id}/confirm` — 仅「已交付」可确认为「已完成」。
 
 Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is local-only until WeChat login lands.** Do not expose this header as account authentication on a shared or deployed API. There is no import endpoint; import is `TaskExportImporter`, used by the seed script and tests. Workbench upload can call the same class later.
 
@@ -80,6 +81,26 @@ Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is loc
 ```
 
 表里没有这一行时返回 `splash_enabled: true`、`slogan: ""`，表的行数不变。工作台 `PUT /api/v1/admin/content/splash` 改过 `enabled` 之后，下一次这个 GET 按库里的当前值返回。服务端不做缓存；响应带 `Cache-Control: public, max-age=60`，给调用方自己缓存。
+
+### 小程序邀请状态
+
+`GET /api/v1/invite-codes/state` 给兑换邀请码页和个人中心的邀请行用。不改 `GET /api/v1/auth/me`。登录识别与 `/api/v1/auth/me` 相同，都是 `Authorization: Bearer` 用户会话：没有 token、token 无效或会话过期时按未登录处理，返回 200，而不是 401。`X-User-Id` 不能代替这个会话。封禁账号仍是 403。
+
+只读 `invite_codes` 里 `redeemed_by` 等于当前用户的行，不插入、不更新。`bound` 表示这个用户已经成功兑换过邀请码。邀请权益过期、邀请码本身的可兑换期限已过，都仍然是已绑定，不能再兑。不看 `entitlements` 是否还在有效期内，也不读取其他用户的邀请码。
+
+字段名与小程序一致。兑换页只用 `guest` 和 `bound`。个人中心在已登录时还用 `bound` 和 `bindText`（`miniprogram/pages/profile/index.wxml` 的邀请行标题）。未绑定，包括未登录，`bindText` 为「兑换邀请码」。已绑定是「邀请码 」加上邀请码前 4 位和 `****`，与小程序 `maskCode` 相同。
+
+```json
+{"guest": false, "bound": true, "bindText": "邀请码 ABCD****"}
+```
+
+未登录：
+
+```json
+{"guest": true, "bound": false, "bindText": "兑换邀请码"}
+```
+
+不返回邀请码明文、渠道、手机号、兑换时间，也不返回权益档位或到期时间。这些页面都不用后两项；`bindSub` 在小程序 mock 里恒为空字符串，个人中心模板也没有使用，所以不放进响应。响应带 `Cache-Control: no-store`。
 
 ### 小程序首页
 
