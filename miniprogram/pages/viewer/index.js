@@ -2,6 +2,7 @@ var api = require('../../api/index')
 var nav = require('../../utils/nav')
 var calibration = require('../../utils/calibration')
 var present = require('../../utils/present')
+var member = require('../../utils/member')
 
 function decode(value) {
   if (!value) return ''
@@ -41,6 +42,12 @@ Page({
     var programOnly = row && row.access === 'full' && !row.can_download_screenshot
     if (query.view === 'free') { low = true; canSave = false; programOnly = false }
     if (query.view === 'nodl') { low = false; canSave = false; programOnly = true }
+    var offer = member.downloadOffer({
+      canSave: canSave,
+      low: low,
+      programOnly: programOnly,
+      tier: prof.tier
+    })
     var layout = nav.layout('viewer', this.query)
     this.setData({
       statusBarHeight: layout.statusBarHeight,
@@ -56,6 +63,8 @@ Page({
       time: real ? (row && row.timestamps || []).join('、') : extra.time || '',
       low: low,
       canSave: canSave,
+      downloadEntry: offer.downloadEntry,
+      blockedReason: offer.blockedReason,
       programOnly: programOnly,
       loading: false,
       missing: !row && query.view !== 'free' && query.view !== 'nodl'
@@ -83,6 +92,6 @@ Page({
   },
   upgrade: function () {
     if (require('../../utils/trial').blockPayment()) return
-    wx.navigateTo({ url: '/pages/pay/index?product=membership_vip' })
+    wx.switchTab({ url: '/pages/member/index' })
   }
 })

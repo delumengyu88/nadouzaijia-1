@@ -6,7 +6,8 @@ module.exports = function (path, data, options) {
   var base = String(config.apiBase || '').replace(/\/$/, '')
   if (!base) return Promise.reject(new Error('未配置服务地址'))
   var token = options.public ? '' : state.token()
-  if (!options.public && !token) return Promise.reject(new Error('请先登录'))
+  // Invite state is 200 for a missing token. Other calls still require a session.
+  if (!options.public && !options.optionalAuth && !token) return Promise.reject(new Error('请先登录'))
   return new Promise(function (resolve, reject) {
     // A synchronous throw must still settle the promise, or callers wait forever.
     try {
@@ -17,10 +18,11 @@ module.exports = function (path, data, options) {
         data: data || {},
         header: token ? { Authorization: 'Bearer ' + token } : {},
         success: function (res) {
-          // Redeem reads the body `detail` code and must not collapse it to a status error.
-          if (options.exposeStatus) {
+          // Evidence uses readBody. Redeem uses exposeStatus. Invite state uses optionalAuth.
+          if (options.readBody || options.exposeStatus) {
             if (res.statusCode === 401 && token) state.clearSession(token)
-            resolve({ statusCode: res.statusCode, data: res.data })
+            if (options.exposeStatus) resolve({ statusCode: res.statusCode, data: res.data })
+            else resolve(res.data === undefined || res.data === null ? {} : res.data)
             return
           }
           if (res.statusCode >= 200 && res.statusCode < 300) resolve(res.data || {})
