@@ -37,6 +37,13 @@ walk(root, []).forEach(function (file) {
   }
 })
 
+var homeWxml = fs.readFileSync(path.join(root, 'pages/home/index.wxml'), 'utf8')
+if (homeWxml.indexOf('已收录平台片单检索') !== -1) fail('pages/home/index.wxml must not contain 已收录平台片单检索')
+if (!/class="nav-bar" style="height: \{\{navBarHeight\}\}px;"/.test(homeWxml)) {
+  fail('home nav bar height must come from navBarHeight')
+}
+if (!/style="height: \{\{navHeight\}\}px;"/.test(homeWxml)) fail('home content offset must use navHeight')
+
 function readJson(rel) {
   return JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8'))
 }
@@ -359,6 +366,35 @@ try {
   boot('guest')
   home = open('pages/home/index', {}, 'show')
   expect(home.data.banner === 'guest' && !home.data.showSplash, 'guest home')
+  expect(home.data.navBarHeight === 40, 'nav bar follows the capsule, not a 44px floor')
+  expect(home.data.navHeight === home.data.statusBarHeight + home.data.navBarHeight, 'content starts below status + nav')
+  expect(home.data.navHeight === 84, 'home offset uses the capsule nav height')
+  function withCapsule(status, top, height, fn) {
+    var prevSys = wx.getSystemInfoSync
+    var prevMenu = wx.getMenuButtonBoundingClientRect
+    wx.getSystemInfoSync = function () {
+      return { statusBarHeight: status, windowWidth: status === 20 ? 375 : 390, windowHeight: status === 20 ? 667 : 844, safeArea: { bottom: status === 20 ? 667 : 810 } }
+    }
+    wx.getMenuButtonBoundingClientRect = function () {
+      return { top: top, bottom: top + height, height: height, width: 87, left: 281, right: 368 }
+    }
+    try { fn() } finally {
+      wx.getSystemInfoSync = prevSys
+      wx.getMenuButtonBoundingClientRect = prevMenu
+    }
+  }
+  withCapsule(47, 55, 32, function () {
+    boot('guest')
+    var notch = open('pages/home/index', {}, 'show')
+    expect(notch.data.statusBarHeight === 47 && notch.data.navBarHeight === 48 && notch.data.navHeight === 95, 'iPhone 14 content offset')
+  })
+  withCapsule(20, 28, 32, function () {
+    boot('guest')
+    var classic = open('pages/home/index', {}, 'show')
+    expect(classic.data.statusBarHeight === 20 && classic.data.navBarHeight === 48 && classic.data.navHeight === 68, 'iPhone 8 content offset')
+  })
+  boot('guest')
+  home = open('pages/home/index', {}, 'show')
   cover('P04-guest')
   home.setData({ draft: '星河旧梦' })
   home.start()

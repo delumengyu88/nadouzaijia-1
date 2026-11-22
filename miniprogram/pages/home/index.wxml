@@ -1,15 +1,12 @@
 <view class="tab-page">
 <view class="nav" style="padding-top: {{statusBarHeight}}px;">
-  <view class="nav-bar">
+  <view class="nav-bar" style="height: {{navBarHeight}}px;">
     <view class="nav-brand">那豆在架</view>
   </view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
 <view class="body">
-  <view class="pad">
-    <view class="h1">已收录平台片单检索，免费</view>
-    <view class="sub">已收录 {{platformTotal}} 个平台</view>
-  </view>
+  <view class="catalog-count">已收录 {{platformTotal}} 个平台</view>
   <view class="banner run" wx:if="{{banner == 'running'}}" bindtap="openRunning">
     <text>{{bannerText}}</text><text class="chev">›</text>
   </view>

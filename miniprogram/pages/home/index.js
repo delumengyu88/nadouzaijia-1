@@ -20,6 +20,7 @@ Page({
     data.showSplash = !api.splashSeen()
     data.seconds = this.data.seconds || 5
     Object.keys(home).forEach(function (key) { data[key] = home[key] })
+    data.navHeight = data.statusBarHeight + data.navBarHeight
     this.setData(data)
     nav.selectTab(this, 0)
   },

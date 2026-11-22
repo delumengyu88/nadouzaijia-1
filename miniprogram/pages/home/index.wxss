@@ -1,1 +1,7 @@
-/* local */
+/* 平台计数独立成块。删掉 wxml 里这一个节点即可，横幅和输入卡片自带上边距。 */
+.catalog-count {
+  margin: 0 32rpx;
+  color: #8b95a3;
+  font-size: 26rpx;
+  line-height: 1.4;
+}
