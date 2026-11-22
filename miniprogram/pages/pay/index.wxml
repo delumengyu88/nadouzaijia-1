@@ -39,9 +39,11 @@
 </view>
 <view class="body" wx:elif="{{phase == 'confirming'}}">
   <view class="result">
-    <icon type="waiting" size="56" color="#1D4E9E"/>
+    <icon wx:if="{{confirmSpin}}" type="waiting" size="56" color="#1D4E9E"/>
+    <icon wx:else type="info" size="56" color="#1D4E9E"/>
     <view class="result-title">{{resultTitle || '正在确认支付结果…'}}</view>
-    <view class="result-sub" wx:if="{{confirmTimeout}}">{{resultSub}}</view>
+    <view class="result-sub" wx:if="{{confirmSpin}}">请勿关闭页面或重复支付</view>
+    <view class="result-sub" wx:elif="{{confirmTimeout}}">{{resultSub}}</view>
     <view class="result-primary" wx:if="{{confirmTimeout && !confirmSpin}}" bindtap="refreshStatus">刷新</view>
   </view>
 </view>

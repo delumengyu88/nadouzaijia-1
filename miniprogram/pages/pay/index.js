@@ -80,13 +80,19 @@ Page({
       abnormal: { phase: 'grant_error', title: '发放异常' },
       covered: { phase: 'covered', title: '无需购买' },
       unavailable: { phase: 'unavailable', title: '支付暂未开通' },
-      confirming: { phase: 'confirming', title: '支付确认中', confirmSpin: true, resultTitle: '正在确认支付结果…' },
+      confirming: {
+        phase: 'confirming',
+        title: '支付确认中',
+        confirmSpin: true,
+        resultTitle: '正在确认支付结果…',
+        resultSub: '请勿关闭页面或重复支付'
+      },
       timeout: {
         phase: 'confirming',
-        title: '支付结果确认中',
+        title: '支付确认中',
         confirmSpin: false,
         confirmTimeout: true,
-        resultTitle: '正在确认支付结果…',
+        resultTitle: '暂未确认支付结果',
         resultSub: '暂未收到最终结果，请稍后刷新，请勿重复支付。'
       }
     }
@@ -260,7 +266,7 @@ Page({
       confirmTimeout: false,
       confirmSpin: true,
       resultTitle: '正在确认支付结果…',
-      resultSub: '',
+      resultSub: '请勿关闭页面或重复支付',
       payLoading: false,
       mockSettle: false,
       showPay: false
@@ -291,10 +297,10 @@ Page({
         }
         self.setData({
           phase: 'confirming',
-          title: '支付结果确认中',
+          title: '支付确认中',
           confirmTimeout: true,
           confirmSpin: false,
-          resultTitle: '正在确认支付结果…',
+          resultTitle: '暂未确认支付结果',
           resultSub: '暂未收到最终结果，请稍后刷新，请勿重复支付。',
           payLoading: false
         })
@@ -377,7 +383,14 @@ Page({
   },
   refreshStatus: function () {
     if (this.data.confirmSpin || this.data.payLoading) return
-    this.setData({ confirmSpin: true, confirmTimeout: false, payLoading: true, resultSub: '' })
+    this.setData({
+      confirmSpin: true,
+      confirmTimeout: false,
+      payLoading: true,
+      title: '支付确认中',
+      resultTitle: '正在确认支付结果…',
+      resultSub: '请勿关闭页面或重复支付'
+    })
     this.beginPoll()
   },
   repay: function () {
