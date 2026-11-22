@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from nadou.admin.audit import AuditWriter
 from nadou.admin.errors import WorkbenchError
 from nadou.admin.passwords import PasswordHasher
-from nadou.config import get_settings, parse_trusted_proxies
+from nadou.config import TrustedProxies, get_settings
 from nadou.models import StaffAccount, StaffLoginLock, StaffSession
 
 
@@ -333,7 +333,7 @@ class ClientAddress:
             address = ipaddress.ip_address(peer)
         except ValueError:
             return False
-        networks = parse_trusted_proxies(get_settings().trusted_proxies)
+        networks = TrustedProxies.parse(get_settings().trusted_proxies)
         return any(address in network for network in networks)
 
     @staticmethod

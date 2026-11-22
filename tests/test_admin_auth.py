@@ -172,45 +172,47 @@ def test_api_lockout_and_admin_unlock(workbench):
     assert "login" in actions
 
 
-@contextmanager
-def _trusted_proxies(monkeypatch, value: str | None):
-    if value is None:
-        monkeypatch.delenv("NADOU_TRUSTED_PROXIES", raising=False)
-    else:
-        monkeypatch.setenv("NADOU_TRUSTED_PROXIES", value)
-    get_settings.cache_clear()
-    try:
-        yield
-    finally:
+class ForwardedLogin:
+    @staticmethod
+    @contextmanager
+    def trusted_proxies(monkeypatch, value: str | None):
+        if value is None:
+            monkeypatch.delenv("NADOU_TRUSTED_PROXIES", raising=False)
+        else:
+            monkeypatch.setenv("NADOU_TRUSTED_PROXIES", value)
         get_settings.cache_clear()
+        try:
+            yield
+        finally:
+            get_settings.cache_clear()
 
+    @staticmethod
+    def post(app, peer: str, username: str, password: str, forwarded: str | None = None):
+        headers = {}
+        if forwarded is not None:
+            headers["X-Forwarded-For"] = forwarded
+        with TestClient(app, client=(peer, 50000)) as client:
+            return client.post(
+                "/api/v1/admin/auth/login",
+                json={"username": username, "password": password},
+                headers=headers,
+            )
 
-def _login_from(app, peer: str, username: str, password: str, forwarded: str | None = None):
-    headers = {}
-    if forwarded is not None:
-        headers["X-Forwarded-For"] = forwarded
-    with TestClient(app, client=(peer, 50000)) as client:
-        return client.post(
-            "/api/v1/admin/auth/login",
-            json={"username": username, "password": password},
-            headers=headers,
-        )
-
-
-def _lock_ip(session, username: str) -> str:
-    session.expire_all()
-    account = session.scalar(select(StaffAccount).where(StaffAccount.username == username))
-    assert account is not None
-    rows = session.scalars(
-        select(StaffLoginLock.ip).where(StaffLoginLock.account_id == account.id)
-    ).all()
-    assert len(rows) == 1
-    return rows[0]
+    @staticmethod
+    def lock_ip(session, username: str) -> str:
+        session.expire_all()
+        account = session.scalar(select(StaffAccount).where(StaffAccount.username == username))
+        assert account is not None
+        rows = session.scalars(
+            select(StaffLoginLock.ip).where(StaffLoginLock.account_id == account.id)
+        ).all()
+        assert len(rows) == 1
+        return rows[0]
 
 
 def test_spoofed_forwarded_for_keeps_the_peer(workbench, monkeypatch):
-    with _trusted_proxies(monkeypatch, None):
-        failed = _login_from(
+    with ForwardedLogin.trusted_proxies(monkeypatch, None):
+        failed = ForwardedLogin.post(
             workbench.app,
             "203.0.113.10",
             "wb-support",
@@ -218,20 +220,20 @@ def test_spoofed_forwarded_for_keeps_the_peer(workbench, monkeypatch):
             "198.51.100.20",
         )
     assert failed.status_code == 401
-    assert _lock_ip(workbench.session, "wb-support") == "203.0.113.10"
+    assert ForwardedLogin.lock_ip(workbench.session, "wb-support") == "203.0.113.10"
 
 
 def test_loopback_peer_uses_forwarded_for(workbench, monkeypatch):
-    with _trusted_proxies(monkeypatch, None):
+    with ForwardedLogin.trusted_proxies(monkeypatch, None):
         assert get_settings().trusted_proxies == "127.0.0.1"
-        failed = _login_from(
+        failed = ForwardedLogin.post(
             workbench.app,
             "127.0.0.1",
             "wb-support",
             "wrong-pass",
             "203.0.113.15",
         )
-        spaced = _login_from(
+        spaced = ForwardedLogin.post(
             workbench.app,
             "127.0.0.1",
             "wb-admin",
@@ -240,37 +242,43 @@ def test_loopback_peer_uses_forwarded_for(workbench, monkeypatch):
         )
     assert failed.status_code == 401
     assert spaced.status_code == 401
-    assert _lock_ip(workbench.session, "wb-support") == "203.0.113.15"
-    assert _lock_ip(workbench.session, "wb-admin") == "203.0.113.16"
+    assert ForwardedLogin.lock_ip(workbench.session, "wb-support") == "203.0.113.15"
+    assert ForwardedLogin.lock_ip(workbench.session, "wb-admin") == "203.0.113.16"
 
 
 def test_lockout_is_per_forwarded_address(workbench, monkeypatch):
     first = "203.0.113.21"
     second = "198.51.100.31"
-    with _trusted_proxies(monkeypatch, None):
+    with ForwardedLogin.trusted_proxies(monkeypatch, None):
         for _ in range(4):
-            failed = _login_from(workbench.app, "127.0.0.1", "wb-support", "wrong-pass", first)
+            failed = ForwardedLogin.post(
+                workbench.app, "127.0.0.1", "wb-support", "wrong-pass", first
+            )
             assert failed.status_code == 401
-        locked = _login_from(workbench.app, "127.0.0.1", "wb-support", "wrong-pass", first)
+        locked = ForwardedLogin.post(workbench.app, "127.0.0.1", "wb-support", "wrong-pass", first)
         assert locked.status_code == 423
-        assert _lock_ip(workbench.session, "wb-support") == first
-        other = _login_from(workbench.app, "127.0.0.1", "wb-support", "support-pass-1", second)
+        assert ForwardedLogin.lock_ip(workbench.session, "wb-support") == first
+        other = ForwardedLogin.post(
+            workbench.app, "127.0.0.1", "wb-support", "support-pass-1", second
+        )
         assert other.status_code == 200
-        still = _login_from(workbench.app, "127.0.0.1", "wb-support", "support-pass-1", first)
+        still = ForwardedLogin.post(
+            workbench.app, "127.0.0.1", "wb-support", "support-pass-1", first
+        )
         assert still.status_code == 423
-    assert _lock_ip(workbench.session, "wb-support") == first
+    assert ForwardedLogin.lock_ip(workbench.session, "wb-support") == first
 
 
 def test_invalid_forwarded_for_falls_back_to_peer(workbench, monkeypatch):
-    with _trusted_proxies(monkeypatch, None):
-        invalid = _login_from(
+    with ForwardedLogin.trusted_proxies(monkeypatch, None):
+        invalid = ForwardedLogin.post(
             workbench.app,
             "127.0.0.1",
             "wb-support",
             "wrong-pass",
             "not-an-ip",
         )
-        left_side = _login_from(
+        left_side = ForwardedLogin.post(
             workbench.app,
             "127.0.0.1",
             "wb-admin",
@@ -279,13 +287,13 @@ def test_invalid_forwarded_for_falls_back_to_peer(workbench, monkeypatch):
         )
     assert invalid.status_code == 401
     assert left_side.status_code == 401
-    assert _lock_ip(workbench.session, "wb-support") == "127.0.0.1"
-    assert _lock_ip(workbench.session, "wb-admin") == "127.0.0.1"
+    assert ForwardedLogin.lock_ip(workbench.session, "wb-support") == "127.0.0.1"
+    assert ForwardedLogin.lock_ip(workbench.session, "wb-admin") == "127.0.0.1"
 
 
 def test_empty_trusted_proxies_keep_the_peer(workbench, monkeypatch):
-    with _trusted_proxies(monkeypatch, ""):
-        failed = _login_from(
+    with ForwardedLogin.trusted_proxies(monkeypatch, ""):
+        failed = ForwardedLogin.post(
             workbench.app,
             "127.0.0.1",
             "wb-support",
@@ -293,19 +301,19 @@ def test_empty_trusted_proxies_keep_the_peer(workbench, monkeypatch):
             "203.0.113.40",
         )
     assert failed.status_code == 401
-    assert _lock_ip(workbench.session, "wb-support") == "127.0.0.1"
+    assert ForwardedLogin.lock_ip(workbench.session, "wb-support") == "127.0.0.1"
 
 
 def test_trusted_proxy_network_uses_forwarded_for(workbench, monkeypatch):
-    with _trusted_proxies(monkeypatch, "198.51.100.50,203.0.113.0/24"):
-        inside = _login_from(
+    with ForwardedLogin.trusted_proxies(monkeypatch, "198.51.100.50,203.0.113.0/24"):
+        inside = ForwardedLogin.post(
             workbench.app,
             "203.0.113.8",
             "wb-support",
             "wrong-pass",
             "198.51.100.44",
         )
-        outside = _login_from(
+        outside = ForwardedLogin.post(
             workbench.app,
             "198.51.100.8",
             "wb-admin",
@@ -314,5 +322,5 @@ def test_trusted_proxy_network_uses_forwarded_for(workbench, monkeypatch):
         )
     assert inside.status_code == 401
     assert outside.status_code == 401
-    assert _lock_ip(workbench.session, "wb-support") == "198.51.100.44"
-    assert _lock_ip(workbench.session, "wb-admin") == "198.51.100.8"
+    assert ForwardedLogin.lock_ip(workbench.session, "wb-support") == "198.51.100.44"
+    assert ForwardedLogin.lock_ip(workbench.session, "wb-admin") == "198.51.100.8"
