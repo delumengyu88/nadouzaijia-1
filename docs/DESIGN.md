@@ -171,7 +171,7 @@ Marking `取证中` failed requires a reason and a refund method. The refund amo
 
 Support lookup returns the phone masked to the last four digits (`90000001234` → `*******1234`). Admin sees the full phone. Ban requires a reason. `temporary` requires an end time; `permanent` rejects one. Unban clears the ban fields. Every change is audited.
 
-Manual grant or extend takes `regular` or `vip`, a day count, and a reason. The resulting row has `entitlements.source = manual`. `EntitlementBook.counts_for_revenue` is false for that source, which is how invite-code conversion and order revenue leave the grant out. An order issuance uses `source = order`. Orders whose `product` is in `TEST_PRODUCTS` (currently `membership_test`) are left out of invite-code conversion and that revenue set. Add `membership_dev` to the same set when that SKU exists.
+Manual grant or extend takes `regular` or `vip`, a day count, and a reason. The resulting row has `entitlements.source = manual`. `EntitlementBook.counts_for_revenue` is false for that source, which is how invite-code conversion and order revenue leave the grant out. An order issuance uses `source = order`. Orders whose `product` is in `TEST_PRODUCTS` (`membership_test` and `membership_dev`) are left out of invite-code conversion and that revenue set.
 
 ### Orders and reissue
 
@@ -283,3 +283,64 @@ Some `index_records` rows have no task in the export and a NULL `uploaded_at`. F
 - Flagged rows are never formal output, decided server-side: `RecordWindow.permitted` drops them from `/api/v1/queries/{query_id}/export`; in search they always have `can_download_report = false` (so the mini program's own xlsx skips them) and they never contribute to `evidence_platforms` or `evidence_program_name`, the only values the mini program uses to prefill 委托取证. When every visible row of a program is flagged, `evidence_program_name` is intentionally empty, so P07/P08 open 委托取证 with a blank program name for the member to fill in rather than prefilling from generated rows.
 - Because of that exclusion the exported row count can be lower than the count on P08. Every member xlsx prints the exported count in A1 (`那豆在架 命中结果（共导出 N 条）`) and in the file name (`汇总-共导出N条.xlsx`, or `.zip` when split). For a split archive the outer file name counts all rows; A1 in each part counts that part’s rows.
 - `scripts/backfill_generated_dates.py` writes the placeholders. Each date is `2026-11-22` minus `60 + sha256("nadou-orphan-dates-v1:" + id) mod 131` days at 12:00 Beijing time, so reruns give the same result. `--dry-run` only counts; `--undo` clears every flagged row. Before launch, either fill in real dates or remove these rows.
+
+## 体验版会员档位开关
+
+只给体验版测试用，用来把当前登录账号切成免费、普通会员或 VIP，核对各档权益。服务端不读取、也不依赖小程序传来的任何版本或环境信息，包括 `envVersion`、自定义请求头和 `Referer`。
+
+接口要同时通过两道门，缺一不可：
+
+1. `NADOU_TRIAL_TOOLS` 精确等于 `1`（默认 `0`。`true`、`yes` 或其他值都视为关闭）。生产必须保持 `0`。
+2. `user_may_use_test_tier` 放行当前用户。这是和微信支付 0.01 元 `membership_test` 档同一个函数：`NADOU_WECHAT_PAY_TEST_TIER` 为打开，且用户 id 在 `NADOU_WECHAT_PAY_TEST_USERS`（逗号分隔，默认空，空名单等于没有人）。只认用户 id，不认 openid。不要再设第二份名单，也不要把真实账号写进仓库或镜像。
+
+### 小程序怎么调
+
+`POST /api/v1/dev/tier`
+
+请求头只需要登录会话：`Authorization: Bearer <POST /api/v1/auth/wechat/login 返回的 token>`。不要为了放行额外传版本号。白名单里填的是 `GET /api/v1/auth/me` 返回的 `id`。
+
+请求体字段名是 `tier`，取值 `free`、`regular` 或 `vip`：
+
+```json
+{"tier": "regular"}
+```
+
+成功返回 200。`regular` 和 `vip` 从服务器当前时间起 30 天，并写一条 `orders.product = "membership_dev"` 的订单（金额 0，状态「已发放」，时间为当前时间，不生成回溯日期）。`free` 清空普通会员和 VIP，不写订单，`expires_at` 为 `null`。开通走现有的 `OrderGrantWriter`。
+
+```json
+{"tier": "regular", "expires_at": "2026-12-21T12:00:00+08:00"}
+```
+
+```json
+{"tier": "free", "expires_at": null}
+```
+
+以下情况都返回 **404**，响应体与路由不存在时相同（`{"detail":"Not Found"}`），不要据此在界面上区分原因：
+
+- `NADOU_TRIAL_TOOLS` 不是 `1`
+- `user_may_use_test_tier` 不放行（支付测试开关没开，或用户 id 不在 `NADOU_WECHAT_PAY_TEST_USERS`）
+- 没有有效的用户登录会话
+
+请求里带上伪造的 `envVersion=trial`、`Referer` 或其他体验版标识，不能代替白名单，也不能在开关关闭时把接口打开。
+
+已登录且两道门都通过，但 `tier` 不是这三个值时，返回 400，`detail` 为 `tier must be free, regular, or vip`。
+
+`membership_dev` 加在 `TEST_PRODUCTS` 里，和 `membership_test` 走同一条排除：不进入收入口径 `EntitlementBook.revenue_entitlements`，也不进入邀请码「兑换后 30 天内付费转化」。订单列表里仍能看到这些订单。不新增 `is_test` 列。迁移 `20261122_0011` 只放宽 `ck_orders_product`，`down_revision` 是 `20261122_0010`。
+
+### 上线检查清单（正式版提交审核前）
+
+- [ ] 运维把 `NADOU_TRIAL_TOOLS` 改回 `0`
+- [ ] 删除本接口，不要只关开关就提交审核
+- [ ] 确认 `NADOU_WECHAT_PAY_TEST_USERS` 为空，部署配置和仓库里都没有真实用户 id
+
+删除时一并去掉：
+
+- 整个 `src/nadou/devtools/`
+- `src/nadou/main.py` 里的 `register_trial_tools(...)`
+- `src/nadou/config.py` 里的 `trial_tools`
+- `ck_orders_product` 中的 `membership_dev`（`models.py`；若 `20261122_0011` 已在环境执行过，再补一条迁移收回这个取值，并先删掉已有的 dev 订单）
+- `src/nadou/payments/catalog.py` 里 `TEST_PRODUCTS` 的 `membership_dev`（`membership_test` 仍留给 0.01 元档）
+- `tests/test_trial_tools.py`
+- 本节，以及 README、`.env.example` 里对应的 `NADOU_TRIAL_TOOLS` 说明
+
+`NADOU_WECHAT_PAY_TEST_USERS` 和 `user_may_use_test_tier` 与 0.01 元档共用。只下线体验版切换时不要删它们。

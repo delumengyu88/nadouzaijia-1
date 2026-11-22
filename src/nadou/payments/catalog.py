@@ -33,8 +33,8 @@ VIP = PayProduct("membership_vip", "VIP", "vip", 30, 599, 59900)
 # One day of 普通会员 so an experience-version payment can run the grant path.
 TEST = PayProduct("membership_test", "支付测试", "regular", 1, 0, 1, test_only=True)
 
-# Workbench membership conversion and revenue skip these. Add membership_dev here.
-TEST_PRODUCTS = frozenset({TEST.code})
+# Workbench membership conversion and revenue skip these.
+TEST_PRODUCTS = frozenset({TEST.code, "membership_dev"})
 
 _PRODUCTS = (REGULAR, VIP, TEST)
 _BY_CODE = {product.code: product for product in _PRODUCTS}

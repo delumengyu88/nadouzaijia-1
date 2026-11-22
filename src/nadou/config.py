@@ -64,6 +64,9 @@ class Settings(BaseSettings):
         default="demo",
         validation_alias=AliasChoices("NADOU_DATA_SOURCE"),
     )
+    # Experience-build switch. Only the exact value "1" enables it. Production stays "0".
+    # Delete this field with src/nadou/devtools before review.
+    trial_tools: str = Field(default="0", validation_alias="NADOU_TRIAL_TOOLS")
 
 
 @lru_cache

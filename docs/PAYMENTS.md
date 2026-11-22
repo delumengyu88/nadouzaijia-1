@@ -25,7 +25,7 @@
 
 测试档要同时满足两件事：`NADOU_WECHAT_PAY_TEST_TIER` 为打开，且当前用户 id 在 `NADOU_WECHAT_PAY_TEST_USERS` 里。名单为空、或用户不在名单里时，档位列表不返回测试档，下单传 `membership_test` 返回 **400** `档位无效`。开关关闭时也一样，即使 id 写在名单里。
 
-`product` 属于测试档（现在是 `membership_test`）的订单不进入工作台的付费转化和营收统计。正式档照常计入。订单列表里仍能看到这些订单。
+`product` 属于 `TEST_PRODUCTS`（`membership_test` 和体验版切换写入的 `membership_dev`）的订单不进入工作台的付费转化和营收统计。正式档照常计入。订单列表里仍能看到这些订单。
 
 ## 上线检查清单
 
