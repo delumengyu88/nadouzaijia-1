@@ -1,6 +1,7 @@
 import sys
 
 from nadou.admin.indexing import IndexRunCommand
+from nadou.review import ReviewExportCommand
 
 
 class DemoCommand:
@@ -54,7 +55,12 @@ class NadouCommand:
             raise SystemExit(IndexRunCommand.run())
         if args == ["seed-demo"]:
             raise SystemExit(DemoCommand.run())
-        raise SystemExit("usage: python -m nadou index-run | python -m nadou seed-demo")
+        if args == ["export-review"]:
+            raise SystemExit(ReviewExportCommand.run())
+        raise SystemExit(
+            "usage: python -m nadou index-run | python -m nadou seed-demo | "
+            "python -m nadou export-review"
+        )
 
 
 if __name__ == "__main__":

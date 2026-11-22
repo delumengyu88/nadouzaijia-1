@@ -109,3 +109,18 @@ pytest
 ```
 
 The mini program has no build step. CI runs `node scripts/check-miniprogram.js`. That script checks syntax, tags, `wx:for` keys, image paths, and WXSS. `miniprogram-ci` is not in CI: it needs a real AppID and upload key, and `touristappid` cannot stand in for them.
+
+
+### 短片名待复核
+
+运行 `alembic upgrade head` 将配置表 `review_program_titles` 初始化为家庭、远方、狗，并把这些规范化片名现有的 `consensus` 记录改为 `review`。旧迁移不变。配置表可通过运维数据库操作维护（无工作台入口），按与索引相同的节目名规范化后整词匹配。新的共识 xlsx 导入及通过 `IndexRecordStore` 的增量写入都会读取该表；更改配置后应重新导入受影响记录。任务 CSV 只更新任务元数据，不生成命中记录。
+
+`hit_type=review`（待复核）不会进入用户命中、平台数、锁定统计、解锁价格或用户 xlsx；只有待复核记录的节目显示未命中。`consensus` 为已计入，原有 `dispute` 继续隐藏。本轮不新增审核页面、审核操作接口或 `excluded` 状态。重新导入名单中的共识记录会重新进入待复核。
+
+只读导出待复核 CSV（连接地址来自现有 `DATABASE_URL` 配置）：
+
+```bash
+python -m nadou export-review > data/review.csv
+```
+
+列为 task_id、片名、平台、命中帧数、时间戳；时间戳列保存 JSON 数组，保留全部命中时间。该文件被 data/ 默认忽略规则覆盖，不提交。命令不改复核状态，不导出图片地址。回滚 0007 会将待复核记录转为原有隐藏的 `dispute`，避免自动变成可计费记录；不能恢复迁移前的可见状态。

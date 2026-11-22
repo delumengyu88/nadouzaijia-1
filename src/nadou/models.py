@@ -136,12 +136,20 @@ class Task(Base):
     is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
+class ReviewProgramTitle(Base):
+    """Program titles whose newly imported hits need review before inclusion."""
+
+    __tablename__ = "review_program_titles"
+
+    program_name: Mapped[str] = mapped_column(String(200), primary_key=True)
+
+
 class IndexRecord(Base):
     __tablename__ = "index_records"
     __table_args__ = (
         UniqueConstraint("task_id", "program_name", name="uq_index_task_program"),
         CheckConstraint(
-            "hit_type IN ('consensus', 'dispute')",
+            "hit_type IN ('consensus', 'dispute', 'review')",
             name="ck_index_hit_type",
         ),
     )

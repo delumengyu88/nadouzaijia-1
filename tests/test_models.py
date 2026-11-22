@@ -8,6 +8,7 @@ def test_schema_has_no_zip_or_download_tables():
         "entitlements",
         "tasks",
         "index_records",
+        "review_program_titles",
         "platform_aliases",
         "program_aliases",
         "staff_accounts",
