@@ -1,1 +1,40 @@
-/* local */
+/* 结果页。375 宽下 1px = 2rpx，只作用于本页。 */
+.result { padding-top: 128rpx; text-align: center; }
+.result-title {
+  margin-top: 32rpx;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #1F2329;
+  line-height: 56rpx;
+}
+.result-sub {
+  margin-top: 16rpx;
+  padding: 0 64rpx;
+  font-size: 28rpx;
+  color: #646A73;
+  line-height: 40rpx;
+  max-height: 80rpx;
+  overflow: hidden;
+}
+.result-sub text { display: block; }
+.result-primary {
+  margin: 48rpx auto 0;
+  width: 480rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  background: #1D4E9E;
+  color: #fff;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+.result-link {
+  margin-top: 24rpx;
+  padding: 0;
+  height: auto;
+  line-height: 40rpx;
+  background: transparent;
+  color: #1D4E9E;
+  font-size: 28rpx;
+}
+.result-link::after { border: none; }

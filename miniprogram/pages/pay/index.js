@@ -32,7 +32,18 @@ var CARDS = {
 Page({
   pollInterval: 2000,
   pollLimit: 10,
-  data: { showBack: true, phase: 'pending', payLoading: false, mockSettle: false, confirmTimeout: false, centerTitle: '', centerSub: '' },
+  data: {
+    showBack: true,
+    phase: 'pending',
+    payLoading: false,
+    mockSettle: false,
+    confirmTimeout: false,
+    confirmSpin: false,
+    resultTitle: '',
+    resultSub: '',
+    centerTitle: '',
+    centerSub: ''
+  },
   onLoad: function (query) {
     this.product = query.product || 'membership_vip'
     this.programName = decode(query.name)
@@ -61,22 +72,22 @@ Page({
   showPreset: function (view) {
     var map = {
       paying: { phase: 'paying', title: '支付中', mockSettle: true },
-      confirming: { phase: 'confirming', title: '支付确认中' },
       granting: { phase: 'granting', title: '权益发放中' },
       success: { phase: 'granted', title: '开通成功', successLine: 'VIP 已发放，有效至 2026-12-22' },
-      failure: { phase: 'failed', title: '支付失败', allowCheck: true, allowRepay: false, orderNo: 'DD20261119005' },
-      unpaid: { phase: 'failed', title: '支付失败', allowCheck: false, allowRepay: true, orderNo: 'DD20261119005' },
+      failure: { phase: 'failed', title: '支付失败', allowCheck: true, allowRepay: false },
+      unpaid: { phase: 'failed', title: '支付失败', allowCheck: false, allowRepay: true },
       cancelled: { phase: 'cancelled', title: '已取消' },
-      abnormal: { phase: 'grant_error', title: '发放异常', orderNo: 'DD20261122018' },
+      abnormal: { phase: 'grant_error', title: '发放异常' },
       covered: { phase: 'covered', title: '无需购买' },
       unavailable: { phase: 'unavailable', title: '支付暂未开通' },
+      confirming: { phase: 'confirming', title: '支付确认中', confirmSpin: true, resultTitle: '正在确认支付结果…' },
       timeout: {
         phase: 'confirming',
         title: '支付结果确认中',
+        confirmSpin: false,
         confirmTimeout: true,
-        centerTitle: '支付结果确认中',
-        centerSub: '暂未收到最终结果，请稍后刷新。不要重复支付。',
-        orderNo: 'ND261122000000abcd'
+        resultTitle: '正在确认支付结果…',
+        resultSub: '暂未收到最终结果，请稍后刷新，请勿重复支付。'
       }
     }
     this.setData(map[view] || { phase: 'pending', title: '确认开通' })
@@ -147,6 +158,7 @@ Page({
       showPay: order.showPay,
       mockSettle: !this.livePayFlow && phase === 'paying',
       confirmTimeout: false,
+      confirmSpin: false,
       centerTitle: order.centerTitle || '',
       centerSub: order.centerSub || ''
     })
@@ -246,8 +258,9 @@ Page({
       phase: 'confirming',
       title: '支付确认中',
       confirmTimeout: false,
-      centerTitle: '支付确认中',
-      centerSub: '正在等待支付结果，不要重复支付。',
+      confirmSpin: true,
+      resultTitle: '正在确认支付结果…',
+      resultSub: '',
       payLoading: false,
       mockSettle: false,
       showPay: false
@@ -262,7 +275,7 @@ Page({
       var code = order && (order.code || order.status)
       var phase = order && order.status
       if (code === 'unconfigured' || code === 'unavailable' || phase === 'unavailable') {
-        self.setData({ phase: 'unavailable', title: '支付暂未开通', payLoading: false, confirmTimeout: false, showPay: false })
+        self.setData({ phase: 'unavailable', title: '支付暂未开通', payLoading: false, confirmTimeout: false, confirmSpin: false, showPay: false })
         return
       }
       if (phase === 'granted' || phase === 'grant_error' || phase === 'cancelled' || phase === 'covered' || phase === 'failed') {
@@ -280,8 +293,9 @@ Page({
           phase: 'confirming',
           title: '支付结果确认中',
           confirmTimeout: true,
-          centerTitle: '支付结果确认中',
-          centerSub: '暂未收到最终结果，请稍后刷新。不要重复支付。',
+          confirmSpin: false,
+          resultTitle: '正在确认支付结果…',
+          resultSub: '暂未收到最终结果，请稍后刷新，请勿重复支付。',
           payLoading: false
         })
         return
@@ -345,9 +359,9 @@ Page({
     if (done.order) this.apply(done.order)
   },
   check: function () {
+    if (this.data.payLoading) return
     var order = api.checkStatus(this.orderNo)
     if (isPromise(order)) {
-      if (this.data.payLoading) return
       this.setData({ payLoading: true })
       var self = this
       order.then(function (view) {
@@ -362,8 +376,9 @@ Page({
     if (order) this.apply(order)
   },
   refreshStatus: function () {
-    if (this.data.payLoading) return
-    this.check()
+    if (this.data.confirmSpin || this.data.payLoading) return
+    this.setData({ confirmSpin: true, confirmTimeout: false, payLoading: true, resultSub: '' })
+    this.beginPoll()
   },
   repay: function () {
     if (require('../../utils/trial').blockPayment()) return
