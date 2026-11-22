@@ -1,5 +1,5 @@
 <view class="tab-page">
-<view class="nav" style="padding-top: {{statusBarHeight}}px;">
+<view class="nav" wx:if="{{!showSplash}}" style="padding-top: {{statusBarHeight}}px;">
   <view class="nav-bar">
     <view class="nav-brand">那豆在架</view>
   </view>
