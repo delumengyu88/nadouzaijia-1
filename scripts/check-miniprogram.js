@@ -90,6 +90,93 @@ app.tabBar.list.forEach(function (item) {
   })
 })
 if (app.tabBar.custom) quad('custom-tab-bar/index')
+
+function ruleBody(css, selector) {
+  var text = css.replace(/\/\*[\s\S]*?\*\//g, '')
+  var i = 0
+  while (i < text.length) {
+    var open = text.indexOf('{', i)
+    if (open < 0) return ''
+    var sel = text.slice(i, open).replace(/\s+/g, ' ').trim()
+    var close = text.indexOf('}', open)
+    if (close < 0) return ''
+    var matched = sel.split(',').some(function (part) { return part.trim() === selector })
+    if (matched) return text.slice(open + 1, close)
+    i = close + 1
+  }
+  return ''
+}
+function declMap(body) {
+  var map = {}
+  body.split(';').forEach(function (part) {
+    var idx = part.indexOf(':')
+    if (idx < 0) return
+    var key = part.slice(0, idx).trim()
+    var val = part.slice(idx + 1).trim().replace(/\s+/g, ' ')
+    if (key) map[key] = val
+  })
+  return map
+}
+function pngSize(file) {
+  var buf = fs.readFileSync(file)
+  var sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+  if (buf.length < 24 || !buf.slice(0, 8).equals(sig)) return null
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) }
+}
+var tabCss = fs.readFileSync(path.join(root, 'custom-tab-bar/index.wxss'), 'utf8')
+var barRule = declMap(ruleBody(tabCss, '.bar'))
+var itemRule = declMap(ruleBody(tabCss, '.item'))
+var iconRule = declMap(ruleBody(tabCss, '.icon'))
+var labelRule = declMap(ruleBody(tabCss, '.label'))
+var labelOnRule = declMap(ruleBody(tabCss, '.label.on'))
+if (barRule['box-sizing'] !== 'border-box') fail('tab bar must set box-sizing:border-box')
+if (barRule.height !== 'calc(50px + env(safe-area-inset-bottom))') {
+  fail('tab bar height must be calc(50px + env(safe-area-inset-bottom)), got ' + barRule.height)
+}
+if (barRule['padding-bottom'] !== 'env(safe-area-inset-bottom)') {
+  fail('tab bar padding-bottom must be the safe area, got ' + barRule['padding-bottom'])
+}
+if (barRule.border || barRule['border-top'] || barRule['border-width'] || barRule['border-bottom']) {
+  fail('tab bar border would shrink the 50px content box under border-box')
+}
+if (itemRule['flex-direction'] !== 'column') fail('tab icon must sit above the label')
+if (itemRule['justify-content'] !== 'center' || itemRule['align-items'] !== 'center') {
+  fail('tab icon and label must be centered in the 50px content area')
+}
+if (itemRule.height !== '50px') fail('tab item content height must be 50px, got ' + itemRule.height)
+if (iconRule.width !== '24px' || iconRule.height !== '24px') fail('tab icon box must be 24px')
+if (iconRule['flex-shrink'] !== '0' || labelRule['flex-shrink'] !== '0') fail('tab icon and label must not shrink')
+if (labelRule['font-size'] !== '10px') fail('tab label must stay 10px')
+if ((labelRule.color || '').toLowerCase() !== '#8a93a3') fail('tab label color changed')
+if ((labelOnRule.color || '').toLowerCase() !== '#1d4e9e') fail('tab selected color changed')
+var tabWxml = fs.readFileSync(path.join(root, 'custom-tab-bar/index.wxml'), 'utf8')
+var imageAt = tabWxml.indexOf('<image')
+var textAt = tabWxml.indexOf('<text')
+if (imageAt < 0 || textAt < 0 || imageAt > textAt) fail('tab icon must be above the label in wxml')
+if (tabWxml.indexOf('mode="aspectFit"') < 0) fail('tab icon must use aspectFit so the asset is not cropped')
+var tabJs = fs.readFileSync(path.join(root, 'custom-tab-bar/index.js'), 'utf8')
+var iconSpecs = []
+var iconSpecRe = /icon(?:On)?:\s*'([^']+)'/g
+var iconSpec
+while ((iconSpec = iconSpecRe.exec(tabJs))) iconSpecs.push(iconSpec[1])
+if (iconSpecs.length !== 6) fail('custom tab bar must reference 6 icon files, got ' + iconSpecs.length)
+iconSpecs.forEach(function (spec) {
+  var file = path.join(root, spec.replace(/^\//, ''))
+  if (!fs.existsSync(file)) {
+    fail('missing custom tab icon ' + spec)
+    return
+  }
+  var size = pngSize(file)
+  if (!size || size.width < 24 || size.height < 24 || size.width !== size.height) {
+    fail('custom tab icon must be a square png at least 24px: ' + spec)
+  }
+})
+var appCss = fs.readFileSync(path.join(root, 'app.wxss'), 'utf8')
+var tabPageRule = declMap(ruleBody(appCss, '.tab-page'))
+if (tabPageRule['box-sizing'] !== 'border-box') fail('tab page must keep border-box')
+if (tabPageRule['padding-bottom'] !== 'calc(50px + env(safe-area-inset-bottom))') {
+  fail('tab page bottom space must be calc(50px + env(safe-area-inset-bottom)), got ' + tabPageRule['padding-bottom'])
+}
 if (app.sitemapLocation && !fs.existsSync(path.join(root, app.sitemapLocation))) fail('missing sitemap')
 
 function resolveComponent(fromFile, spec) {
@@ -298,6 +385,28 @@ app.pages.forEach(function (rel) {
 })
 require(path.join(root, 'app.js'))
 require(path.join(root, 'custom-tab-bar/index.js'))
+
+var renderedTabs = global.__component.data.list
+app.tabBar.list.forEach(function (item, index) {
+  var tab = renderedTabs[index]
+  if (!tab || tab.pagePath !== '/' + item.pagePath || tab.text !== item.text ||
+      tab.icon !== '/' + item.iconPath || tab.iconOn !== '/' + item.selectedIconPath) {
+    fail('rendered tab label, route and icons must match app.json for ' + item.text)
+  }
+})
+var profileMenu = fs.readFileSync(path.join(root, 'pages/profile/index.wxml'), 'utf8')
+if (!/<button[^>]*class="row contact-row"[^>]*open-type="contact"[^>]*>[\s\S]*?联系客服[\s\S]*?class="chev"[\s\S]*?<\/button>/.test(profileMenu)) {
+  fail('profile contact action must be a full menu row with a native contact button and chevron')
+}
+var profileCss = fs.readFileSync(path.join(root, 'pages/profile/index.wxss'), 'utf8')
+var contactRow = declMap(ruleBody(profileCss, '.profile-page button.contact-row'))
+if (contactRow.width !== '100%' || contactRow['max-width'] !== 'none' || contactRow.margin !== '0' ||
+    contactRow['line-height'] !== 'inherit' || contactRow.display !== 'flex' || contactRow['text-align'] !== 'left') {
+  fail('the native contact button must align with the surrounding full-width profile rows')
+}
+if (declMap(ruleBody(profileCss, '.profile-page .row')).padding !== '24rpx 32rpx') {
+  fail('profile menu rows including the contact button must share padding')
+}
 
 function instantiate(rel) {
   var def = defs[rel]
