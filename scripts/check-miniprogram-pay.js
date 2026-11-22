@@ -418,6 +418,35 @@ async function main() {
   assert.notStrictEqual(repayResult.order.code, 'granted')
   console.log('repay reuses the order number and cached pay params')
 
+  resetTransport()
+  page = createPage()
+  page.onLoad({ view: 'success' })
+  assert.strictEqual(page.data.phase, 'pending', 'live view is determined by the server')
+  await placeOrder(page)
+  page.onUnload()
+  respond(200, Object.assign(orderBody('待支付'), payFields()))
+  await drain()
+  assert.strictEqual(payment, null, 'an unloaded page cannot invoke payment')
+
+  resetTransport()
+  page = createPage()
+  await created(page, 200, Object.assign(orderBody('待支付'), payFields()))
+  page.onUnload()
+  payment.success({})
+  assert.strictEqual(pending.length, 0, 'late payment callback must not start polling')
+
+  resetTransport()
+  page = createPage()
+  await placeOrder(page)
+  state.setSession({token:'replacement-session',expires_at:new Date(Date.now() + 60000).toISOString(),user:{id:'replacement'}})
+  respond(200, Object.assign(orderBody('待支付'), payFields()))
+  await drain()
+  assert.strictEqual(payment, null)
+  assert.strictEqual(page.data.phase, 'sessionEnded')
+  var switched = api.startPay(ORDER_NO)
+  respond(200, orderBody('待支付'))
+  assert.strictEqual((await switched).code, 'no_params')
+
   console.log('pay check ok')
 }
 

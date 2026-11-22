@@ -9,15 +9,15 @@ function notReady() {
 
 // 支付结果只认服务端订单状态。客户端回调不能把订单标成已支付。
 class PayClient {
-  static remember(order, pay) {
-    if (!order || !order.orderNo) return
-    var prev = PayClient.sessions[order.orderNo] || {}
-    PayClient.sessions[order.orderNo] = { pay: pay || prev.pay || null }
+  static remember(order, pay, token) {
+    if (!order || !order.orderNo || !token || token !== state.token()) return
+    var previousPay = PayClient.saved(order.orderNo)
+    PayClient.sessions[order.orderNo] = { token: token, pay: pay || previousPay || null }
   }
 
   static saved(orderNo) {
     var row = PayClient.sessions[orderNo]
-    return row && row.pay ? row.pay : null
+    return row && row.token === state.token() ? row.pay : null
   }
 
   static yuan(fen) {
@@ -123,6 +123,10 @@ class PayClient {
           data: data === undefined ? {} : data,
           header: { Authorization: 'Bearer ' + token },
           success: function (res) {
+            if (tokenState.token() !== token) {
+              resolve({ ok: false, code: 'session_changed', message: '登录状态已变化' })
+              return
+            }
             var normalized = PayClient.normalize(res && res.data)
             if (normalized.code === 'login') tokenState.clearSession(token)
             resolve(normalized)
@@ -390,8 +394,9 @@ module.exports = {
   tierOfAccount: function () { return state.userId() ? 'free' : 'guest' },
   checkout: function (product) {
     var tier = typeof product === 'string' ? product : ''
+    var token = state.token()
     return PayClient.request('POST', '/api/v1/pay/orders', { tier: tier }).then(function (result) {
-      if (result.ok) PayClient.remember(result.order, result.pay)
+      if (result.ok) PayClient.remember(result.order, result.pay, token)
       return result
     })
   },

@@ -1,4 +1,5 @@
 var api = require('../../api/index')
+var state = require('../../api/state')
 var nav = require('../../utils/nav')
 
 function decode(value) {
@@ -49,6 +50,7 @@ Page({
     this.programName = decode(query.name)
     this.orderNo = query.id || ''
     this.livePayFlow = require('../../config').mode === 'live'
+    this._session = this.livePayFlow ? state.token() : ''
     this._pollToken = 0
     var layout = nav.layout('pay', this.query)
     this.setData({ statusBarHeight: layout.statusBarHeight, navHeight: layout.navHeight, showBack: true })
@@ -56,13 +58,24 @@ Page({
       this.setData({ phase: 'trial', title: '支付', trialMessage: require('../../utils/trial').paymentMessage() })
       return
     }
-    if (query.view) {
+    if (query.view && require('../../config').mode === 'mock') {
       this.showPreset(query.view)
       return
     }
     this.open()
   },
+  onShow: function () { this.activeSession() },
+  activeSession: function () {
+    if (this._unloaded || this._sessionEnded) return false
+    if (!this.livePayFlow || this._session === state.token()) return true
+    this._sessionEnded = true
+    this._pollToken++
+    this.orderNo = ''
+    this.setData({ phase: 'sessionEnded', title: '支付', orderNo: '', payLoading: false, showPay: false })
+    return false
+  },
   onUnload: function () {
+    this._unloaded = true
     this._pollToken = (this._pollToken || 0) + 1
   },
   back: function () {
@@ -137,10 +150,12 @@ Page({
     var self = this
     this.setData({ payLoading: true })
     pending.then(function (order) {
+      if (!self.activeSession()) return
       self.setData({ payLoading: false })
       if (order) self.apply(order)
       else wx.showToast({ title: '订单不存在', icon: 'none' })
     }, function () {
+      if (!self.activeSession()) return
       self.setData({ payLoading: false })
       wx.showToast({ title: '请稍后重试', icon: 'none' })
     })
@@ -170,6 +185,7 @@ Page({
     })
   },
   pay: function () {
+    if (!this.activeSession()) return
     if (require('../../utils/trial').blockPayment()) return
     if (this.livePayFlow) {
       if (this.data.payLoading) return
@@ -190,6 +206,7 @@ Page({
   afterOrder: function (pending) {
     var self = this
     Promise.resolve(pending).then(function (result) {
+      if (!self.activeSession()) return
       if (!result || result.code === 'unconfigured') {
         self.setData({
           payLoading: false,
@@ -231,6 +248,7 @@ Page({
       self.setData({ payLoading: false })
       self.apply(result.order)
     }, function () {
+      if (!self.activeSession()) return
       self.setData({ payLoading: false })
       wx.showToast({ title: '请稍后重试', icon: 'none' })
     })
@@ -239,7 +257,7 @@ Page({
     var self = this
     var once = false
     function done() {
-      if (once) return
+      if (once || !self.activeSession()) return
       once = true
       self.beginPoll()
     }
@@ -275,9 +293,9 @@ Page({
   },
   poll: function (token, count) {
     var self = this
-    if (token !== this._pollToken) return
+    if (token !== this._pollToken || !this.activeSession()) return
     Promise.resolve(api.checkStatus(this.orderNo)).then(function (order) {
-      if (token !== self._pollToken) return
+      if (token !== self._pollToken || !self.activeSession()) return
       var code = order && (order.code || order.status)
       var phase = order && order.status
       if (code === 'network' || code === 'query_failed') {
@@ -295,13 +313,13 @@ Page({
       if (phase === 'granting') self.apply(order)
       self.schedulePoll(token, count)
     }, function () {
-      if (token !== self._pollToken) return
+      if (token !== self._pollToken || !self.activeSession()) return
       self.schedulePoll(token, count)
     })
   },
   schedulePoll: function (token, count) {
     var self = this
-    if (token !== this._pollToken) return
+    if (token !== this._pollToken || !this.activeSession()) return
     var next = count + 1
     if (next >= this.pollLimit) {
       if (this.data.phase === 'granting') {
@@ -320,7 +338,7 @@ Page({
       return
     }
     setTimeout(function () {
-      if (token !== self._pollToken) return
+      if (token !== self._pollToken || !self.activeSession()) return
       self.poll(token, next)
     }, this.pollInterval)
   },
@@ -344,11 +362,13 @@ Page({
     this.apply(order)
   },
   settle: function (e) {
+    if (!this.activeSession()) return
     if (require('../../utils/trial').blockPayment()) return
     if (this.livePayFlow) {
       var self = this
       var outcome = e && e.currentTarget && e.currentTarget.dataset ? e.currentTarget.dataset.outcome : ''
       Promise.resolve(api.settle(this.orderNo, outcome)).then(function (result) {
+        if (!self.activeSession()) return
         var order = result && result.order
         if (order) self.showChecked(order)
       })
@@ -373,15 +393,18 @@ Page({
     if (done.order) this.apply(done.order)
   },
   check: function () {
+    if (!this.activeSession()) return
     if (this.data.payLoading) return
     var order = api.checkStatus(this.orderNo)
     if (isPromise(order)) {
       this.setData({ payLoading: true })
       var self = this
       order.then(function (view) {
+        if (!self.activeSession()) return
         self.setData({ payLoading: false })
         if (view) self.showChecked(view)
       }, function () {
+        if (!self.activeSession()) return
         self.setData({ payLoading: false })
         wx.showToast({ title: '请稍后重试', icon: 'none' })
       })
@@ -390,6 +413,7 @@ Page({
     if (order) this.apply(order)
   },
   refreshStatus: function () {
+    if (!this.activeSession()) return
     if (this.data.confirmSpin || this.data.payLoading) return
     this.setData({
       confirmSpin: true,
@@ -402,6 +426,7 @@ Page({
     this.beginPoll()
   },
   repay: function () {
+    if (!this.activeSession()) return
     if (require('../../utils/trial').blockPayment()) return
     if (this.data.payLoading) return
     var result = api.repay(this.orderNo)

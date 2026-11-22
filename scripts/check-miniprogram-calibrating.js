@@ -50,14 +50,17 @@ function page(name) {
   } })
 }
 function drain() { return new Promise(function (resolve) { setImmediate(resolve) }) }
+function isOrderListRequest(item) {
+  return (item.method || 'GET') === 'GET' && /\/api\/v1\/pay\/orders$/.test(item.url || '')
+}
 function forgetOrderRequests() {
   for (var i = pending.length - 1; i >= 0; i--) {
-    if (String(pending[i].url || '').indexOf('/api/v1/pay/orders') !== -1) pending.splice(i, 1)
+    if (isOrderListRequest(pending[i])) pending.splice(i, 1)
   }
 }
 function callsExceptOrders() {
   return calls.filter(function (item) {
-    return String(item.url || '').indexOf('/api/v1/pay/orders') === -1
+    return !isOrderListRequest(item)
   }).length
 }
 function respond(outcome) {
@@ -106,6 +109,7 @@ async function main() {
     assert(!update.head && !(update.items || []).length, 'no results or counts enter P07 data')
   })
   result.openHit({ currentTarget: { dataset: { hit: true, name: '真实测试片' } } })
+  var nonListCount = callsExceptOrders()
   var requestCount = calls.length
   var book = await api.exportBook('真实测试片')
   assert.strictEqual(book.ok, false)
@@ -129,7 +133,7 @@ async function main() {
     blocked.onLoad({ id: 'old-id', name: '真实测试片', example: '1' })
     assert(redirects.pop().indexOf('/pages/query/index') === 0, 'old and example report routes return to P07')
   })
-  assert.strictEqual(callsExceptOrders(), requestCount)
+  assert.strictEqual(callsExceptOrders(), nonListCount)
   result.home()
   assert.strictEqual(tabs.pop(), '/pages/home/index')
   assert.strictEqual(Object.keys(timers).length, 0)
