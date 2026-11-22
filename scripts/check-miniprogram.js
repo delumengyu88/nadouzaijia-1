@@ -260,9 +260,21 @@ global.wx = {
   env: { USER_DATA_PATH: '/tmp' },
   openDocument: function () {},
   saveImageToPhotosAlbum: function (opt) { if (opt && opt.success) opt.success() },
-  stopPullDownRefresh: function () {}
+  stopPullDownRefresh: function () {},
+  hideTabBar: function () {
+    if (!wx._tabBarLog) wx._tabBarLog = []
+    wx._tabBarLog.push('hide')
+  },
+  showTabBar: function () {
+    if (!wx._tabBarLog) wx._tabBarLog = []
+    wx._tabBarLog.push('show')
+  }
 }
-global.getApp = function () { return { globalData: {} } }
+global.getApp = function () {
+  if (!global.__app) global.__app = { globalData: {} }
+  if (!global.__app.globalData) global.__app.globalData = {}
+  return global.__app
+}
 global.App = function (def) { global.__app = def }
 global.Component = function (def) { global.__component = def }
 global.getCurrentPages = function () { return [{}, {}] }
@@ -313,7 +325,7 @@ function expect(cond, message) {
 function boot(account, opts) {
   api.reset()
   api.switchAccount(account)
-  if (!opts || opts.splash !== false) api.markSplashSeen()
+  getApp().globalData.splashShownThisLaunch = !opts || opts.splash !== false
   if (!opts || opts.announce !== false) api.markAnnounceSeen()
 }
 
@@ -354,13 +366,196 @@ try {
   expect(bookText.indexOf('C6" t="inlineStr"><is><t>共识类别') !== -1, 'xlsx category value')
   expect(bookText.indexOf('D6" t="inlineStr"><is><t>节目类型值') !== -1, 'xlsx program type independent')
   boot('guest', { splash: false, announce: false })
+  wx._tabBarLog = []
+  var skipAtZero = open('pages/home/index', {}, 'show')
+  var readyAtZero = skipAtZero.data.showSplash && skipAtZero.data.seconds === 5 &&
+    wx._tabBarLog[wx._tabBarLog.length - 1] === 'hide'
+  skipAtZero.finishSplash()
+  expect(readyAtZero && !skipAtZero.data.showSplash && wx._tabBarLog[wx._tabBarLog.length - 1] === 'show',
+    'skip at second 0 closes splash and restores the tab bar')
+  getApp().onShow()
+  skipAtZero.onShow()
+  var shareReturn = open('pages/home/index', {}, 'show')
+  expect(!skipAtZero.data.showSplash && !shareReturn.data.showSplash && getApp().globalData.splashShownThisLaunch,
+    'warm start from background or share card does not show splash')
+
+  boot('guest', { splash: false, announce: false })
+  wx._tabBarLog = []
   var home = open('pages/home/index', {}, 'show')
   expect(home.data.showSplash, 'splash did not cover home')
+  expect(home.data.splashSkipTop === 48 && home.data.splashSkipHeight === 32 && home.data.splashSkipRight === 102,
+    'skip matches the capsule height and sits 8px to its left')
+  expect(home.data.splashSkipHitHeight >= 44 && home.data.splashSkipHitTop <= home.data.splashSkipTop,
+    'skip hit area is at least 44pt without moving the pill')
+  expect(wx._tabBarLog[wx._tabBarLog.length - 1] === 'hide', 'splash hides the custom tab bar')
+  var homeWxml = fs.readFileSync(path.join(root, 'pages/home/index.wxml'), 'utf8')
+  expect(homeWxml.indexOf('showAnnounce && !showSplash') !== -1, 'announcement stays down during splash')
+  expect(homeWxml.indexOf('showDone && !showAnnounce && !showSplash') !== -1, 'done dialog stays down during splash')
+  expect(homeWxml.indexOf('is-text') === -1 && homeWxml.indexOf('那豆在架') !== -1, 'no text-version splash branch')
+  var splashCss = fs.readFileSync(path.join(root, 'app.wxss'), 'utf8')
+  var splashAt = splashCss.indexOf('.splash-cover {')
+  var splashEnd = splashCss.indexOf('.member-status', splashAt)
+  splashCss = splashCss.slice(splashAt, splashEnd)
+  expect(splashCss.indexOf('#1D4E9E') === -1 && splashCss.indexOf('#163E80') === -1, 'splash has no bright blue fallback')
+  expect(splashCss.indexOf('#0a1630') !== -1 && splashCss.indexOf('#050b1a') !== -1, 'image failure uses the dark fallback')
+  expect(homeWxml.indexOf('splash-mark.png') !== -1, 'splash logo is the P01 mark')
+  expect(homeWxml.indexOf('splash-skip-hit') !== -1, 'skip hit target wraps the visible pill')
+  var layoutSplash = require(path.join(root, 'pages/home/splash-layout')).layoutSplash
+  function gapOf(frame) { return frame.splashGlassTop - frame.splashTextBottom }
+  var iphone8 = layoutSplash({ windowWidth: 375, windowHeight: 667, statusBarHeight: 20 },
+    { top: 24, height: 32, left: 281 })
+  expect(gapOf(iphone8) >= 16 && iphone8.splashGlassTop >= 0 && iphone8.splashGlassBottom <= 667,
+    'iPhone 8 keeps 16px above the glass and the glass fully visible')
+  var tiny = layoutSplash({ windowWidth: 360, windowHeight: 640, statusBarHeight: 20 },
+    { top: 24, height: 32, left: 266 })
+  expect(gapOf(tiny) >= 16 && tiny.splashGlassTop >= 0 && tiny.splashGlassBottom <= 640,
+    '360x640 keeps 16px above the glass and the glass fully visible')
+  var iphone14 = layoutSplash({ windowWidth: 390, windowHeight: 844, statusBarHeight: 47 },
+    { top: 51, height: 32, left: 296 })
+  expect(Math.abs(iphone14.splashTitleSize - 96 * 390 / 750) < 1, 'iPhone 14 keeps the P01 title size')
+  var poster = fs.readFileSync(path.join(root, 'assets/p01-splash-bg.webp'))
+  expect(poster.length < 200 * 1024, 'splash artwork stays under 200KB')
+  var vp8 = poster.indexOf('VP8 ')
+  var dim = poster.readUInt16LE(vp8 + 14)
+  var dimH = poster.readUInt16LE(vp8 + 16)
+  expect((dim & 0x3fff) === 750 && (dimH & 0x3fff) === 1624, 'splash artwork is 750x1624')
+  flush()
+  expect(home.data.showSplash && !api.splashSeen(), 'image timeout must not write splashSeen')
+  home.splashFailed()
+  expect(home.data.showSplash && home.data.splashFailed && !api.splashSeen(), 'image error stays on the dark splash')
   cover('P01')
   home.finishSplash()
-  expect(!home.data.showSplash && home.data.showAnnounce, 'announcement did not follow splash')
+  expect(!home.data.showSplash && home.data.showAnnounce && !api.splashSeen(), 'skip ends splash without writing storage')
+  expect(getApp().globalData.splashShownThisLaunch, 'splash counts for this cold start')
+  expect(wx._tabBarLog[wx._tabBarLog.length - 1] === 'show', 'splash end shows the custom tab bar')
+  home.onShow()
+  expect(!home.data.showSplash, 'returning from background does not show splash again')
+  var second = open('pages/home/index', {}, 'show')
+  expect(!second.data.showSplash, 'switching back to home does not show splash again')
+  getApp().onLaunch()
+  expect(!getApp().globalData.splashShownThisLaunch, 'cold start clears the memory flag')
+  var cold = open('pages/home/index', {}, 'show')
+  expect(cold.data.showSplash && !api.splashSeen(), 'next cold start shows splash without storage')
   cover('P02')
   home.closeAnnounce()
+
+  boot('guest', { splash: false, announce: false })
+  var ticks = []
+  var savedInterval = global.setInterval
+  global.setInterval = function (fn, ms) { ticks.push({ fn: fn, ms: ms }); return 1 }
+  try {
+    var timed = open('pages/home/index', {}, 'show')
+    expect(ticks.length === 1 && ticks[0].ms === 1000, 'splash countdown is one second')
+    flush()
+    timed.splashFailed()
+    expect(timed.data.showSplash && timed.data.splashFailed && !api.splashSeen(), 'failed image keeps the countdown')
+    var step
+    for (step = 0; step < 4; step++) ticks[0].fn()
+    expect(timed.data.showSplash && timed.data.seconds === 1 && !api.splashSeen(), 'countdown has not finished early')
+    ticks[0].fn()
+    expect(!timed.data.showSplash && !api.splashSeen() && getApp().globalData.splashShownThisLaunch,
+      'countdown end hides splash without writing storage')
+    var afterCountdown = open('pages/home/index', {}, 'show')
+    expect(!afterCountdown.data.showSplash, 'same launch does not show splash after countdown')
+  } finally {
+    global.setInterval = savedInterval
+  }
+
+  var splashApi = require(path.join(root, 'api/splash'))
+  boot('guest', { splash: false, announce: false })
+  expect(splashApi.shouldShow(true) === true && splashApi.shouldShow(undefined) === true, 'switch on shows splash')
+  expect(splashApi.shouldShow(false) === false, 'switch off does not show')
+  api.markSplashSeen()
+  expect(splashApi.shouldShow(true) === true, 'splashSeen storage is not a display condition')
+  boot('guest', { splash: false, announce: false })
+  var splashSource = fs.readFileSync(path.join(root, 'api/splash.js'), 'utf8')
+  expect(splashSource.indexOf('http://') === -1 && splashSource.indexOf('https://') === -1, 'splash config has no hardcoded host')
+  expect(splashSource.indexOf("'/api/v1/app/config'") !== -1, 'splash config path')
+  function drain() { return new Promise(function (resolve) { setImmediate(resolve) }) }
+  function useSplashRequest(mode, request) {
+    useSplashRequest.prev = { mode: defaults.mode, request: wx.request, base: defaults.apiBase }
+    defaults.mode = mode
+    wx.request = request
+  }
+  function restoreSplashRequest() {
+    defaults.mode = useSplashRequest.prev.mode
+    wx.request = useSplashRequest.prev.request
+    defaults.apiBase = useSplashRequest.prev.base
+  }
+  try {
+    var calls = 0
+    useSplashRequest('mock', function () { calls++ })
+    var mocked = open('pages/home/index', {}, 'show')
+    await drain()
+    expect(calls === 0 && mocked.data.showSplash && !api.splashSeen(), 'mock mode shows splash without a request')
+    restoreSplashRequest()
+
+    var seenReq = {}
+    useSplashRequest('hybrid', function (opts) {
+      seenReq = { url: opts.url, timeout: opts.timeout, auth: opts.header && opts.header.Authorization }
+      opts.fail({ errMsg: 'request:fail' })
+    })
+    var enabled = await splashApi.loadEnabled()
+    expect(seenReq.url === '/test-api/api/v1/app/config', 'config uses apiBase and /api/v1/app/config')
+    expect(seenReq.timeout === 1500, 'config timeout is 1.5s')
+    expect(!seenReq.auth, 'config needs no login')
+    expect(enabled === true, 'config error counts as splash enabled')
+    restoreSplashRequest()
+
+    useSplashRequest('hybrid', function (opts) { opts.success({ statusCode: 503, data: {} }) })
+    expect(await splashApi.loadEnabled() === true, 'config http error counts as splash enabled')
+    restoreSplashRequest()
+
+    useSplashRequest('hybrid', function (opts) { opts.success({ statusCode: 200, data: {} }) })
+    expect(await splashApi.loadEnabled() === true, 'missing splash_enabled counts as enabled')
+    restoreSplashRequest()
+
+    useSplashRequest('hybrid', function (opts) { opts.success({ statusCode: 200, data: { splash_enabled: 'false' } }) })
+    expect(await splashApi.loadEnabled() === true, 'only boolean false disables splash')
+    restoreSplashRequest()
+
+    useSplashRequest('hybrid', function () {})
+    var pendingEnabled = splashApi.loadEnabled()
+    flush()
+    expect(await pendingEnabled === true, 'config timeout counts as splash enabled')
+    restoreSplashRequest()
+
+    var leaked = 0
+    useSplashRequest('hybrid', function () { leaked++ })
+    defaults.apiBase = ''
+    expect(await splashApi.loadEnabled() === true, 'unconfigured base counts as splash enabled')
+    expect(leaked === 0, 'unconfigured base must not request')
+    restoreSplashRequest()
+
+    useSplashRequest('hybrid', function (opts) {
+      opts.success({ statusCode: 200, data: { splash_enabled: false } })
+    })
+    boot('guest', { splash: false, announce: false })
+    var switched = open('pages/home/index', {}, 'show')
+    expect(switched.data.showSplash, 'splash shows before config returns')
+    await drain()
+    expect(!switched.data.showSplash && !api.splashSeen(), 'explicit false hides splash and does not mark seen')
+    var switchedAgain = open('pages/home/index', {}, 'show')
+    await drain()
+    expect(!switchedAgain.data.showSplash && !api.splashSeen(), 'explicit false stays hidden without marking seen')
+    restoreSplashRequest()
+
+    useSplashRequest('hybrid', function (opts) { opts.fail({ errMsg: 'request:fail timeout' }) })
+    boot('guest', { splash: false, announce: false })
+    var errored = open('pages/home/index', {}, 'show')
+    await drain()
+    expect(errored.data.showSplash && !api.splashSeen(), 'config error still shows splash')
+    restoreSplashRequest()
+
+    useSplashRequest('hybrid', function () {})
+    boot('guest', { splash: false, announce: false })
+    var hung = open('pages/home/index', {}, 'show')
+    flush()
+    await drain()
+    expect(hung.data.showSplash && !api.splashSeen(), 'config timeout still shows splash')
+  } finally {
+    if (useSplashRequest.prev) restoreSplashRequest()
+  }
 
   boot('guest')
   home = open('pages/home/index', {}, 'show')
