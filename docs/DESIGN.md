@@ -476,13 +476,13 @@ Some `index_records` rows have no task in the export and a NULL `uploaded_at`. F
 
 `NADOU_WECHAT_PAY_TEST_USERS` 和 `user_may_use_test_tier` 与 0.01 元档共用。只下线体验版切换时不要删它们。
 
-## 待办：查询记录保留期
+## 查询记录保留期
 
-本变更只负责按用户保存和查看查询记录，不删除过期行。
+保留期从提交时间算起，清理范围限于有归属的用户查询和其节目明细。
 
 - 免费用户（清理当时没有仍在有效期内的普通会员或 VIP）：从 `member_queries.created_at` 起保留 30 天。
 - 会员（清理当时有仍在有效期内的普通会员或 VIP）：从 `member_queries.created_at` 起保留 180 天。
 - 到期后删除该用户的 `member_queries` 行，并一并删除其 `query_programs`。
 - 按用户和时间清理。索引用 `ix_member_queries_user_id_created_at`（`user_id`, `created_at`），不要全表扫描。
-- 定时清理不在本变更里，另开 PR。本接口对超过保留期的行仍照常返回。
+- 运行 `python -m nadou query-retention` 可只读统计到期行数。经授权备份后，可使用 `--apply` 分批清理，或使用 `--apply --daily` 持续每 24 小时运行。新版本默认不启动清理进程。
 - `user_id` 为空的历史行无法核对归属：任何人导出都是 404，`GET /api/v1/queries/{id}` 也是 404，并且不会出现在 `GET /api/v1/queries` 列表里。本变更不删除这些行。
