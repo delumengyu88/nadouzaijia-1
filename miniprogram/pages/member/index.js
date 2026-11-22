@@ -11,6 +11,21 @@ function markPlans(plans, tier) {
   })
 }
 
+function defaultPlanId(tier) {
+  if (tier === 'regular') return 'membership_regular'
+  if (tier === 'vip' || tier === 'free') return 'membership_vip'
+  return ''
+}
+
+function presentCenter(info) {
+  if (!info || info.guest || info.heading) return info
+  var names = { vip: 'VIP', regular: '普通会员', free: '免费用户' }
+  return Object.assign({}, info, {
+    heading: names[info.tier] || '',
+    detail: info.statusLine || '',
+    extraLine: info.extraLine || ''
+  })
+}
 function selectedPlan(plans, selected) {
   var found = null
   ;(plans || []).forEach(function (item) {
@@ -68,9 +83,11 @@ Page({
     return require('../../api/http').memberCenter()
   },
   paint: function (info) {
+    info = presentCenter(info)
     var data = nav.layout('member', this.query)
     var plans = markPlans(api.membershipPlans(), info.tier)
     var plan = selectedPlan(plans, this.data.selected)
+    if (!plan || !plan.selectable) plan = selectedPlan(plans, defaultPlanId(info.tier))
     if (plan && !plan.selectable) plan = null
     data.title = '会员中心'
     data.plans = plans

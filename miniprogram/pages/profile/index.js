@@ -12,7 +12,7 @@ function showProfile(info) {
   var heading = names[info.tier] || '会员信息'
   var detail = ''
   if (info.tier === 'free') detail = '免费 · 可看 180 天以上低清记录'
-  else if (info.title && info.title.indexOf('至 ') !== -1) detail = info.title.slice(info.title.indexOf('至 '))
+  else if (info.title && info.title.indexOf('至 ') !== -1) detail = info.title
   else detail = '\u2014'
   return Object.assign({}, info, { heading: heading, detail: detail })
 }

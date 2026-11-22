@@ -56,7 +56,7 @@ function profileFromMe(body) {
     var until = expiryText(raw)
     var shown = until === null ? MARK : until
     title = member.statusLine(tier, shown)
-    detail = shown === MARK ? MARK : '至 ' + shown
+    detail = title
     if (tier === 'vip') {
       var extra = expiryText(src.regular_expires_at)
       if (extra !== null) lines.push(member.statusLine('regular', extra))

@@ -1,3 +1,8 @@
+.profile-page .card {
+  margin: 12px 16px 12px;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
 .row { padding-top: 24rpx; padding-bottom: 24rpx; }
 .card .choice-top { min-width: 0; }
 .nick {
