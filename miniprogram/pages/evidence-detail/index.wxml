@@ -42,6 +42,5 @@
   </view>
   <view class="note">{{message}}</view>
   <button class="btn block" wx:if="{{canWithdraw}}" bindtap="withdraw" loading="{{acting}}" disabled="{{acting}}">撤回</button>
-  <button class="btn block" wx:if="{{canConfirm}}" bindtap="confirm" loading="{{acting}}" disabled="{{acting}}">确认收到</button>
   <button class="link" open-type="contact" session-from="{{contactFrom}}">联系客服</button>
 </view>

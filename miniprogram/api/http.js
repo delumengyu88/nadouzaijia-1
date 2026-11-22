@@ -544,7 +544,6 @@ module.exports = {
     })
   },
   withdrawEvidence: function (id) { return evidence.postAction(request, id, 'withdraw') },
-  confirmEvidence: function (id) { return evidence.postAction(request, id, 'confirm') },
   agreements: function () {
     return [
       { id: 'user', title: '用户协议' },

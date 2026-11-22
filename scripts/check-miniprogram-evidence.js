@@ -123,7 +123,6 @@ async function main() {
     assert.strictEqual(view.badge, evidence.badge[status], status)
     assert.notStrictEqual(view.badge, '中文原文')
     assert.strictEqual(view.canWithdraw, status === 'submitted', status + ' withdraw')
-    assert.strictEqual(view.canConfirm, status === 'delivered', status + ' confirm')
     assert.strictEqual(view.phoneText, '—')
     assert.strictEqual(view.quoteText, '—')
     assert.strictEqual(view.reasonText, '—')
@@ -233,8 +232,8 @@ async function main() {
   assert(listWxml.indexOf('name-ellipsis') !== -1)
   assert(read('pages/evidence-list/index.wxss').indexOf('text-overflow: ellipsis') !== -1)
   assert(detailWxml.indexOf('wx:if="{{canWithdraw}}"') !== -1)
-  assert(detailWxml.indexOf('wx:if="{{canConfirm}}"') !== -1)
-  assert(detailWxml.indexOf('确认收到') !== -1)
+  assert(!/确认收到|canConfirm|bindtap="confirm"/.test(detailWxml))
+  assert(detailWxml.includes('open-type="contact"'))
   assert(detailWxml.indexOf('phoneText') !== -1)
 
   var blank = open('pages/evidence/index', { kind: 'recent' })
@@ -456,16 +455,28 @@ async function main() {
   }
   var submitted = await openDetail(detailBody('submitted', { platform: '测试平台', phone: null, quote_amount: null }))
   assert.strictEqual(submitted.data.canWithdraw, true)
-  assert.strictEqual(submitted.data.canConfirm, false)
   assert.strictEqual(submitted.data.phoneText, '—')
   assert.strictEqual(submitted.data.quoteText, '—')
   assert.strictEqual(submitted.data.badge, '已提交')
-  var delivered = await openDetail(detailBody('delivered'))
-  assert.strictEqual(delivered.data.canWithdraw, false)
-  assert.strictEqual(delivered.data.canConfirm, true)
+  var materialTime = '2026-11-22T16:30:00Z'
+  var finishTime = '2026-11-22T17:30:00Z'
+  var firstRead = calls.length
+  var delivered = await openDetail(detailBody('delivered', { delivered_at: materialTime }))
+  var completed = await openDetail(detailBody('done', { delivered_at: materialTime, completed_at: finishTime }))
+  assert(calls.slice(firstRead).every(function (opt) { return opt.method !== 'POST' }))
+  assert.strictEqual(delivered.data.badge, '已交付')
+  assert.strictEqual(completed.data.badge, '已完成')
+  assert.strictEqual(delivered.data.message, '材料已线下交付。')
+  ;[delivered, completed].forEach(function (page) {
+    assert.strictEqual(page.confirm, undefined)
+    assert.strictEqual(page.data.canWithdraw, false)
+    assert(!/确认|查收/.test(page.data.message))
+    assert.strictEqual(page.data.times.find(row => row.label === '交付').value, '2026-11-23 00:30')
+  })
+  assert.strictEqual(delivered.data.times.find(row => row.label === '完成').value, '—')
+  assert.strictEqual(completed.data.times.find(row => row.label === '完成').value, '2026-11-23 01:30')
   var paid = await openDetail(detailBody('pay'))
   assert.strictEqual(paid.data.canWithdraw, false)
-  assert.strictEqual(paid.data.canConfirm, false)
   assert.strictEqual(paid.data.badge, '待付款（线下）')
 
   var posts = 0
@@ -499,20 +510,6 @@ async function main() {
   assert.strictEqual(submitted.data.badge, '已受理')
   assert.strictEqual(submitted.data.canWithdraw, false)
   assert(toasts.length > toastBefore)
-
-  wx.request = function (opt) {
-    calls.push(opt)
-    opt.success({ statusCode: 200, data: detailBody('done') })
-  }
-  var confirmModals = modals.length
-  delivered.confirm()
-  modals[modals.length - 1].success({ confirm: false })
-  assert.strictEqual(modals.length, confirmModals + 1)
-  assert.strictEqual(delivered.data.status ? delivered.data.badge : delivered.data.badge, '已交付')
-  modals[modals.length - 1].success({ confirm: true })
-  await drain()
-  assert.strictEqual(delivered.data.badge, '已完成')
-  assert.strictEqual(delivered.data.canConfirm, false)
 
   walk(root).forEach(function (file) {
     if (fs.readFileSync(file, 'utf8').indexOf('13800002610') !== -1) {

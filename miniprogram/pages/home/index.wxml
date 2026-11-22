@@ -6,10 +6,6 @@
 </view>
 <view style="height: {{navHeight}}px;"></view>
 <view class="body">
-  <view class="pad">
-    <view class="h1">已收录平台片单检索，免费</view>
-    <view class="sub" wx:if="{{showPlatformTotal}}">已收录 {{platformTotal}} 个平台</view>
-  </view>
   <view class="banner run" wx:if="{{banner == 'running'}}" bindtap="openRunning">
     <text>{{bannerText}}</text><text class="chev">›</text>
   </view>
