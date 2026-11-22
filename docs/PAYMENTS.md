@@ -45,7 +45,7 @@
 | `membership_vip` | VIP `vip` | 30 天 | 59900 分（599.00 元） |
 | `membership_test` | 普通会员 `regular` | 1 天 | 1 分（0.01 元），仅开关打开且用户在白名单内 |
 
-开通走已有的 `OrderGrantWriter`：按订单上的会员档位和天数写入一条 `source=order` 的权益。同一订单重复通知不会再写一条。
+开通走已有的 `OrderGrantWriter`：按订单上的会员档位和天数写入一条 `source=order` 的权益。这条权益的到期时间是 `max(该档当前到期日, 付款时刻) + 天数`。该档当前到期日与 `GET /api/v1/auth/me` 的 `vip_expires_at` 或 `regular_expires_at` 相同，即该档所有未过期权益里最晚的 `expires_at`（订单、手动发放、邀请码、以及 `source` 为空的都算）。到期时刻等于现在的视为已过期，不作为起点。普通会员和 VIP 分开计：购买一档不改另一档，也不把另一档的剩余天数加到这一档上。同一订单重复通知不会再写一条，也不会再顺延。
 
 ## 小程序要调的接口
 
