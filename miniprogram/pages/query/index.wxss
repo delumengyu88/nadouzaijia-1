@@ -1,6 +1,9 @@
 /* local */
 
-.evidence-link { text-align: right; color: #1D4E9E; font-size: 26rpx; padding: 16rpx 0; }
+.evidence-link { text-align: right; color: #1D4E9E; font-size: 26rpx; padding: 8rpx 0 0; }
+.report-btn { margin-top: 16rpx; }
+.miss-actions { margin-top: 16rpx; }
+.miss-action { width: 48%; margin-top: 0; }
 .result { padding-top: 128rpx; text-align: center; }
 .result-title {
   margin-top: 32rpx;

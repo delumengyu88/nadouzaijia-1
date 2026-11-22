@@ -376,6 +376,17 @@ async function main() {
   assert(opened[1].indexOf(encodeURIComponent('真实节目')) !== -1)
   assert(opened[1].indexOf(encodeURIComponent('真实平台')) !== -1)
   assert(opened[1].indexOf('2026-') === -1)
+  assert(queryWxml.indexOf('查看报告') !== -1)
+  assert(queryWxml.indexOf('class="btn report-btn"') !== -1)
+  assert.strictEqual((queryWxml.match(/class="btn ghost miss-action"/g) || []).length, 2)
+  assert(queryWxml.indexOf('btn plain') === -1, '未命中的两个按钮使用同一描边样式')
+  blank.openHit({ currentTarget: { dataset: { hit: true, name: '星河旧梦' } } })
+  assert.strictEqual(opened[opened.length - 1], '/pages/report/index?name=' + encodeURIComponent('星河旧梦') + '&id=q-null')
+  config.calibrating = true
+  var beforeBlocked = opened.length
+  blank.openHit({ currentTarget: { dataset: { hit: true, name: '星河旧梦' } } })
+  assert.strictEqual(opened.length, beforeBlocked, '校准中不打开报告')
+  config.calibrating = false
 
   // 9. 四种 badge，超长名字交给单行省略，line 原样保留。
   var longName = '这是一个非常非常非常长的节目名称用来测试单行省略显示效果'
