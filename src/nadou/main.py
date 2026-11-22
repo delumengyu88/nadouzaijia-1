@@ -38,6 +38,8 @@ def create_app(
     alerts = notifier if notifier is not None else NotifierFactory.from_settings(get_settings())
     app = FastAPI(title="那豆在架")
 
+    # Function-scoped dependencies commit before sending success to the client.
+    # Follow-up reads (login/me, payment/list) must see the committed transaction.
     def get_session():
         session = database.session()
         try:
@@ -61,7 +63,7 @@ def create_app(
     )
     def search_program(
         name: str,
-        session: Session = Depends(get_session),
+        session: Session = Depends(get_session, scope="function"),
         x_user_id: str | None = Header(default=None),
     ):
         caller = x_user_id.strip() if x_user_id else None
@@ -77,7 +79,7 @@ def create_app(
     @app.post("/api/v1/invite-codes/redeem")
     def redeem_invite(
         payload: InviteRedeemIn,
-        session: Session = Depends(get_session),
+        session: Session = Depends(get_session, scope="function"),
         x_user_id: str | None = Header(default=None),
     ):
         caller = x_user_id.strip() if x_user_id else ""
@@ -101,7 +103,7 @@ def create_app(
     @app.get("/api/v1/queries/{query_id}/export")
     def export_query(
         query_id: str,
-        session: Session = Depends(get_session),
+        session: Session = Depends(get_session, scope="function"),
         x_user_id: str | None = Header(default=None),
     ):
         # Imported here so the workbench process does not load the image stack at startup.
