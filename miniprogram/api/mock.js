@@ -194,6 +194,8 @@ function searchRaw(name, options) {
       can_download_report: membership && !row.low,
       can_download_screenshot: membership && !row.low,
       checked_at: row.date,
+      category: row.category,
+      platform_subtype: row.sub,
       thumbnail_url: sign(row.low ? 'lowres' : 'card', row.id)
     }
     if (row.platform) open.platform = row.platform
@@ -1073,6 +1075,8 @@ module.exports = {
       if (rec.locked || !rec.can_download_report) return
       rows.push({
         platform: rec.platform || '平台未识别',
+        subtype: rec.platform_subtype || '',
+        category: rec.category || '',
         type: '',
         uploaded: meta.name,
         matched: found.program_name,

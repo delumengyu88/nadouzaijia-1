@@ -51,6 +51,7 @@
             <text class="qmark" wx:if="{{row.unknown}}" catchtap="ask">?</text>
           </view>
           <view class="rec-sub" wx:if="{{row.sub}}">{{row.sub}}</view>
+          <view class="ex-sub" wx:if="{{row.category}}">{{row.category}}</view>
           <view class="rec-date">{{row.date}}</view>
         </view>
       </view>

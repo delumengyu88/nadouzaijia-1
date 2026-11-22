@@ -12,13 +12,15 @@ function findRow(id) {
 
 function toRow(rec, programName) {
   var extra = findRow(rec.record_id) || {}
-  var unknown = !extra.platform
+  var platform = rec.platform || extra.platform
+  var unknown = !platform || platform === '平台未识别'
   return {
     id: rec.record_id,
     title: extra.title || programName,
-    platform: unknown ? '平台未识别' : extra.platform,
+    platform: unknown ? '平台未识别' : platform,
     unknown: unknown,
-    sub: unknown ? '' : (extra.sub || ''),
+    sub: unknown ? '' : (rec.platform_subtype || extra.sub || ''),
+    category: rec.category || '',
     time: extra.time || '',
     clock: extra.clock || '14:22',
     date: extra.date || '',

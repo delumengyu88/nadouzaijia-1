@@ -99,7 +99,7 @@ class PlatformLabel:
 class HitColumns:
     """Hit-sheet columns. 命中类型 is only 确认命中, so it is omitted when uniform."""
 
-    LEAD = ("平台", "子类型", "节目类型", "上传节目名", "匹配节目名")
+    LEAD = ("平台", "子类型", "类别", "节目类型", "上传节目名", "匹配节目名")
     TYPE = "命中类型"
     TAIL = ("检测日期", "命中画面截图")
     CONFIRMED = "确认命中"
@@ -166,6 +166,7 @@ class HitRow:
     image: bytes | None
     image_width: int
     image_height: int
+    category: str | None = None
 
 
 @dataclass(frozen=True)
@@ -366,6 +367,7 @@ class HitWorkbook:
         widths = {
             "平台": 18,
             "子类型": 14,
+            "类别": 14,
             "节目类型": 12,
             "上传节目名": 18,
             "匹配节目名": 18,
@@ -383,6 +385,7 @@ class HitWorkbook:
         fields = {
             "平台": hit.platform,
             "子类型": hit.subtype or None,
+            "类别": hit.category,
             "节目类型": hit.program_type,
             "上传节目名": hit.uploaded_name,
             "匹配节目名": hit.matched_name,
@@ -593,6 +596,7 @@ class QueryExport:
         return HitRow(
             platform=platform,
             subtype=subtype,
+            category=record.category,
             program_type=item.program_type or "",
             uploaded_name=item.uploaded_name,
             matched_name=canonical,

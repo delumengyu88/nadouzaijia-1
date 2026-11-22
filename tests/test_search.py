@@ -858,3 +858,32 @@ def test_no_zip_or_download_route(client):
     paths = [getattr(route, "path", "") for route in client.app.routes]
     assert "/api/v1/programs/search" in paths
     assert not any("zip" in path.lower() or "download" in path.lower() for path in paths)
+
+
+def test_category_only_revealed_on_permitted_records(session, client, clock):
+    add_user(session, "category-user", clock, "regular")
+    for record_id, age, category in (
+        ("cat-open", 100, "共识类别"),
+        ("cat-blank", 110, None),
+        ("cat-locked", 40, "隐藏类别"),
+    ):
+        add_hit(
+            session,
+            task_id=record_id,
+            record_id=record_id,
+            program="类别节目",
+            when=at_age(clock, age),
+        )
+        session.flush()
+        session.get(IndexRecord, record_id).category = category
+    session.commit()
+    response = client.get(
+        "/api/v1/programs/search",
+        params={"name": "类别节目"},
+        headers={"X-User-Id": "category-user"},
+    )
+    rows = by_id(response.json())
+    assert rows["cat-open"]["category"] == "共识类别"
+    assert "category" not in rows["cat-blank"]
+    assert set(rows["cat-locked"]) == LOCKED_KEYS
+    assert "隐藏类别" not in response.text

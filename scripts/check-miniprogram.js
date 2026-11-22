@@ -283,6 +283,23 @@ function open(rel, query, life) {
 }
 
 try {
+  var shape = require(path.join(root, 'api/shape'))
+  var presenter = require(path.join(root, 'utils/present'))
+  var categoryBody = shape.sanitizeSearch({ outcome: 'hit', platform_count: 1,
+    platform_groups: [{ records: [{record_id: 'category-open', locked: false, category: '共识类别'},
+      {record_id: 'category-empty', locked: false, program_type: '不能替代类别'}] }],
+    locked_records: [{record_id: 'category-locked', locked: true, category: '不可泄漏'}] })
+  expect(categoryBody.records[0].category === '共识类别', 'category survives API adapter')
+  expect(!categoryBody.records[1].category, 'blank category has no type fallback')
+  expect(!categoryBody.records[2].category, 'locked category stripped')
+  var categoryView = presenter.present(categoryBody)
+  expect(categoryView.groups[0].rows[0].category === '共识类别', 'report category')
+  var bytes = require(path.join(root, 'utils/xlsx')).build({title: '测试', scope: '', day: '',
+    rows: [{ platform: '测试平台', subtype: '测试子类型', category: '共识类别', type: '节目类型值' }]})
+  var bookText = Buffer.from(bytes).toString('utf8')
+  expect(bookText.indexOf('C5" t="inlineStr"><is><t>类别') !== -1, 'xlsx category header order')
+  expect(bookText.indexOf('C6" t="inlineStr"><is><t>共识类别') !== -1, 'xlsx category value')
+  expect(bookText.indexOf('D6" t="inlineStr"><is><t>节目类型值') !== -1, 'xlsx program type independent')
   boot('guest', { splash: false, announce: false })
   var home = open('pages/home/index', {}, 'show')
   expect(home.data.showSplash, 'splash did not cover home')

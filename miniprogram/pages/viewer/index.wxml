@@ -15,7 +15,8 @@
   </view>
   <view class="pad" style="margin-top:24rpx;">
     <view class="row-title {{unknown ? 'unknown' : ''}}" style="{{unknown ? 'color:#9aa3af;' : ''}}">{{platform}}</view>
-    <view class="sub">排查时间 {{date}}{{low ? '' : ''}}</view>
+    <view class="sub" wx:if="{{category}}">{{category}}</view>
+    <view class="sub">排查时间 {{date}}</view>
   </view>
   <view class="warn-box" wx:if="{{low}}">当前为普通分辨率低清水印图，不可放大到高清。</view>
   <view class="center-sub" wx:if="{{programOnly}}">单节目权益可查看高清，不提供下载。</view>
