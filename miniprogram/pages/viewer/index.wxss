@@ -1,1 +1,10 @@
-/* local */
+/* Gray control keeps the reason on the label. It is not a download entry. */
+.btn.reason {
+  width: auto;
+  min-width: 280rpx;
+  margin: 28rpx auto 0;
+  padding: 0 32rpx;
+  background: #e6e9ee;
+  color: #3c4654;
+  font-weight: 600;
+}

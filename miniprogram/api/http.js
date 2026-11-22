@@ -33,6 +33,7 @@ module.exports = {
   accountKind: function () { return state.currentId() },
   profile: function () { return require('./mock').profile() },
   memberCenter: function () { return require('./mock').memberCenter() },
+  membershipPlans: function () { return require('./mock').membershipPlans() },
   setDraft: function (value) { state.load().draft = String(value || ''); state.save() },
   getDraft: function () { return state.load().draft || '' },
   parseTitles: function (raw) { return require('../utils/text').parseTitles(raw) },

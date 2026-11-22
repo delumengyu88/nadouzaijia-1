@@ -318,8 +318,60 @@ function open(rel, query, life) {
   return page
 }
 
+function checkMemberRules() {
+  var member = require(path.join(root, 'utils/member'))
+  var plans = api.membershipPlans()
+  function texts(plan) {
+    return plan.perks.map(function (row) { return (row.ok ? 'y:' : 'n:') + row.text }).join('|')
+  }
+  expect(plans.length === 2 && plans[0].id === 'membership_vip' && plans[1].id === 'membership_regular', 'vip card above regular')
+  expect(plans[0].name === 'VIP 会员' && plans[0].price === 599 && plans[0].days === 30, 'vip price from catalog')
+  expect(plans[1].name === '普通会员' && plans[1].price === 299 && plans[1].days === 30, 'regular price from catalog')
+  expect(texts(plans[0]) === 'y:30–89 天记录|y:90 天以上记录|y:高清截图与下载', 'vip perk rows')
+  expect(texts(plans[1]) === 'n:30–89 天记录 · 仅 VIP|y:90 天以上记录|y:高清截图与下载', 'regular perk rows')
+  plans.forEach(function (plan) {
+    expect(plan.perks.length === 3, 'three perk rows')
+    plan.perks.forEach(function (row) {
+      expect(row.text.indexOf('\u2014') === -1 && row.text.indexOf('✓') === -1, 'perk copy has no em dash or check mark')
+    })
+  })
+  var blocked = plans[1].perks[0]
+  expect(!blocked.ok && blocked.text.indexOf('\u2013') !== -1 && blocked.text.indexOf('\u00b7') !== -1, 'unavailable perk is gray copy with a reason')
+  expect(member.confirmLabel(plans[0].price) === '确认开通 ¥599', 'vip confirm label')
+  expect(member.confirmLabel(plans[1].price) === '确认开通 ¥299', 'regular confirm label')
+  expect(member.statusLine('guest') === '未登录' && member.statusLine('free') === '免费用户', 'unsigned status')
+  expect(member.statusLine('vip', '2026-12-18') === 'VIP 至 2026-12-18', 'vip status')
+  expect(member.statusLine('regular', '2026-12-18') === '普通会员 至 2026-12-18', 'regular status')
+  var fit = member.screenUsage()
+  expect(fit.fits && fit.used <= 667 && fit.limit === 667, 'member center fits 375×667, used ' + fit.used)
+  var css = fs.readFileSync(path.join(root, 'pages/member/index.wxss'), 'utf8')
+  expect(css.indexOf('border: 2px solid transparent') !== -1, 'selection border is reserved at 2px')
+  expect(css.indexOf('border-color: #1D4E9E') !== -1 && css.indexOf('background: #E7F0FF') !== -1, 'selected card')
+  expect(css.indexOf('background: #1D4E9E') !== -1 && css.indexOf('visibility: hidden') !== -1, 'confirm button slot')
+  expect(css.indexOf('padding-bottom: calc(56px + env(safe-area-inset-bottom))') !== -1, 'tab clearance')
+  var xml = fs.readFileSync(path.join(root, 'pages/member/index.wxml'), 'utf8')
+  expect(xml.indexOf('输入邀请码') !== -1 && xml.indexOf('class="invite-link"') !== -1, 'invite is a text link')
+  expect(xml.indexOf('\u2014') === -1 && xml.indexOf('¥599') === -1 && xml.indexOf('¥299') === -1, 'page does not hardcode prices or an em dash')
+  expect((xml.match(/class="btn /g) || []).length === 1, 'member page has one solid button')
+  var viewerXml = fs.readFileSync(path.join(root, 'pages/viewer/index.wxml'), 'utf8')
+  expect(viewerXml.indexOf('wx:if="{{downloadEntry}}"') !== -1, 'download entry is conditional')
+  expect(viewerXml.indexOf('{{blockedReason}}') !== -1, 'blocked download writes the reason')
+  var freeOffer = member.downloadOffer({ canSave: false, low: true, tier: 'free' })
+  expect(!freeOffer.downloadEntry && freeOffer.blockedReason === '开通会员后下载', 'free user has no download entry')
+  var guestOffer = member.downloadOffer({ canSave: false, tier: 'guest' })
+  expect(!guestOffer.downloadEntry && guestOffer.blockedReason === '开通会员后下载', 'guest download reason')
+  var regularBlock = member.downloadOffer({ canSave: false, tier: 'regular' })
+  expect(!regularBlock.downloadEntry && regularBlock.blockedReason === '仅 VIP 可用', 'regular vip-only reason')
+  var paid = member.downloadOffer({ canSave: true, tier: 'vip' })
+  expect(paid.downloadEntry && paid.blockedReason === '', 'paid download entry')
+  var program = member.downloadOffer({ canSave: false, programOnly: true, low: true, tier: 'free' })
+  expect(!program.downloadEntry && program.blockedReason === '', 'program grant is not a download entry')
+}
+
 async function main() {
 try {
+  checkMemberRules()
+
   var titlesUtil = require(path.join(root, 'utils/text'))
   var approvedWords = require(path.join(root, 'stop-words.json'))
   expect(approvedWords.length === 102, '102 approved stop words')
@@ -372,11 +424,13 @@ try {
   cover('P04-nomember')
   cover('P18-empty')
   var memberPage = open('pages/member/index', {}, 'show')
-  expect(memberPage.data.statusLine === '当前免费用户', 'free member center')
-  expect(memberPage.data.payLabel.indexOf('开通 VIP') === 0, 'default tier label')
+  expect(memberPage.data.statusLine === '免费用户', 'free member center')
+  expect(memberPage.data.selected === '' && !memberPage.data.showPay && !memberPage.data.payLabel, 'nothing selected')
   memberPage.pick({ currentTarget: { dataset: { id: 'membership_regular' } } })
-  expect(memberPage.data.selected === 'membership_regular', 'tier pick')
+  expect(memberPage.data.selected === 'membership_regular' && memberPage.data.showPay, 'tier pick shows confirm')
+  expect(memberPage.data.payLabel === '确认开通 ¥' + memberPage.data.plans[1].price, 'regular confirm amount')
   memberPage.pick({ currentTarget: { dataset: { id: 'membership_vip' } } })
+  expect(memberPage.data.showPay && memberPage.data.payLabel === '确认开通 ¥' + memberPage.data.plans[0].price, 'vip confirm amount')
 
   var freeProfile = open('pages/profile/index', {}, 'show')
   expect(freeProfile.data.tier === 'free' && !freeProfile.data.guest, 'free profile')
@@ -430,6 +484,7 @@ try {
   flush()
   expect(report.data.showLocked && report.data.fakeRows.length === 3, 'locked report')
   expect(!report.data.groups.length, 'locked report must not list real rows')
+  expect(!report.data.showDownload, 'free user has no report download entry')
   cover('P08-locked')
 
   var limits = []
@@ -507,13 +562,14 @@ try {
   expect(report.data.showOpen && !report.data.showLocked, 'unlocked report after vip')
   cover('P08-unlocked')
   var shot = open('pages/viewer/index', { id: 'xh1', name: encodeURIComponent('星河旧梦') }, 'load')
-  expect(shot.data.canSave && !shot.data.low, 'screenshot with download')
+  expect(shot.data.canSave && shot.data.downloadEntry && !shot.data.blockedReason && !shot.data.low, 'screenshot with download')
   cover('P09')
   shot = open('pages/viewer/index', { id: 'xh1', name: encodeURIComponent('星河旧梦'), view: 'nodl' }, 'load')
-  expect(shot.data.programOnly && !shot.data.canSave, 'no download')
+  expect(shot.data.programOnly && !shot.data.canSave && !shot.data.downloadEntry, 'no download')
   cover('P09-nodl')
   shot = open('pages/viewer/index', { id: 'xh1', name: encodeURIComponent('星河旧梦'), view: 'free' }, 'load')
-  expect(shot.data.low && !shot.data.canSave, 'free screenshot')
+  expect(shot.data.low && !shot.data.canSave && !shot.data.downloadEntry, 'free screenshot')
+  expect(shot.data.blockedReason === '开通会员后下载', 'free download states the reason')
   cover('P09-free')
   report = open('pages/report/index', { name: encodeURIComponent('星河旧梦'), view: 'expired' }, 'load')
   flush()
@@ -562,8 +618,10 @@ try {
   cover('P07-allmiss')
 
   memberPage = open('pages/member/index', {}, 'show')
-  expect(memberPage.data.statusLine.indexOf('当前 VIP') === 0, 'vip member center')
-  expect(memberPage.data.payLabel.indexOf('续费 VIP') === 0, 'vip renew label')
+  expect(memberPage.data.statusLine.indexOf('VIP 至 ') === 0, 'vip member center')
+  expect(!memberPage.data.showPay && memberPage.data.selected === '', 'vip page starts unselected')
+  memberPage.pick({ currentTarget: { dataset: { id: 'membership_vip' } } })
+  expect(memberPage.data.payLabel === '确认开通 ¥' + memberPage.data.plans[0].price, 'vip confirm amount')
   cover('P18')
   var profile = open('pages/profile/index', {}, 'show')
   expect(profile.data.tier === 'vip' && !profile.data.guest, 'member profile')
@@ -632,7 +690,9 @@ try {
   expect(profile.data.guest, 'guest profile')
   cover('P13-guest')
   memberPage = open('pages/member/index', {}, 'show')
-  expect(memberPage.data.guest && memberPage.data.payLabel === '微信登录', 'guest member center')
+  expect(memberPage.data.guest && memberPage.data.statusLine === '未登录' && !memberPage.data.showPay, 'guest member center')
+  memberPage.pick({ currentTarget: { dataset: { id: 'membership_regular' } } })
+  expect(memberPage.data.payLabel === '确认开通 ¥' + memberPage.data.plans[1].price, 'guest confirm uses catalog price')
   cover('P18-guest')
 
   boot('free')

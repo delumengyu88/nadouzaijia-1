@@ -1,35 +1,57 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
+var member = require('../../utils/member')
 
-function labelFor(tier, selected, guest) {
-  if (guest) return '微信登录'
-  if (selected === 'membership_regular') return '开通普通会员 · ¥299'
-  if (tier === 'vip') return '续费 VIP · ¥599'
-  return '开通 VIP · ¥599'
+function selectedPlan(plans, selected) {
+  var found = null
+  ;(plans || []).forEach(function (item) {
+    if (item.id === selected) found = item
+  })
+  return found
 }
 
 Page({
-  data: { title: '会员中心', selected: 'membership_vip' },
+  data: {
+    title: '会员中心',
+    selected: '',
+    showPay: false,
+    payLabel: '',
+    plans: [],
+    statusLine: '',
+    loginLoading: false,
+    loginError: ''
+  },
   onShow: function () {
     var data = nav.layout('member', this.query)
     var info = api.memberCenter()
+    var plans = api.membershipPlans()
+    var plan = selectedPlan(plans, this.data.selected)
     data.title = '会员中心'
-    data.selected = this.data.selected || 'membership_vip'
+    data.plans = plans
+    data.selected = plan ? plan.id : ''
+    data.showPay = !!plan
+    data.payLabel = plan ? member.confirmLabel(plan.price) : ''
     Object.keys(info).forEach(function (key) { data[key] = info[key] })
-    data.payLabel = labelFor(data.tier, data.selected, data.guest)
     this.setData(data)
     nav.selectTab(this, 1)
   },
   pick: function (e) {
-    var selected = e.currentTarget.dataset.id
+    var plan = selectedPlan(this.data.plans, e.currentTarget.dataset.id)
+    if (!plan) return
     this.setData({
-      selected: selected,
-      payLabel: labelFor(this.data.tier, selected, this.data.guest)
+      selected: plan.id,
+      showPay: true,
+      payLabel: member.confirmLabel(plan.price)
     })
   },
   go: function () {
+    if (!this.data.showPay || !this.data.selected) return
     if (this.data.guest) return require('../../utils/login')(this, this.onShow)
     if (require('../../utils/trial').blockPayment()) return
     wx.navigateTo({ url: '/pages/pay/index?product=' + this.data.selected })
+  },
+  openInvite: function () {
+    if (this.data.guest) return require('../../utils/login')(this, this.onShow)
+    wx.navigateTo({ url: '/pages/invite/index' })
   }
 })
