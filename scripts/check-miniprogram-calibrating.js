@@ -50,6 +50,14 @@ function page(name) {
   } })
 }
 function drain() { return new Promise(function (resolve) { setImmediate(resolve) }) }
+function forgetIdentity() {
+  var keptCalls = calls.filter(function (item) { return item.url.indexOf('/auth/me') === -1 })
+  var keptPending = pending.filter(function (item) { return item.url.indexOf('/auth/me') === -1 })
+  calls.length = 0
+  pending.length = 0
+  keptCalls.forEach(function (item) { calls.push(item) })
+  keptPending.forEach(function (item) { pending.push(item) })
+}
 function isOrderListRequest(item) {
   return (item.method || 'GET') === 'GET' && /\/api\/v1\/pay\/orders$/.test(item.url || '')
 }
@@ -128,6 +136,7 @@ async function main() {
   assert.strictEqual(JSON.stringify(api.listOrders()), orders)
   forgetOrderRequests()
   assert.strictEqual(JSON.stringify(api.profile()), profile)
+  forgetIdentity()
   ;['report', 'viewer'].forEach(function (name) {
     var blocked = page(name)
     blocked.onLoad({ id: 'old-id', name: '真实测试片', example: '1' })

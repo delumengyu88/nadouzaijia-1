@@ -73,7 +73,7 @@ Page({
     }
     var real = api.isLive && query.example !== '1'
     var extra = real ? {} : present.findRow(query.id) || {}
-    var prof = api.profile()
+    var prof = require('../../config').mode === 'live' ? require('../../api/identity').syncAccess() : api.profile()
     var low = !!(extra.low || (row && row.access === 'lowres') || (!real && (prof.tier === 'free' || prof.tier === 'guest')))
     var canSave = !!(row && row.can_download_screenshot && !low && query.example !== '1')
     var programOnly = row && row.access === 'full' && !row.can_download_screenshot

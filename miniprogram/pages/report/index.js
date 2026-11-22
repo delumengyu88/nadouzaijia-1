@@ -84,7 +84,7 @@ Page({
       return
     }
     var meta = api.programMeta(name)
-    var prof = api.profile()
+    var prof = require('../../config').mode === 'live' ? require('../../api/identity').syncAccess() : api.profile()
     var view = present(search, {
       name: meta.name,
       queried: publicExample ? '' : '2026-11-20',

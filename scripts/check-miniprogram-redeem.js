@@ -134,7 +134,13 @@ async function main() {
   assert.strictEqual(vipResult.sub, '有效至 ' + beijingDay(iso))
   assert.strictEqual(vipResult.hasVip, true)
   assert.strictEqual(state.load().auth.user.tier, 'vip')
-  assert.strictEqual(http.profile().tier, 'vip')
+  var shownVip = http.profile()
+  await drain()
+  requests.shift().success({
+    statusCode: 200,
+    data: { id: 'user-1', tier: 'vip', vip_expires_at: iso, regular_expires_at: iso }
+  })
+  assert.strictEqual((await shownVip).tier, 'vip')
   assert.strictEqual(http.inviteState().bound, true)
 
   clearBound()
@@ -155,7 +161,13 @@ async function main() {
   assert.strictEqual(regularResult.headline, '兑换成功')
   assert.strictEqual(regularResult.sub, '有效至 ' + beijingDay(iso))
   assert.strictEqual(regularResult.hasVip, false)
-  assert.strictEqual(http.profile().tier, 'regular')
+  var shownRegular = http.profile()
+  await drain()
+  requests.shift().success({
+    statusCode: 200,
+    data: { id: 'user-1', tier: 'regular', vip_expires_at: null, regular_expires_at: iso }
+  })
+  assert.strictEqual((await shownRegular).tier, 'regular')
 
   clearBound()
   login('vip')
