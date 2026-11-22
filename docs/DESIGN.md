@@ -57,6 +57,11 @@ The API shows `其他平台` (`PlatformNames.OTHER`) only on records the caller 
 2. `GET /api/v1/programs/search?name=` — canonicalize `name`, return that program's counted records filtered for the caller.
 3. `GET /api/v1/queries/{query_id}/export` — workbook for one saved query. See below. Same `X-User-Id` stand-in.
 4. `GET /api/v1/app/config` — public splash switch for the mini program. No login. See below.
+5. `POST /api/v1/evidence-requests` — 登录用户提交委托取证。见下方「用户侧委托取证」。
+6. `GET /api/v1/evidence-requests` — 只返回当前用户的工单，按 `created_at` 倒序。
+7. `GET /api/v1/evidence-requests/{id}` — 本人工单详情。非本人或不存在都是 404。
+8. `POST /api/v1/evidence-requests/{id}/withdraw` — 仅「已提交」可撤回为「已取消」。
+9. `POST /api/v1/evidence-requests/{id}/confirm` — 仅「已交付」可确认为「已完成」。
 
 Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is local-only until WeChat login lands.** Do not expose this header as account authentication on a shared or deployed API. There is no import endpoint; import is `TaskExportImporter`, used by the seed script and tests. Workbench upload can call the same class later.
 
@@ -71,6 +76,22 @@ Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is loc
 ```
 
 表里没有这一行时返回 `splash_enabled: true`、`slogan: ""`，表的行数不变。工作台 `PUT /api/v1/admin/content/splash` 改过 `enabled` 之后，下一次这个 GET 按库里的当前值返回。服务端不做缓存；响应带 `Cache-Control: public, max-age=60`，给调用方自己缓存。
+
+### 用户侧委托取证
+
+鉴权和 `GET /api/v1/auth/me` 相同，请求头是 `Authorization: Bearer`。未登录 401。数据库里的状态继续用中文，工作台接口不改。
+
+`POST /api/v1/evidence-requests` 的字段：`name`（必填，去掉首尾空白并做 NFKC 之后必须非空，最长 200）、`kind`（只能是 `normal` 或 `recent`）、`platform`（可选；`recent` 忽略且不存）、`note`（可选，最长 500，写入 `requirement`）、`phone`（可选，11 位并且以 1 开头）。这个接口不接收 `record_ref`，也不会去读检索记录或生成日期来填任何字段。
+
+`normal` 存成 `request_type=常规`，`recent` 存成 `近期`。成功时 201，正文只有 `{id, no}`。`no` 就是 `application_number`，仍由工作台的 `ApplicationNumbers.next_value` 生成。联系电话写在新增的可空列 `evidence_requests.contact_phone`（迁移 `20261122_0012`，可升级也可降级，不改已有行的其他列）。传了 `phone` 就校验并使用它；没传就用 `users.phone`；两个都没有则 422 `{code:"phone_required", message:"请填写联系手机号"}`。格式不对是 422 `{code:"invalid_phone", message:"请填写正确的手机号"}`。用户侧响应和钉钉通知里的手机号都是脱敏的（如 `138****1234`）。
+
+列表每条是 `id, no, name, platform, kind, status, status_text, created_at`。详情在此基础上增加 `note`、脱敏 `phone`、`quote_amount`、`failure_reason`、`refund_method`、`refund_amount`、`refund_note`，以及 `accepted_at`、`quoted_at`、`payment_confirmed_at`、`delivered_at`、`completed_at`、`failed_at`、`cancelled_at`、`closed_at`。`status` 与中文的对应是：已提交 `submitted`，已受理 `accepted`，待付款（线下） `pay`，取证中 `working`，已交付 `delivered`，已完成 `done`，取证失败 `failed`，已关闭 `closed`，已取消 `cancelled`。`status_text` 是库里的中文原值。
+
+同一用户、同一节目名（先去首尾空白，再 NFKC），如果已经有状态属于已提交、已受理、待付款（线下）、取证中的工单，返回 409 `{code:"duplicate", id, no, message:"这个节目已经提交过取证申请"}`，`id` 和 `no` 是已有的那一张。检查和插入在同一个事务里完成，并且先锁住这个用户：Postgres 用 `SELECT … FOR UPDATE`；SQLite 先提交登录时的只读事务，再 `UPDATE` 该用户行，把写锁一直占到本次请求提交，另一个连接用 `busy_timeout` 等待。已取消、已交付、已完成、取证失败、已关闭都不阻止再次提交。
+
+撤回和确认在状态不对时返回 409 `{code:"invalid_state", message:…}`。这两步写审计。`AuditWriter` 的操作者是员工账号；用户自己操作时没有员工，所以 `actor_id` 为空，`after_json` 里记下 `user_id`，不记手机号。
+
+提交成功后走现有 `Notifier`。正文含标题、节目名、工单号、取证类型和脱敏手机号。通知抛错不影响 201。
 
 ## Import
 
