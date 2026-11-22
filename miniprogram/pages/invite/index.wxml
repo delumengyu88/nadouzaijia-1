@@ -7,11 +7,14 @@
 <view style="height: {{navHeight}}px;"></view>
 <view class="body" wx:if="{{phase == 'success'}}">
   <view class="success-wrap">
-    <icon type="success" size="56" color="#1D4E9E" />
+    <icon type="success" size="56" color="#16A34A" />
     <view class="success-title">兑换成功</view>
-    <view class="success-grant">已发放普通会员 30 天</view>
-    <view class="success-expiry" wx:if="{{sub}}">{{sub}}</view>
-    <view class="btn slim" bindtap="profile">查看个人中心</view>
+    <view class="success-sub">
+      <view>已发放普通会员 30 天</view>
+      <view wx:if="{{sub}}">{{sub}}</view>
+    </view>
+    <button class="success-primary" bindtap="profile">查看个人中心</button>
+    <button class="success-link" bindtap="home">返回首页</button>
   </view>
 </view>
 <view class="body" wx:else>

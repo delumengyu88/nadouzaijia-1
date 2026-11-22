@@ -68,5 +68,6 @@ Page({
       self.showResult(api.redeem(code), code)
     })
   },
-  profile: function () { wx.switchTab({ url: '/pages/profile/index' }) }
+  profile: function () { wx.switchTab({ url: '/pages/profile/index' }) },
+  home: function () { wx.switchTab({ url: '/pages/home/index' }) }
 })

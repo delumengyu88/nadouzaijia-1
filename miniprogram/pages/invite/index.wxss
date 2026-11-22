@@ -38,18 +38,49 @@ button.btn.off[disabled] {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 80rpx 48rpx 0;
+  padding-top: 128rpx;
   text-align: center;
 }
 .success-title {
-  margin-top: 24rpx;
+  margin-top: 32rpx;
   font-size: 40rpx;
   font-weight: 700;
-  color: #1A1A1A;
+  color: #1F2329;
+  line-height: 1.4;
 }
-.success-grant,
-.success-expiry {
-  margin-top: 12rpx;
+.success-sub {
+  margin-top: 16rpx;
+  padding: 0 64rpx;
+  width: 100%;
+  box-sizing: border-box;
   font-size: 28rpx;
-  color: #666;
+  color: #646A73;
+  line-height: 40rpx;
+  text-align: center;
+  overflow: hidden;
+  max-height: 80rpx;
 }
+.success-primary {
+  width: 480rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin: 48rpx 0 0;
+  padding: 0;
+  background: #1D4E9E;
+  color: #fff;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  text-align: center;
+}
+.success-primary::after { border: none; }
+.success-link {
+  margin-top: 24rpx;
+  padding: 0;
+  background: transparent;
+  color: #1D4E9E;
+  font-size: 28rpx;
+  line-height: 40rpx;
+  font-weight: 400;
+}
+.success-link::after { border: none; }
