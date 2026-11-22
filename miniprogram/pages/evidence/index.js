@@ -135,5 +135,8 @@ Page({
   },
   openExisting: function () {
     wx.navigateTo({ url: '/pages/evidence-detail/index?id=' + encodeURIComponent(this.data.dupId || '') })
+  },
+  closeDuplicate: function () {
+    this.setData({ showDuplicate: false })
   }
 })

@@ -17,10 +17,12 @@ module.exports = function (path, data, options) {
         data: data || {},
         header: token ? { Authorization: 'Bearer ' + token } : {},
         success: function (res) {
-          // Evidence calls read `code` from the body. HTTP status is not the result.
-          if (options.readBody) {
+          // Evidence uses readBody and judges `code`. Redeem uses exposeStatus and judges `detail`.
+          // Keep both options: they are added by different PRs and must survive a merge.
+          if (options.readBody || options.exposeStatus) {
             if (res.statusCode === 401 && token) state.clearSession(token)
-            resolve(res.data === undefined || res.data === null ? {} : res.data)
+            if (options.exposeStatus) resolve({ statusCode: res.statusCode, data: res.data })
+            else resolve(res.data === undefined || res.data === null ? {} : res.data)
             return
           }
           if (res.statusCode >= 200 && res.statusCode < 300) resolve(res.data || {})
