@@ -1,18 +1,25 @@
 // Membership copy and the 375×667 layout budget for the member center.
-// Prices stay in api/mock PRODUCTS; this module only formats them.
+// The mock catalog supplies local prices; live prices and durations come from /pay/tiers.
 
 class MemberCopy {
   static copyPerks(rows) {
     return rows.map(function (row) { return { ok: row.ok, text: row.text } })
   }
 
+  static pricedTier(tiers, id) {
+    var row = (tiers || []).find(function (item) { return item && item.id === id })
+    if (!row || !Number.isSafeInteger(row.amount_fen) || row.amount_fen <= 0 ||
+        !Number.isSafeInteger(row.duration_days) || row.duration_days <= 0) return null
+    return { price: row.amount_fen / 100, days: row.duration_days }
+  }
+
   static priceText(product) {
-    return '¥' + product.price + '/' + product.days + '天'
+    return product.price == null || product.days == null ? '' : '¥' + product.price + '/' + product.days + '天'
   }
 
   static plansFromProducts(products) {
-    var vip = products.membership_vip
-    var regular = products.membership_regular
+    var vip = products.membership_vip || { card: 'VIP 会员', price: null, days: null }
+    var regular = products.membership_regular || { card: '普通会员', price: null, days: null }
     return [
       {
         id: 'membership_vip',

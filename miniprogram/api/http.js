@@ -225,7 +225,7 @@ function emptyToNull(value) {
 }
 
 function adaptRecord(rec) {
-  if (!rec) return null
+  if (!rec || rec.locked === true || rec.locked === 'true') return null
   return {
     record_id: rec.record_id == null ? '' : String(rec.record_id),
     platform: rec.platform == null ? '' : String(rec.platform),
@@ -236,17 +236,18 @@ function adaptRecord(rec) {
     timestamps: Array.isArray(rec.timestamps) ? rec.timestamps.map(String) : [],
     checked_at: emptyToNull(rec.checked_at) == null ? null : String(rec.checked_at),
     age_bucket: emptyToNull(rec.age_bucket) == null ? null : String(rec.age_bucket),
-    thumbnail_url: emptyToNull(rec.thumbnail_url) == null ? null : String(rec.thumbnail_url),
-    hd_url: emptyToNull(rec.hd_url) == null ? null : String(rec.hd_url),
+    thumbnail_url: shape.imageUrl(rec.thumbnail_url) || null,
+    hd_url: rec.access === 'full' ? shape.imageUrl(rec.hd_url) || null : null,
     access: emptyToNull(rec.access),
-    can_download_report: rec.can_download_report == null ? null : !!rec.can_download_report,
-    can_download_screenshot: rec.can_download_screenshot == null ? null : !!rec.can_download_screenshot,
+    can_download_report: rec.can_download_report == null ? null : rec.can_download_report === true,
+    can_download_screenshot: rec.can_download_screenshot == null ? null : rec.access === 'full' && rec.can_download_screenshot === true,
     locked: rec.locked == null ? null : !!rec.locked
   }
 }
 
 function adaptExample(body) {
-  var src = body || {}
+  if (!body || !Array.isArray(body.records)) throw new Error('示例报告暂不可用')
+  var src = body
   var records = []
   ;(src.records || []).forEach(function (rec) {
     var row = adaptRecord(rec)
@@ -394,7 +395,7 @@ module.exports = {
   accountKind: function () { return state.currentId() },
   profile: function () { return require('./identity').loadProfile() },
   memberCenter: function () { return require('./identity').loadMemberCenter() },
-  membershipPlans: function () { return require('./mock').membershipPlans() },
+  membershipPlans: function () { return require('../utils/member').plansFromProducts({}) },
   setDraft: state.setDraft,
   getDraft: state.getDraft,
   parseTitles: function (raw) { return require('../utils/text').parseTitles(raw) },
@@ -408,12 +409,15 @@ module.exports = {
   listRecords: function () { return [] },
   searchProgram: function (name) {
     return request('/api/v1/programs/search', { name: name }).then(function (body) {
+      if (!body || ['hit', 'miss', 'recent_only', 'unverified'].indexOf(body.outcome) < 0 ||
+          (!Array.isArray(body.records) && !Array.isArray(body.platform_groups))) throw new Error('检索结果暂不可用')
       return shape.sanitizeSearch(body)
     })
   },
   homeContent: function () {
     return request('/api/v1/app/home', {}, { public: true }).then(function (body) {
-      var src = body || {}
+      if (!body || !Array.isArray(body.examples) || !Array.isArray(body.announcements)) throw new Error('首页内容暂不可用')
+      var src = body
       var total = homePlatformTotal(src.platformTotal)
       return {
         platformTotal: total,
@@ -431,7 +435,7 @@ module.exports = {
     })
   },
   programMeta: function (name) { return { name: name, type: '', year: '' } },
-  tierOfAccount: function () { return state.userId() ? 'free' : 'guest' },
+  tierOfAccount: function () { return require('./identity').syncAccess().tier },
   checkout: function (product) {
     var tier = typeof product === 'string' ? product : ''
     if (tier === testOffer.id) return testOffer.checkout(PayClient.normalize)
@@ -561,10 +565,8 @@ module.exports = {
     ]
   },
   agreement: function (id) {
-    return {
-      title: '协议',
-      paragraphs: ['运营主体：那豆在架', '完整文本由服务端下发。']
-    }
+    var item = this.agreements().find(function (row) { return row.id === id })
+    return { title: item ? item.title : '协议', paragraphs: [] }
   },
   exportBook: function () { return { ok: false, message: '当前服务未提供导出' } },
   maskPhone: function (phone) { return phone }

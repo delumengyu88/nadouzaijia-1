@@ -1,4 +1,5 @@
-var catalog = require('../api/catalog')
+var imageUrl = require('../api/shape').imageUrl
+var beijingTime = require('./date').beijingTime
 var OTHER = '其他平台'
 var AGE_LABELS = {
   lt_30: '30天内',
@@ -7,16 +8,13 @@ var AGE_LABELS = {
   ge_180: '180天以上'
 }
 
-function httpImage(url) {
-  return /^https:\/\//.test(url || '') ? String(url) : ''
-}
-
 function ageLabelOf(bucket, publicExample) {
   if (!publicExample || bucket == null || bucket === '' || bucket === 'unknown') return ''
   return AGE_LABELS[bucket] || ''
 }
 
 function findRow(id) {
+  var catalog = require('../api/catalog')
   var found = null
   Object.keys(catalog.programs).forEach(function (name) {
     catalog.programs[name].rows.forEach(function (row) {
@@ -30,16 +28,16 @@ function toRow(rec, programName, mock, publicExample) {
   var extra = mock ? (findRow(rec.record_id) || {}) : {}
   var platform = rec.platform || extra.platform
   var unknown = !platform || platform === OTHER || platform === '平台未识别'
-  var image = httpImage(rec.thumbnail_url)
-  var checked = rec.checked_at ? String(rec.checked_at) : ''
+  var image = imageUrl(rec.thumbnail_url) || (rec.access === 'full' && imageUrl(rec.hd_url)) || ''
+  var checked = beijingTime(rec.checked_at)
   var badge = ''
   if (!(publicExample && (rec.access == null || rec.access === ''))) {
-    badge = extra.low || rec.access === 'lowres' ? '低清' : '高清'
+    badge = extra.low || rec.access === 'lowres' ? '低清' : (mock || imageUrl(rec.hd_url) ? '高清' : '')
   }
   return {
     id: rec.record_id,
     mock: mock,
-    plainThumb: !!publicExample && !image,
+    plainThumb: !mock && !image,
     image: image,
     title: extra.title || programName,
     platform: unknown ? OTHER : platform,
@@ -90,7 +88,7 @@ function present(search, meta) {
   var evidence = 0
   var locked = 0
   var publicExample = !!search.publicExample
-  var catalogMock = !publicExample && (!!search.example || require('../config').mode === 'mock')
+  var catalogMock = !publicExample && require('../config').mode === 'mock'
   ;(search.records || []).forEach(function (rec) {
     if (rec.locked) {
       if (rec.age_bucket === 'lt_30') evidence += 1
@@ -110,7 +108,8 @@ function present(search, meta) {
   } else if (info.queried) {
     header = '查询于 ' + info.queried
   }
-  var memberText = info.expired ? '续费会员 · ¥299/30天起' : '开通会员 · ¥299/30天起'
+  var memberText = info.expired ? '续费会员' : '开通会员'
+  if (catalogMock) memberText += ' · ¥299/30天起'
   var note = ''
 
   return {
@@ -132,9 +131,11 @@ function present(search, meta) {
     lockedRange: range,
     recordLine: '记录 ' + lockedCount + ' 条 · 涉及 ' + search.platform_count + ' 个平台',
     unlockText: '解锁后查看 ' + lockedCount + ' 条记录',
-    fakeRows: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+    fakeRows: [{ id: 'a' }, { id: 'b' }, { id: 'c' }].slice(0, catalogMock ? 3 : lockedCount),
+    showMemberOffer: catalogMock,
+    showSingleOffer: catalogMock,
     memberText: memberText,
-    singleText: '单节目解锁（含 30 天以上）¥199',
+    singleText: catalogMock ? '单节目解锁（含 30 天以上）¥199' : '单节目解锁',
     showEvidence: evidence > 0,
     showDownload: showOpen && !search.example && !!info.canExport,
     showHint: showLocked && !info.expired,
@@ -151,10 +152,9 @@ function exampleFacts(records) {
   rows.forEach(function (rec) {
     var platform = rec.platform
     if (platform && platform !== OTHER && platform !== '平台未识别' && platforms.indexOf(platform) === -1) platforms.push(platform)
-    var day = rec.checked_at ? String(rec.checked_at).slice(0, 10) : ''
+    var day = beijingTime(rec.checked_at).slice(0, 10)
     if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day > latest) latest = day
-    if (!image && /^https:\/\//.test(rec.thumbnail_url || '')) image = String(rec.thumbnail_url)
-    else if (!image && /^https:\/\//.test(rec.hd_url || '')) image = String(rec.hd_url)
+    if (!image) image = imageUrl(rec.thumbnail_url) || (rec.access === 'full' && imageUrl(rec.hd_url)) || ''
   })
   var sub = '命中 ' + rows.length + ' 条记录'
   if (latest) sub += ' · ' + latest

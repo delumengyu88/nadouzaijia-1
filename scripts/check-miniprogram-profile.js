@@ -177,9 +177,9 @@ async function main() {
   var plans = http.membershipPlans()
   assert.strictEqual(requests.length, planCalls)
   assert.strictEqual(plans[0].id, 'membership_vip')
-  assert.strictEqual(plans[0].price, 599)
+  assert.strictEqual(plans[0].price, null)
   assert.strictEqual(plans[1].id, 'membership_regular')
-  assert.strictEqual(plans[1].price, 299)
+  assert.strictEqual(plans[1].price, null)
   assert.strictEqual(plans[2].name, '免费用户')
   assert.strictEqual(plans[2].selectable, false)
 

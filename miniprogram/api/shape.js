@@ -15,15 +15,27 @@ function copyText(rec, key) {
   return String(rec[key])
 }
 
+// Accept only the authorized image fields of an unlocked response; never interpret storage locators.
+function imageUrl(value) {
+  if (typeof value !== 'string' || !/^https:\/\/[a-z0-9.-]+(?::[0-9]+)?\/[^\s\\#]+$/i.test(value)) return ''
+  return value
+}
 function safeUrl(value) {
-  if (!value) return undefined
-  var text = String(value)
-  if (text.indexOf('signed://derived/') !== 0) return undefined
-  return text
+  if (require('../config').mode === 'mock' && typeof value === 'string' && value.indexOf('signed://derived/') === 0) return value
+  return imageUrl(value)
 }
 
 function sanitizeSearch(body) {
   var src = body || {}
+  var unresolved = src.outcome === 'unverified' || (src.outcome === 'miss' && src.unverified_source_count > 0)
+  if (unresolved) {
+    return {
+      program_name: String(src.program_name || ''), outcome: 'unverified',
+      platform_count: 0, unverified_source_count: Number(src.unverified_source_count) || 0,
+      records: [], evidence_platforms: [], evidence_program_name: '',
+      locked_summary: emptySummary(), locked_window: { count: 0, start: '', end: '' }, example: false
+    }
+  }
   var records = []
   var list = src.records || []
   if (!src.records) {
@@ -45,11 +57,11 @@ function sanitizeSearch(body) {
     }
     var open = {
       record_id: String(rec.record_id || ''),
-      age_bucket: String(rec.age_bucket || 'ge_180'),
+      age_bucket: String(rec.age_bucket || 'unknown'),
       locked: false,
-      access: rec.access || 'lowres',
-      can_download_report: !!rec.can_download_report,
-      can_download_screenshot: !!rec.can_download_screenshot
+      access: rec.access === 'full' ? 'full' : 'lowres',
+      can_download_report: rec.can_download_report === true,
+      can_download_screenshot: rec.access === 'full' && rec.can_download_screenshot === true
     }
     var category = copyText(rec, 'category')
     var subtype = copyText(rec, 'platform_subtype')
@@ -59,7 +71,7 @@ function sanitizeSearch(body) {
     var network = copyText(rec, 'network_type')
     var checked = copyText(rec, 'checked_at')
     var thumb = safeUrl(rec.thumbnail_url)
-    var hd = safeUrl(rec.hd_url)
+    var hd = open.access === 'full' ? safeUrl(rec.hd_url) : ''
     if (platform) open.platform = platform
     if (network) open.network_type = network
     if (typeof rec.frame_count === 'number') open.frame_count = rec.frame_count
@@ -108,6 +120,7 @@ function sanitizeSearch(body) {
 }
 
 module.exports = {
+  imageUrl: imageUrl,
   emptySummary: emptySummary,
   sanitizeSearch: sanitizeSearch
 }

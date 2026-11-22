@@ -15,6 +15,9 @@
     <view class="btn slim" bindtap="retry">重试</view>
   </view>
 </view>
+<view class="body" wx:elif="{{phase == 'unverified'}}">
+  <view class="center-box"><view class="center-title">数据待核验</view></view>
+</view>
 <view class="body" wx:elif="{{phase == 'empty'}}">
   <view class="center-box">
     <view class="center-title">暂无记录</view>
@@ -43,7 +46,7 @@
     <block wx:for="{{groups}}" wx:for-item="group" wx:key="platform">
       <view class="rec" wx:for="{{group.rows}}" wx:for-item="row" wx:key="id" data-id="{{row.id}}" bindtap="openShot">
         <view class="thumb {{row.plainThumb ? 'thumb-plain' : ''}}">
-          <image wx:if="{{row.image}}" src="{{row.image}}" mode="aspectFill" style="width:100%;height:100%;" />
+          <image wx:if="{{row.image}}" src="{{row.image}}" data-id="{{row.id}}" data-src="{{row.image}}" binderror="imageFailed" mode="aspectFill" style="width:100%;height:100%;" />
           <block wx:elif="{{row.mock}}"><view class="moon"></view><view class="hill"></view></block>
           <block wx:if="{{!row.plainThumb}}">
             <text class="thumb-badge" wx:if="{{row.badge}}">{{row.badge}}</text>
@@ -78,15 +81,16 @@
     <view class="lock-mask">
       <view class="lock-icon"><view><view class="lock-shackle"></view><view class="lock-body"></view></view></view>
       <view class="lock-text">{{unlockText}}</view>
-      <view class="btn slim" style="width:360rpx;" bindtap="buyMember">{{memberText}}</view>
+      <view class="btn slim" wx:if="{{showMemberOffer}}" style="width:360rpx;" bindtap="buyMember">{{memberText}}</view>
     </view>
   </view>
   <view class="note" wx:if="{{showHint}}">在线查看 7 天</view>
-  <view class="btn block plain" wx:if="{{showLocked}}" bindtap="buySingle">{{singleText}}</view>
+  <view class="btn block plain" wx:if="{{showLocked && showSingleOffer}}" bindtap="buySingle">{{singleText}}</view>
   <view class="card" wx:if="{{showEvidence}}">
     <view class="row-title">有最新记录，可委托取证</view>
     <view class="btn" bindtap="evidence">委托取证</view>
   </view>
   <button class="btn block plain" wx:if="{{showDownload}}" bindtap="download" loading="{{downloadLoading}}" disabled="{{downloadLoading}}">下载报告</button>
+  <button class="btn block plain" wx:for="{{reportParts}}" wx:key="*this" data-name="{{item}}" bindtap="openPart">打开 {{item}}</button>
   <view class="foot-gap"></view>
 </view>

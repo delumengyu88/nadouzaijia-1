@@ -28,8 +28,17 @@ function futureOr(fixed, fallbackDays) {
   return date.addDays(day, fallbackDays)
 }
 
+function initialState() {
+  return {
+    splashSeen: false, announceSeen: false, draft: '', seq: 20, evidenceSeq: 20,
+    current: 'guest', accounts: { free: blankAccount(), member: blankAccount() }
+  }
+}
+
 function buildSeed() {
-  var member = blankAccount()
+  var session = initialState()
+  if (require('../config').mode !== 'mock') return session
+  var member = session.accounts.member
   member.inviteBound = true
   member.inviteCode = 'A8K3N2P7'
   member.inviteExpiry = futureOr('2026-12-22', 31)
@@ -88,18 +97,7 @@ function buildSeed() {
     }
   ]
   member.evidence = seedEvidence()
-  return {
-    splashSeen: false,
-    announceSeen: false,
-    draft: '',
-    seq: 20,
-    evidenceSeq: 20,
-    current: 'guest',
-    accounts: {
-      free: blankAccount(),
-      member: member
-    }
-  }
+  return session
 }
 
 function order(no, product, price, status, day, programName) {

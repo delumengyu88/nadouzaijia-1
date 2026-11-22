@@ -1,13 +1,16 @@
 var assert = require('assert')
 var config = require('../miniprogram/config')
 config.calibrating = false
-assert.strictEqual(config.mode, 'hybrid')
+assert.strictEqual(config.mode, 'live')
+// Exercise the explicitly selected development hybrid configuration.
+config.mode = 'hybrid'
 assert.strictEqual(config.apiBase, '')
 config.apiBase = '/test-api'
 var calls = []
 var nextError = false
 var querySeq = 0
 var withGenerated = false
+var pendingVerification = false
 var store = {}
 global.wx = {
   getStorageSync: function (k) { return store[k] }, setStorageSync: function (k, v) { store[k] = v },
@@ -28,6 +31,11 @@ global.wx = {
     }
     calls.push(opt)
     if (nextError) { nextError = false; opt.fail(); return }
+    if (pendingVerification) {
+      opt.success({ statusCode: 200, data: { program_name: opt.data.name, outcome: 'unverified',
+        platform_groups: [], locked_records: [], unverified_source_count: 1 } })
+      return
+    }
     if (withGenerated) {
       // Server shape after generated dates: 其他平台 group arrives first here on purpose,
       // the generated-date row cannot be exported, and evidence_platforms omits it.
@@ -79,6 +87,34 @@ async function main() {
   state.setSession({ token: 'test-member-token', expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: 'member', tier: 'vip' } })
   var crossed = api.getQuery(query.id)
   assert(crossed && typeof crossed.then === 'function', 'another account must not read the in-memory job')
+  var shape = require('../miniprogram/api/shape')
+  var beijingTime = require('../miniprogram/utils/date').beijingTime
+  assert.strictEqual(beijingTime('2026-11-20T17:15:10Z'), '2026-11-21 01:15')
+  assert.strictEqual(beijingTime('2026-11-21T01:15:10+08:00'), '2026-11-21 01:15')
+  assert.strictEqual(beijingTime(null), '')
+  assert.strictEqual(beijingTime('2026-11-21'), '2026-11-21')
+  var source = {
+    outcome: 'hit', program_name: '真实测试片', records: [
+      { record_id: 'xh1', platform: '实际平台', access: 'lowres', hd_url: 'https://img.invalid/full', thumbnail_url: 'https://img.invalid/low' },
+      { record_id: 'xh2', access: 'full', thumbnail_url: 'signed://derived/unusable', hd_url: 'https://img.invalid/HD' },
+      { record_id: 'xh3', access: 'full', original_url: 'https://img.invalid/original', thumbnail_url: 'http://img.invalid/unsafe', can_download_report: 'false', can_download_screenshot: 'false' },
+      { record_id: 'closed', locked: true, hd_url: 'https://img.invalid/private' }
+    ]
+  }
+  var clean = shape.sanitizeSearch(source)
+  assert.strictEqual(clean.records[0].thumbnail_url, source.records[0].thumbnail_url)
+  assert.strictEqual(clean.records[0].hd_url, undefined)
+  assert.strictEqual(clean.records[1].hd_url, source.records[1].hd_url)
+  assert.strictEqual(clean.records[1].thumbnail_url, undefined)
+  assert.strictEqual(clean.records[2].thumbnail_url, undefined)
+  assert.strictEqual(clean.records[2].can_download_screenshot, false)
+  assert.strictEqual(clean.records[2].can_download_report, false)
+  assert.strictEqual(clean.records[2].age_bucket, 'unknown')
+  assert.strictEqual(clean.records[3].hd_url, undefined)
+  var pendingOld = shape.sanitizeSearch(Object.assign({}, source, { outcome: 'miss', unverified_source_count: 1 }))
+  assert.strictEqual(pendingOld.outcome, 'unverified')
+  assert.deepStrictEqual(pendingOld.records, [])
+  assert.deepStrictEqual(pendingOld.evidence_platforms, [])
   var body = await api.searchProgram('真实测试片')
   assert.strictEqual(calls[calls.length - 1].header.Authorization, 'Bearer test-member-token')
   assert.strictEqual(body.records[1].platform, undefined)
@@ -107,7 +143,7 @@ async function main() {
   wx.env = { USER_DATA_PATH: '/tmp' }
   wx.openDocument = function (opt) { opened.push(opt) }
   wx.getFileSystemManager = function () {
-    return { writeFile: function (opt) { if (opt && opt.success) opt.success() } }
+    return { mkdir: function (opt) { opt.success() }, readdir: function (opt) { opt.success({ files: [] }) }, writeFile: function (opt) { if (opt && opt.success) opt.success() } }
   }
   var reportWxml = require('fs').readFileSync(require('path').join(__dirname, '../miniprogram/pages/report/index.wxml'), 'utf8')
   assert(/<button[^>]*wx:if="{{showDownload}}"[^>]*bindtap="download"[^>]*>下载报告<\/button>/.test(reportWxml))
@@ -195,7 +231,11 @@ async function main() {
   assert.strictEqual(shot.data.missing, false)
   await drain()
   assert.strictEqual(shot.data.loading, false)
-  assert.strictEqual(shot.data.missing, true)
+  assert.strictEqual(shot.data.missing, false)
+  assert.strictEqual(shot.data.failed, true)
+  shot.read(); await drain()
+  assert.strictEqual(shot.data.failed, false)
+  assert.strictEqual(shot.data.missing, false)
   shot = viewer(); shot.onLoad({ name: '真实测试片', id: 'absent' })
   await drain()
   assert.strictEqual(shot.data.loading, false)
@@ -221,6 +261,21 @@ async function main() {
   api.advanceQuery(listed.id); await drain()
   assert.strictEqual(api.getQuery(listed.id).items[0].evidencePlatform, '真实测试平台')
   withGenerated = false
+  pendingVerification = true
+  var pendingJob = await api.createQuery(['待核验测试'])
+  api.advanceQuery(pendingJob.id); await drain()
+  var pending = api.getQuery(pendingJob.id)
+  assert.strictEqual(pending.items[0].badge, '待核验')
+  assert(!pending.items[0].hit && !pending.items[0].missed && !pending.items[0].failed)
+  assert(pending.head.includes('命中 0｜未命中 0') && pending.head.includes('待核验 1'))
+  sheet.query = { name: '待核验测试' }
+  sheet.load(); await drain()
+  assert.strictEqual(sheet.data.phase, 'unverified')
+  assert(!sheet.data.showDownload && !sheet.data.showLocked && !sheet.data.showEvidenceLink)
+  var initialRequests = calls.length
+  sheet.download(); sheet.buySingle(); sheet.buyMember(); sheet.applyEvidence()
+  assert.strictEqual(calls.length, initialRequests)
+  assert.deepStrictEqual(await api.exportBook('待核验测试'), { ok: false, message: '数据待核验' })
   config.apiBase = ''
   await assert.rejects(api.searchProgram('真实测试片'), /未配置服务地址/)
   assert.strictEqual(state.userId(), 'member')

@@ -15,7 +15,7 @@ function queryError(message, statusCode) {
   error.statusCode = statusCode
   return error
 }
-function queryRequest(path, data, method, raw) {
+function queryRequest(path, data, method, binary) {
   var base = String(config.apiBase || '').replace(/\/$/, '')
   if (!base) return Promise.reject(queryError('未配置服务地址', 0))
   var token = state.token()
@@ -34,18 +34,20 @@ function queryRequest(path, data, method, raw) {
         method: method || 'GET',
         timeout: 15000,
         data: data || {},
-        dataType: raw ? 'text' : 'json',
+        responseType: binary ? 'arraybuffer' : 'text',
+        dataType: binary ? 'text' : 'json',
         header: { Authorization: 'Bearer ' + token },
         success: function (res) {
           if (sessionChanged()) return
           var code = res.statusCode
           if (code >= 200 && code < 300) {
-            resolve(res.data || {})
+            resolve(binary ? res : res.data || {})
             return
           }
           if (code === 401) state.clearSession(token)
           var message = '服务暂不可用'
           if (code === 401) message = '请先登录'
+          else if (code === 403) message = '当前账户无权执行此操作'
           else if (code === 404) message = '记录不存在'
           else if (code >= 500) message = '网络异常，请重试'
           reject(queryError(message, code))
@@ -107,6 +109,10 @@ function sanitizeDetail(detail) {
       hit: !!(item && item.hit),
       missed: !!(item && item.missed),
       failed: !!(item && item.failed)
+    }
+    if (item && item.unverified) {
+      return { name: row.name, unverified: true, hit: false, missed: false, failed: false,
+        badge: '待核验', badgeCls: 'muted', line: row.line || '数据待核验' }
     }
     if (item && item.evidenceName) row.evidenceName = item.evidenceName
     if (item && item.evidencePlatform) row.evidencePlatform = item.evidencePlatform
@@ -170,7 +176,11 @@ function describe(item) {
   var body = item.body
   if (!body) return { name: item.name, failed: !!item.error, badge: item.error ? '失败' : '查询中',
     badgeCls: 'bad', line: item.error || '' }
-  var hit = body.outcome !== 'miss'
+  if (body.outcome === 'unverified') {
+    return { name: item.name, unverified: true, hit: false, missed: false, failed: false,
+      badge: '待核验', badgeCls: 'muted', line: '数据待核验' }
+  }
+  var hit = body.outcome === 'hit' || body.outcome === 'recent_only'
   // The server lists only platforms that may prefill 委托取证 (never generated-date rows).
   var platforms = (body.evidence_platforms || []).slice()
   var row = { name: item.name, hit: hit, missed: !hit, failed: false,
@@ -190,6 +200,7 @@ function view(job) {
   var rows = job.items.map(describe)
   var hits = rows.filter(function (r) { return r.hit }).length
   var misses = rows.filter(function (r) { return r.missed }).length
+  var unverified = rows.filter(function (r) { return r.unverified }).length
   var fails = rows.filter(function (r) { return r.failed }).length
   var timedOut = job.items.some(function (item) { return item.timedOut })
   var network = job.items.some(function (item) { return item.network })
@@ -201,7 +212,7 @@ function view(job) {
   return { id: job.id, queued: !job.started && !network, running: !!job.started && !done && !network, done: done,
     networkError: network, showNetworkRetry: network,
     percent: rows.length ? Math.round(count / rows.length * 100) : 0, items: rows,
-    head: done && !network ? '共 ' + rows.length + ' 个｜命中 ' + hits + '｜未命中 ' + misses + '｜失败 ' + fails : '已完成 ' + count + ' / ' + rows.length,
+    head: done && !network ? '共 ' + rows.length + ' 个｜命中 ' + hits + '｜未命中 ' + misses + '｜失败 ' + fails + (unverified ? '｜待核验 ' + unverified : '') : '已完成 ' + count + ' / ' + rows.length,
     allFail: done && fails === rows.length, showFailBanner: done && fails > 0,
     failBanner: network ? QueryGuard.networkText() : timedOut ? QueryGuard.timeoutText() : fails === rows.length ? '全部查询失败，请重试。' : '部分查询失败，请重试。',
     showRetryAll: done && fails > 0, itemRetry: true }
@@ -303,19 +314,20 @@ module.exports = {
       // Refresh permissions at export time instead of trusting a mock profile or stale report.
       return http.searchProgram(name).then(function (body) {
         if (config.calibrating) return require('../utils/calibration').blockedResult()
+        if (body.outcome === 'unverified') return { ok: false, message: '数据待核验' }
         var rows = body.records.filter(function (r) { return !r.locked && r.can_download_report }).map(function (r) {
           return { platform: r.platform || '其他平台', subtype: r.platform_subtype || '', category: r.category || '',
-            type: '', uploaded: name, matched: body.program_name, date: (r.checked_at || '').slice(0, 10) }
+            type: '', uploaded: name, matched: body.program_name, date: require('../utils/date').beijingTime(r.checked_at).slice(0, 10) }
         })
         if (!rows.length) return { ok: false, message: '没有可导出的记录' }
         var book = require('../utils/xlsx')
         return { ok: true, count: rows.length, filename: book.filename(rows.length), bytes: book.build({ title: '那豆在架 命中结果',
-          scope: '节目 ' + name, day: new Date().toISOString().slice(0, 10), rows: rows }) }
+          scope: '节目 ' + name, day: require('../utils/date').today(), rows: rows }) }
       })
     }
     if (!queryId) return build()
-    return queryRequest('/api/v1/queries/' + encodeURIComponent(queryId) + '/export', {}, 'GET', true).then(function () {
-      return build()
+    return queryRequest('/api/v1/queries/' + encodeURIComponent(queryId) + '/program-export', { program_name: name }, 'GET', true).then(function (response) {
+      return require('../utils/report-file').scopedFile(response)
     }, function (error) {
       if (error && error.statusCode === 404) return { ok: false, message: '记录不存在' }
       return Promise.reject(error)
