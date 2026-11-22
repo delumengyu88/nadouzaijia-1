@@ -116,6 +116,7 @@ class PaymentService:
             raise _mismatch(identity, notify)
         if txn.get("trade_state") != "SUCCESS":
             return
+        OrderLookup.lock_membership(session, order)
         user = session.get(User, order.user_id)
         reason = _success_reason(order, user, txn)
         if reason is not None:
