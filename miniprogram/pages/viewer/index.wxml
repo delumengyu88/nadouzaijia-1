@@ -26,3 +26,4 @@
   <view class="btn slim" wx:if="{{canSave}}" bindtap="save">下载到相册</view>
   <view class="btn slim" wx:if="{{low}}" bindtap="upgrade">开通会员看高清</view>
 </view>
+<privacy-popup />
