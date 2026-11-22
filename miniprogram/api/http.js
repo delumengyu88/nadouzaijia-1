@@ -1,6 +1,7 @@
 var shape = require('./shape')
 var state = require('./state')
 var request = require('./request')
+var xpay = require('./xpay')
 var evidence = require('./evidence')
 
 function notReady() {
@@ -66,6 +67,7 @@ class PayClient {
   }
 
   static payParams(body) {
+    if (/^XV/.test(body.order_number)) return xpay.params(body)
     var keys = ['timeStamp', 'nonceStr', 'package', 'signType', 'paySign']
     var pay = {}
     var i
@@ -140,7 +142,8 @@ class PayClient {
   }
 
   static orderPath(orderNo) {
-    return '/api/v1/pay/orders/' + encodeURIComponent(orderNo || '')
+    var prefix = /^XV/.test(orderNo) ? '/api/v1/xpay/orders/' : '/api/v1/pay/orders/'
+    return prefix + encodeURIComponent(orderNo || '')
   }
 
   static read(orderNo) {
@@ -395,7 +398,10 @@ module.exports = {
   checkout: function (product) {
     var tier = typeof product === 'string' ? product : ''
     var token = state.token()
-    return PayClient.request('POST', '/api/v1/pay/orders', { tier: tier }).then(function (result) {
+    var pending = require('../config').virtualPayment
+      ? xpay.checkout(tier, PayClient.request)
+      : PayClient.request('POST', '/api/v1/pay/orders', { tier: tier })
+    return pending.then(function (result) {
       if (result.ok) PayClient.remember(result.order, result.pay, token)
       return result
     })

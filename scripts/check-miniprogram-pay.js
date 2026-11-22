@@ -447,6 +447,37 @@ async function main() {
   respond(200, orderBody('待支付'))
   assert.strictEqual((await switched).code, 'no_params')
 
+  resetTransport()
+  config.virtualPayment = true
+  var virtualCall = null
+  wx.requestVirtualPayment = function (options) { virtualCall = options }
+  wx.login = function (options) { options.success({code: 'fresh-fixture-code'}) }
+  page = createPage()
+  page.onLoad({product:'membership_regular'})
+  page.pay()
+  await drain()
+  assert.strictEqual(pending[0].url, '/test-api/api/v1/xpay/orders')
+  assert.deepStrictEqual(pending[0].data,{tier:'membership_regular',code:'fresh-fixture-code'})
+  var virtualOrder = orderBody('待支付', {order_number:'XV-fixture', virtual_payment:{
+    mode:'short_series_goods',signData:'{"env":1}',paySig:'fixture-signature',signature:'fixture-user-signature'
+  }})
+  respond(200,virtualOrder)
+  await drain()
+  assert.strictEqual(payment,null)
+  assert.strictEqual(virtualCall.signData,virtualOrder.virtual_payment.signData)
+  assert.strictEqual(virtualCall.signature,virtualOrder.virtual_payment.signature)
+  virtualCall.success({})
+  assert.strictEqual(page.data.phase,'confirming')
+  assert.strictEqual(pending[0].url,'/test-api/api/v1/xpay/orders/XV-fixture/sync')
+  respond(200,orderBody('已发放',{order_number:'XV-fixture'}))
+  await drain()
+  assert.strictEqual(page.data.phase,'granted')
+  wx.requestVirtualPayment = undefined
+  var unsupported = await api.checkout('membership_regular')
+  assert.strictEqual(unsupported.code,'unsupported')
+  assert.strictEqual(pending.length,0)
+  assert.strictEqual(payment,null)
+  console.log('virtual goods SDK, signed payload and server confirmation checks ok')
   console.log('pay check ok')
 }
 

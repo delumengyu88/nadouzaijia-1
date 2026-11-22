@@ -262,6 +262,10 @@ Page({
       self.beginPoll()
     }
     try {
+      if (pay.mode === 'short_series_goods') {
+        wx.requestVirtualPayment(Object.assign({}, pay, { success: done, fail: done }))
+        return
+      }
       wx.requestPayment({
         timeStamp: pay.timeStamp,
         nonceStr: pay.nonceStr,
