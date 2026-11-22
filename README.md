@@ -161,3 +161,11 @@ The mini program sends `POST /api/v1/auth/wechat/login` with `{ "code": "<wx.log
 Send `Authorization: Bearer <token>` for search/report data, query exports, invite redemption and `/auth/me`. Sessions last seven days; only their SHA-256 digest is stored in the database. Missing, invalid or expired sessions return 401; banned accounts return 403. An invalid/used WeChat code returns 401, malformed input 422, and missing server configuration or upstream failure 503. Staff sessions remain separate and cannot be substituted with a user session.
 
 Keep `touristappid` and an empty `apiBase` in source control. Real WeChat login testing requires the matching mini program identity in local developer settings and a locally configured reachable API; no real credentials or deployment addresses belong in the repository. Python tests mock the WeChat network call, while `node scripts/check-miniprogram.js` includes login state checks for all three adapters. Test identities are minted only by `tests/user_helpers.py`, without a development authentication route.
+
+## 体验版会员档位（正式版提交审核前必须拆除）
+
+`NADOU_TRIAL_TOOLS` 默认 `0`，生产必须保持 `0`。只有它精确等于 `1`，并且 `user_may_use_test_tier` 放行当前用户，`POST /api/v1/dev/tier` 才可用。这个函数和微信支付 0.01 元测试档是同一道门：必须同时打开 `NADOU_WECHAT_PAY_TEST_TIER`，且用户 id 在 `NADOU_WECHAT_PAY_TEST_USERS`（默认空，只认用户 id，不要把真实账号写入仓库，也不要再设第二份名单）。白名单里的人因此也会看到 0.01 元档。服务端不看小程序的 `envVersion`、`Referer` 或任何版本请求头。
+
+切换会立刻把该账号当前仍有效的普通会员和 VIP 改成到期，包括真实付过费的，而且不会按原来的到期时间恢复。白名单里只放测试账号。
+
+正式版提交审核前，运维把 `NADOU_TRIAL_TOOLS` 改回 `0`，并删除该接口、`devtools` 包、相关测试和这段说明。`membership_dev` 留在 `TEST_PRODUCTS` 和 `ck_orders_product` 里，用来标记已经写下的订单，不要删。路径、请求、返回和 404 的含义见 [docs/DESIGN.md](docs/DESIGN.md) 的「体验版会员档位开关」。
