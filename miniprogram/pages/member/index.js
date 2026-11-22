@@ -24,8 +24,9 @@ Page({
   onShow: function () {
     var data = nav.layout('member', this.query)
     var info = api.memberCenter()
-    var plans = api.membershipPlans()
+    var plans = member.decoratePlans(api.membershipPlans(), info.tier)
     var plan = selectedPlan(plans, this.data.selected)
+    if (plan && !plan.selectable) plan = null
     data.title = '会员中心'
     data.plans = plans
     data.selected = plan ? plan.id : ''
@@ -37,7 +38,7 @@ Page({
   },
   pick: function (e) {
     var plan = selectedPlan(this.data.plans, e.currentTarget.dataset.id)
-    if (!plan) return
+    if (!plan || !plan.selectable) return
     this.setData({
       selected: plan.id,
       showPay: true,

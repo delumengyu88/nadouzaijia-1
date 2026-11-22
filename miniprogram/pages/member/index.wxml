@@ -4,12 +4,12 @@
 </view>
 <view style="height: {{navHeight}}px;"></view>
 <view class="member-status">{{statusLine}}</view>
-<view class="choice {{selected == plan.id ? 'on' : ''}}" wx:for="{{plans}}" wx:for-item="plan" wx:key="id" data-id="{{plan.id}}" bindtap="pick">
+<view class="choice {{plan.selectable ? '' : 'static'}} {{plan.selectable && selected == plan.id ? 'on' : ''}}" wx:for="{{plans}}" wx:for-item="plan" wx:key="id" data-id="{{plan.id}}" bindtap="pick">
   <view class="choice-top">
     <text class="choice-name">{{plan.name}}</text>
     <view class="price-row">
       <text class="price">{{plan.priceText}}</text>
-      <view class="radio {{selected == plan.id ? 'on' : ''}}"></view>
+      <view wx:if="{{plan.selectable}}" class="radio {{selected == plan.id ? 'on' : ''}}"></view>
     </view>
   </view>
   <view class="benefit {{perk.ok ? '' : 'no'}}" wx:for="{{plan.perks}}" wx:for-item="perk" wx:key="text">

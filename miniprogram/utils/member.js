@@ -13,6 +13,12 @@ var REGULAR_PERKS = [
   { ok: true, text: '高清截图与下载' }
 ]
 
+var FREE_PERKS = [
+  { ok: true, text: '180 天以上记录（低清）' },
+  { ok: false, text: '高清截图 · 仅会员' },
+  { ok: false, text: '下载 · 仅会员' }
+]
+
 // Vertical pixels at a 375-wide screen (1rpx = 0.5px). Safe area is 0 on 375×667.
 // These match pages/member/index.wxss. The check script asserts both.
 var LAYOUT = {
@@ -20,6 +26,7 @@ var LAYOUT = {
   navBar: 44,
   statusBlock: 34,
   cardBlock: 124,
+  cardCount: 3,
   payBlock: 56,
   inviteBlock: 32,
   pagePadding: 56,
@@ -43,6 +50,7 @@ function plansFromProducts(products) {
       name: vip.card,
       price: vip.price,
       days: vip.days,
+      selectable: true,
       priceText: priceText(vip),
       perks: copyPerks(VIP_PERKS)
     },
@@ -52,9 +60,30 @@ function plansFromProducts(products) {
       price: regular.price,
       days: regular.days,
       priceText: priceText(regular),
+      selectable: true,
       perks: copyPerks(REGULAR_PERKS)
+    },
+    {
+      id: 'free',
+      name: '免费用户',
+      selectable: false,
+      price: 0,
+      days: 0,
+      priceText: '免费',
+      perks: copyPerks(FREE_PERKS)
     }
   ]
+}
+
+function freeCornerLabel(tier) {
+  return tier === 'free' ? '当前' : '免费'
+}
+
+function decoratePlans(plans, tier) {
+  return plans.map(function (plan) {
+    if (plan.selectable) return plan
+    return Object.assign({}, plan, { priceText: freeCornerLabel(tier) })
+  })
 }
 
 function confirmLabel(price) {
@@ -70,7 +99,7 @@ function statusLine(tier, until) {
 
 function screenUsage(layout) {
   var box = layout || LAYOUT
-  var used = box.statusBar + box.navBar + box.statusBlock + box.cardBlock * 2 +
+  var used = box.statusBar + box.navBar + box.statusBlock + box.cardBlock * box.cardCount +
     box.payBlock + box.inviteBlock + box.pagePadding
   return { used: used, limit: box.minWindow, fits: used <= box.minWindow }
 }
@@ -92,7 +121,10 @@ module.exports = {
   VIP_PERKS: VIP_PERKS,
   REGULAR_PERKS: REGULAR_PERKS,
   LAYOUT: LAYOUT,
+  FREE_PERKS: FREE_PERKS,
   plansFromProducts: plansFromProducts,
+  freeCornerLabel: freeCornerLabel,
+  decoratePlans: decoratePlans,
   confirmLabel: confirmLabel,
   statusLine: statusLine,
   screenUsage: screenUsage,

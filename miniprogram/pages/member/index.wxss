@@ -1,9 +1,7 @@
-/* 375×667 budget (px, safe area 0) lives in utils/member.js LAYOUT:
-   status 12+22, card margin 8 + border 4 + padding 22 + header 24 + perks 66 = 124,
-   pay margin 12 + 44, invite margin 10 + 22, padding-bottom 56. */
+/* 375×667 budget (px, safe area 0) lives in utils/member.js LAYOUT.
+   Three cards keep the 44px confirm slot. Extra height scrolls instead of shrinking it. */
 .member-page {
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
   box-sizing: border-box;
   padding-bottom: calc(56px + env(safe-area-inset-bottom));
 }
@@ -27,6 +25,11 @@
 .member-page .choice.on {
   border-color: #1D4E9E;
   background: #E7F0FF;
+}
+
+.member-page .choice.static {
+  background: #e8ecf1;
+  box-shadow: none;
 }
 
 .member-page .choice-top {
@@ -76,6 +79,7 @@
 .member-page .pay-slot {
   height: 44px;
   margin: 12px 16px 0;
+  flex-shrink: 0;
 }
 
 .member-page .pay-btn {
