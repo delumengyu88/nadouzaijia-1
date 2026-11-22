@@ -27,6 +27,14 @@
 
 `product` 属于测试档（现在是 `membership_test`）的订单不进入工作台的付费转化和营收统计。正式档照常计入。订单列表里仍能看到这些订单。
 
+## 上线检查清单
+
+正式版提审前做完这三件事：
+
+1. 把 `NADOU_WECHAT_PAY_TEST_TIER` 设为 `0`。
+2. 清空 `NADOU_WECHAT_PAY_TEST_USERS`。
+3. 用已登录账号请求 `GET /api/v1/pay/tiers`，确认返回里没有 `membership_test`。
+
 ## 档位
 
 金额由服务端决定。请求里的 `amount` 即使传了也会被忽略。
