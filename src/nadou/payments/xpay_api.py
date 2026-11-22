@@ -117,6 +117,9 @@ def handle_refund(session, order, virtual, event, remote, refund, now):
         or event.get("WxOrderId") != remote.get("wx_order_id")
         or refund.get("order_id") != event["MchRefundId"]
         or refund.get("wx_order_id") != event["WxRefundId"]
+        # WeChat status 8 confirms receipt by the user on the refund order.
+        # Status 5 confirms only the merchant-side debit.
+        or refund.get("status") != 8
         or refund.get("order_type") not in (1, 8)
         or refund.get("env_type") != virtual.env + 1
         or not isinstance(refund.get("paid_time"), int)
