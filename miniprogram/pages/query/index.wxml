@@ -25,6 +25,15 @@
   </view>
   <view class="bar-track"><view class="bar-fill" style="width: {{percent}}%;"></view></view>
 </view>
+<view class="body" wx:elif="{{networkError}}">
+  <view class="center-box">
+    <view class="center-title">正在查询</view>
+    <view class="center-sub">{{head}}</view>
+  </view>
+  <view class="bar-track"><view class="bar-fill" style="width: {{percent}}%;"></view></view>
+  <view class="err-box">{{failBanner}}</view>
+  <view class="btn block" wx:if="{{showNetworkRetry}}" bindtap="retry">重试</view>
+</view>
 <view class="body" wx:else>
   <view class="err-box" wx:if="{{showFailBanner}}">{{failBanner}}</view>
   <view class="note" wx:if="{{!showFailBanner}}">{{head}}</view>

@@ -8,21 +8,28 @@ module.exports = function (path, data, options) {
   var token = options.public ? '' : state.token()
   if (!options.public && !token) return Promise.reject(new Error('请先登录'))
   return new Promise(function (resolve, reject) {
-    wx.request({
-      url: base + path,
-      method: options.method || 'GET',
-      timeout: 15000,
-      data: data || {},
-      header: token ? { Authorization: 'Bearer ' + token } : {},
-      success: function (res) {
-        if (res.statusCode >= 200 && res.statusCode < 300) resolve(res.data || {})
-        else {
-          // An old in-flight request must not erase a newly logged-in account.
-          if (res.statusCode === 401 && token) state.clearSession(token)
-          reject(new Error(res.statusCode === 401 ? '请先登录' : '服务暂不可用'))
-        }
-      },
-      fail: function () { reject(new Error('网络异常，请稍后再试')) }
-    })
+    // A synchronous throw must still settle the promise, or callers wait forever.
+    try {
+      wx.request({
+        url: base + path,
+        method: options.method || 'GET',
+        timeout: 15000,
+        data: data || {},
+        header: token ? { Authorization: 'Bearer ' + token } : {},
+        success: function (res) {
+          if (res.statusCode >= 200 && res.statusCode < 300) resolve(res.data || {})
+          else {
+            // An old in-flight request must not erase a newly logged-in account.
+            if (res.statusCode === 401 && token) state.clearSession(token)
+            reject(new Error(res.statusCode === 401 ? '请先登录' : '服务暂不可用'))
+          }
+        },
+        // Keep this sentence identical to QueryGuard.networkText(); the results page
+        // matches it to stop on the current progress and offer retry.
+        fail: function () { reject(new Error('网络异常，请重试')) }
+      })
+    } catch (error) {
+      reject(new Error('网络异常，请重试'))
+    }
   })
 }
