@@ -651,11 +651,8 @@ function maskPhone(phone) {
 module.exports = {
   bootstrap: function () { state.load() },
   reset: function () { state.reset() },
-  splashSeen: function () { return !!state.load().splashSeen },
-  markSplashSeen: function () {
-    state.load().splashSeen = true
-    save()
-  },
+  splashSeen: function () { return require('./splash').seen() },
+  markSplashSeen: function () { require('./splash').markSeen() },
   markAnnounceSeen: function () {
     state.load().announceSeen = true
     save()

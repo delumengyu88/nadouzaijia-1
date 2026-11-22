@@ -13,7 +13,7 @@ module.exports = function (path, data, options) {
       wx.request({
         url: base + path,
         method: options.method || 'GET',
-        timeout: 15000,
+        timeout: options.timeout || 15000,
         data: data || {},
         header: token ? { Authorization: 'Bearer ' + token } : {},
         success: function (res) {
