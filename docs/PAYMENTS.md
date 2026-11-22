@@ -18,11 +18,14 @@
 | `NADOU_WECHAT_PAY_PUBLIC_KEY_PATH` | 微信支付公钥，或平台证书 PEM 文件路径 |
 | `NADOU_WECHAT_PAY_PUBLIC_KEY_ID` | 上面那把公钥的 ID（回调头 `Wechatpay-Serial` 必须一致） |
 | `NADOU_WECHAT_NOTIFY_URL` | 公网 `https://` 回调地址，路径为 `/api/v1/pay/wechat/notify` |
-| `NADOU_WECHAT_PAY_TEST_TIER` | `1` 才开放 0.01 元测试档。默认关闭 |
+| `NADOU_WECHAT_PAY_TEST_TIER` | `1` 才允许考虑测试档。默认关闭 |
+| `NADOU_WECHAT_PAY_TEST_USERS` | 允许看到并购买测试档的用户 id，逗号分隔。默认空。`membership_test` 和以后的 `membership_dev` 共用这份名单 |
 
-私钥和证书放在仓库外。不要把文件提交进 git。
+私钥和证书放在仓库外。不要把文件提交进 git。不要把白名单里的用户 id 写进仓库。
 
-`NADOU_WECHAT_PAY_TEST_TIER` 只在体验版的服务器上打开。关闭时，下单传 `membership_test` 返回 **400** `档位无效`，档位列表里也没有它。
+测试档要同时满足两件事：`NADOU_WECHAT_PAY_TEST_TIER` 为打开，且当前用户 id 在 `NADOU_WECHAT_PAY_TEST_USERS` 里。名单为空、或用户不在名单里时，档位列表不返回测试档，下单传 `membership_test` 返回 **400** `档位无效`。开关关闭时也一样，即使 id 写在名单里。
+
+`product` 属于测试档（现在是 `membership_test`）的订单不进入工作台的付费转化和营收统计。正式档照常计入。订单列表里仍能看到这些订单。
 
 ## 档位
 
@@ -32,7 +35,7 @@
 |---|---|---|---|
 | `membership_regular` | 普通会员 `regular` | 30 天 | 29900 分（299.00 元） |
 | `membership_vip` | VIP `vip` | 30 天 | 59900 分（599.00 元） |
-| `membership_test` | 普通会员 `regular` | 1 天 | 1 分（0.01 元），仅开关打开时 |
+| `membership_test` | 普通会员 `regular` | 1 天 | 1 分（0.01 元），仅开关打开且用户在白名单内 |
 
 开通走已有的 `OrderGrantWriter`：按订单上的会员档位和天数写入一条 `source=order` 的权益。同一订单重复通知不会再写一条。
 
@@ -63,7 +66,7 @@
 }
 ```
 
-`amount_fen` 是人民币分，整数。`amount_yuan` 是展示用的元字符串。开关关闭时数组里没有 `membership_test`。
+`amount_fen` 是人民币分，整数。`amount_yuan` 是展示用的元字符串。开关关闭，或当前用户不在 `NADOU_WECHAT_PAY_TEST_USERS` 里时，数组里没有 `membership_test`。
 
 | HTTP | `detail` | 何时 |
 |---|---|---|
@@ -105,7 +108,7 @@
 |---|---|---|
 | 401 | 未登录 | 没有、无效或过期的 Bearer |
 | 403 | account is disabled | 账号已封禁 |
-| 400 | 档位无效 | `tier` 为空、未知，或测试档在开关关闭时 |
+| 400 | 档位无效 | `tier` 为空、未知，或测试档未对当前用户开放（开关关闭，或不在白名单） |
 | 422 | FastAPI 校验错误 | 正文不是 JSON，或 `tier` 不是字符串 |
 | 503 | 支付未配置 | 上面任一支付环境变量缺失、密钥文件读不到，或 APIv3 密钥不是 32 字节 |
 | 409 | 缺少微信 openid | 用户没有 openid（正常微信登录不会出现） |

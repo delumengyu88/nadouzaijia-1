@@ -53,8 +53,8 @@ class PaymentApi:
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
         @app.get("/api/v1/pay/tiers")
-        def list_tiers(_user: User = Depends(payer), payments: PaymentService = Depends(service)):
-            return payments.list_tiers()
+        def list_tiers(user: User = Depends(payer), payments: PaymentService = Depends(service)):
+            return payments.list_tiers(user)
 
         @app.post("/api/v1/pay/orders")
         def create_order(

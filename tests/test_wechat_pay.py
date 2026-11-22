@@ -15,6 +15,7 @@ from cryptography.x509.oid import NameOID
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
+from nadou.admin.notify import FakeNotifier
 from nadou.auth import UserSessions
 from nadou.config import get_settings
 from nadou.db import Database
@@ -101,10 +102,21 @@ def gateway():
 
 
 @pytest.fixture
-def pay_app(session, clock, pay_keys, gateway, monkeypatch):
+def alerts():
+    return FakeNotifier()
+
+
+@pytest.fixture
+def pay_app(session, clock, pay_keys, gateway, monkeypatch, alerts):
     del pay_keys
     monkeypatch.setattr("nadou.payments.service.build_gateway", lambda _config: gateway)
-    return TestClient(create_app(database=Database(engine=session.get_bind()), now=lambda: clock))
+    return TestClient(
+        create_app(
+            database=Database(engine=session.get_bind()),
+            now=lambda: clock,
+            notifier=alerts,
+        )
+    )
 
 
 def login(session, clock, openid="openid-pay"):
@@ -216,6 +228,7 @@ def test_create_ignores_client_amount_and_signs_request_payment(
     assert body["status"] == "待支付"
     assert body["granted"] is False
     assert body["signType"] == "RSA"
+    assert body["timeStamp"] == str(int(clock.timestamp()))
     assert body["package"] == "prepay_id=wx_prepay_test"
     assert API_V3_KEY not in response.text
     assert "PRIVATE KEY" not in response.text
@@ -255,7 +268,7 @@ def test_bad_signature_does_not_grant(pay_app, session, clock, pay_keys, caplog)
     assert stored.wechat_transaction_id is None
 
 
-def test_amount_mismatch_does_not_grant(pay_app, session, clock, pay_keys, caplog):
+def test_amount_mismatch_does_not_grant(pay_app, session, clock, pay_keys, caplog, alerts):
     user, headers = login(session, clock)
     created = pay_app.post(
         "/api/v1/pay/orders", headers=headers, json={"tier": "membership_vip"}
@@ -269,6 +282,11 @@ def test_amount_mismatch_does_not_grant(pay_app, session, clock, pay_keys, caplo
     assert API_V3_KEY not in caplog.text
     assert grant_count(session, user.id) == 0
     assert order_row(session, created["order_number"]).status == "待支付"
+    assert len(alerts.messages) == 1
+    assert alerts.messages[0]["title"] == "支付已成功但未开通"
+    assert created["order_number"] in alerts.messages[0]["body"]
+    assert MARKER not in alerts.messages[0]["body"]
+    assert API_V3_KEY not in alerts.messages[0]["body"]
 
 
 def test_duplicate_notify_grants_once_and_auth_me_shows_vip(pay_app, session, clock, pay_keys):
@@ -308,7 +326,7 @@ def test_duplicate_notify_grants_once_and_auth_me_shows_vip(pay_app, session, cl
     ],
 )
 def test_merchant_app_and_openid_mismatch_do_not_grant(
-    pay_app, session, clock, pay_keys, field, value
+    pay_app, session, clock, pay_keys, alerts, field, value
 ):
     user, headers = login(session, clock)
     created = pay_app.post(
@@ -321,6 +339,12 @@ def test_merchant_app_and_openid_mismatch_do_not_grant(
     assert response.json()["code"] == "FAIL"
     assert grant_count(session, user.id) == 0
     assert order_row(session, created["order_number"]).status == "待支付"
+    if field == "payer":
+        assert len(alerts.messages) == 1
+        assert "openid" in alerts.messages[0]["body"]
+        assert MARKER not in alerts.messages[0]["body"]
+    else:
+        assert alerts.messages == []
 
 
 def test_non_success_trade_state_does_not_grant(pay_app, session, clock, pay_keys):
@@ -370,7 +394,28 @@ def test_test_tier_is_hidden_and_rejected_until_the_switch_is_on(
     assert rejected.json() == {"detail": "档位无效"}
     assert gateway.prepay_calls == []
 
+
+def test_test_tier_is_hidden_and_rejected_outside_the_whitelist(
+    pay_app, gateway, session, clock, monkeypatch
+):
+    _user, headers = login(session, clock)
     monkeypatch.setenv("NADOU_WECHAT_PAY_TEST_TIER", "1")
+    monkeypatch.setenv("NADOU_WECHAT_PAY_TEST_USERS", "")
+    get_settings.cache_clear()
+    listed = pay_app.get("/api/v1/pay/tiers", headers=headers)
+    assert "membership_test" not in [item["id"] for item in listed.json()["tiers"]]
+    rejected = pay_app.post("/api/v1/pay/orders", headers=headers, json={"tier": "membership_test"})
+    assert rejected.status_code == 400
+    assert rejected.json() == {"detail": "档位无效"}
+    assert gateway.prepay_calls == []
+
+
+def test_whitelisted_user_can_see_and_buy_the_test_tier(
+    pay_app, gateway, session, clock, monkeypatch
+):
+    user, headers = login(session, clock)
+    monkeypatch.setenv("NADOU_WECHAT_PAY_TEST_TIER", "1")
+    monkeypatch.setenv("NADOU_WECHAT_PAY_TEST_USERS", f"other-user, {user.id}")
     get_settings.cache_clear()
     opened = pay_app.get("/api/v1/pay/tiers", headers=headers).json()
     assert opened["tiers"][-1]["id"] == "membership_test"

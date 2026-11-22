@@ -171,7 +171,7 @@ Marking `取证中` failed requires a reason and a refund method. The refund amo
 
 Support lookup returns the phone masked to the last four digits (`90000001234` → `*******1234`). Admin sees the full phone. Ban requires a reason. `temporary` requires an end time; `permanent` rejects one. Unban clears the ban fields. Every change is audited.
 
-Manual grant or extend takes `regular` or `vip`, a day count, and a reason. The resulting row has `entitlements.source = manual`. `EntitlementBook.counts_for_revenue` is false for that source, which is how invite-code conversion and order revenue leave the grant out. An order issuance uses `source = order`.
+Manual grant or extend takes `regular` or `vip`, a day count, and a reason. The resulting row has `entitlements.source = manual`. `EntitlementBook.counts_for_revenue` is false for that source, which is how invite-code conversion and order revenue leave the grant out. An order issuance uses `source = order`. Orders whose `product` is in `TEST_PRODUCTS` (currently `membership_test`) are left out of invite-code conversion and that revenue set. Add `membership_dev` to the same set when that SKU exists.
 
 ### Orders and reissue
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.types import PublicKeyTypes
 
-from nadou.config import Settings
+from nadou.config import Settings, get_settings
 from nadou.payments.crypto import load_private_key, load_public_key
 
 logger = logging.getLogger("nadou.payments")
@@ -73,3 +73,21 @@ def _load(settings: Settings) -> WeChatPaySettings | None:
         platform_key_id=platform_id,
         notify_url=notify_url,
     )
+
+
+def user_may_use_test_tier(user_id: str) -> bool:
+    """Whether this user may see or buy any test SKU.
+
+    membership_test and later products such as membership_dev share this gate:
+    the switch must be on, and the user id must appear in NADOU_WECHAT_PAY_TEST_USERS.
+    An empty list allows nobody.
+    """
+    settings = get_settings()
+    if not settings.wechat_pay_test_tier:
+        return False
+    allowed = {
+        part.strip()
+        for part in settings.wechat_pay_test_users.replace("\n", ",").split(",")
+        if part.strip()
+    }
+    return user_id in allowed

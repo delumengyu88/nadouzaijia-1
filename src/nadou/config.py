@@ -56,6 +56,10 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="NADOU_WECHAT_PAY_TEST_TIER",
     )
+    wechat_pay_test_users: str = Field(
+        default="",
+        validation_alias="NADOU_WECHAT_PAY_TEST_USERS",
+    )
     data_source: str = Field(
         default="demo",
         validation_alias=AliasChoices("NADOU_DATA_SOURCE"),

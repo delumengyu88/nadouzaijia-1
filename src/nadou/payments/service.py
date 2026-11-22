@@ -4,7 +4,6 @@ import json
 import logging
 import re
 import secrets
-import time
 from collections.abc import Mapping
 from datetime import datetime
 from uuid import uuid4
@@ -16,7 +15,7 @@ from nadou.admin.orders import EntitlementIssuer, OrderGrantWriter, OrderLookup
 from nadou.config import get_settings
 from nadou.models import Order, User
 from nadou.payments.catalog import PayProduct, product_by_code, product_for_sale, products_for
-from nadou.payments.config import WeChatPaySettings, load_pay_settings
+from nadou.payments.config import WeChatPaySettings, load_pay_settings, user_may_use_test_tier
 from nadou.payments.crypto import (
     decrypt_resource,
     mini_program_pay_sign,
@@ -45,12 +44,14 @@ class PaymentService:
         self.notifier = notifier
         self.grant_writer = grant_writer or OrderGrantWriter()
 
-    def list_tiers(self) -> dict:
-        enabled = get_settings().wechat_pay_test_tier
-        return {"tiers": [product.public() for product in products_for(enabled)]}
+    def list_tiers(self, user: User) -> dict:
+        visible = products_for(user_may_use_test_tier(user.id))
+        return {"tiers": [product.public() for product in visible]}
 
     def create(self, session: Session, user: User, tier: str | None) -> dict:
-        product = product_for_sale((tier or "").strip(), test_enabled=self._test_enabled())
+        product = product_for_sale(
+            (tier or "").strip(), test_enabled=user_may_use_test_tier(user.id)
+        )
         if product is None:
             raise PayError(400, "档位无效")
         config = load_pay_settings(get_settings())
@@ -117,6 +118,11 @@ class PaymentService:
         user = session.get(User, order.user_id)
         reason = _success_reason(order, user, txn)
         if reason is not None:
+            if notify and reason in {"amount", "openid"}:
+                self.notifier.notify(
+                    "支付已成功但未开通",
+                    f"订单 {order.order_number} 校验未通过（{reason}），未开通会员",
+                )
             raise _mismatch(reason, notify)
         _apply(session, order, txn, self.clock(), self.notifier, self.grant_writer)
         logger.info("wechat payment accepted order=%s status=%s", order.order_number, order.status)
@@ -171,12 +177,8 @@ class PaymentService:
             raise PayError(404, "订单不存在")
         return order
 
-    def _test_enabled(self) -> bool:
-        return bool(get_settings().wechat_pay_test_tier)
-
-    @staticmethod
-    def _client_pay(config: WeChatPaySettings, prepay_id: str) -> dict:
-        timestamp = str(int(time.time()))
+    def _client_pay(self, config: WeChatPaySettings, prepay_id: str) -> dict:
+        timestamp = str(int(self.clock().timestamp()))
         nonce = secrets.token_hex(16)
         package = f"prepay_id={prepay_id}"
         return {
@@ -266,10 +268,10 @@ def _decrypt_notify(
 ) -> dict:
     if not body or len(body) > _MAX_NOTIFY_BODY:
         raise PayError(401, "signature", notify=True)
-    timestamp = headers.get("Wechatpay-Timestamp") or headers.get("wechatpay-timestamp") or ""
-    nonce = headers.get("Wechatpay-Nonce") or headers.get("wechatpay-nonce") or ""
-    signature = headers.get("Wechatpay-Signature") or headers.get("wechatpay-signature") or ""
-    serial = headers.get("Wechatpay-Serial") or headers.get("wechatpay-serial") or ""
+    timestamp = headers.get("Wechatpay-Timestamp") or ""
+    nonce = headers.get("Wechatpay-Nonce") or ""
+    signature = headers.get("Wechatpay-Signature") or ""
+    serial = headers.get("Wechatpay-Serial") or ""
     if serial != config.platform_key_id or not _fresh(timestamp, now) or not _nonce_ok(nonce):
         raise PayError(401, "signature", notify=True)
     if not signature or len(signature) > 1024:

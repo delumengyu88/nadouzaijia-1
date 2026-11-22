@@ -1,11 +1,13 @@
 from datetime import timedelta
+from uuid import uuid4
 
 from sqlalchemy import func, select
 
+from nadou.admin.invites import InviteStats
 from nadou.admin.members import EntitlementBook
 from nadou.admin.notify import FakeNotifier
 from nadou.admin.orders import EntitlementIssuer, OrderGrantWriter, OrderLookup
-from nadou.models import AuditLog, Entitlement, Order, OrderIssuance, User
+from nadou.models import AuditLog, Entitlement, InviteCode, Order, OrderIssuance, StaffAccount, User
 from tests.workbench_helpers import add_order, add_user, auth, call
 
 
@@ -173,3 +175,83 @@ def test_partial_retry_succeeds_on_the_third_attempt(session, clock):
     EntitlementIssuer(session, writer, notifier, clock).issue(order)
     assert writer.calls == 3
     assert session.scalar(select(func.count()).select_from(Entitlement)) == 1
+
+
+def test_test_product_orders_are_left_out_of_revenue_and_conversion(session, clock):
+    staff = StaffAccount(
+        id="staff-stats",
+        username="stats-admin",
+        password_hash="unused",
+        role="admin",
+        created_at=clock,
+    )
+    formal_user = User(id="user-formal", created_at=clock, phone="90000008801")
+    test_user = User(id="user-test-sku", created_at=clock, phone="90000008802")
+    session.add_all([staff, formal_user, test_user])
+    session.flush()
+
+    def sell(user, number, product, tier, amount, days, channel, code):
+        session.add(
+            InviteCode(
+                id=str(uuid4()),
+                code=code,
+                channel=channel,
+                created_by=staff.id,
+                created_at=clock,
+                expires_at=clock + timedelta(days=30),
+                redeemed_by=user.id,
+                redeemed_at=clock,
+            )
+        )
+        order = Order(
+            id=str(uuid4()),
+            order_number=number,
+            user_id=user.id,
+            tier=tier,
+            duration_days=days,
+            amount=amount,
+            product=product,
+            status="已发放",
+            created_at=clock,
+            paid_at=clock,
+        )
+        session.add(order)
+        session.flush()
+        grant = Entitlement(
+            user_id=user.id,
+            kind=tier,
+            program_name=None,
+            record_id=None,
+            expires_at=clock + timedelta(days=days),
+            source="order",
+        )
+        session.add(grant)
+        session.flush()
+        session.add(
+            OrderIssuance(
+                order_id=order.id,
+                status="issued",
+                attempts=1,
+                tier=tier,
+                duration_days=days,
+                entitlement_id=grant.id,
+                last_error=None,
+                reissued=False,
+                created_at=clock,
+                updated_at=clock,
+            )
+        )
+        return grant
+
+    formal = sell(
+        formal_user, "ND-FORMAL-1", "membership_vip", "vip", 599, 30, "正式渠道", "FORMAL23"
+    )
+    trial = sell(test_user, "ND-TEST-1", "membership_test", "regular", 0, 1, "测试渠道", "TEST2345")
+    session.commit()
+
+    revenue_ids = {row.id for row in EntitlementBook.revenue_entitlements(session)}
+    assert formal.id in revenue_ids
+    assert trial.id not in revenue_ids
+    stats = {row["channel"]: row for row in InviteStats.channels(session, clock)}
+    assert stats["正式渠道"]["paid_within_30_days"] == 1
+    assert stats["测试渠道"]["paid_within_30_days"] == 0
