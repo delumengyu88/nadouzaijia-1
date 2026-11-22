@@ -44,7 +44,7 @@ Ages use the Beijing calendar date of `tasks.created_at`. If that is null, use `
 | `program_aliases` | Retired schema only; never read or written by application matching. |
 | `users` | Caller of the search endpoint. `X-User-Id` is a local-only stand-in until WeChat login; it is not production authentication. |
 | `entitlements` | Active grants: `regular` / `vip` (expiry), `program_90` / `program_30` (canonical program + expiry), `screenshot` (one record id + expiry). The policy takes the widest live grant. Payment upgrade rules (suspended 普通 days, 7-day renewals) are not implemented; a grant counts when `expires_at` is in the future. |
-| `member_queries` | One saved lookup. `id` is the workbook 查询编号. |
+| `member_queries` | One saved lookup. `id` is the workbook 查询编号. `user_id` is a nullable foreign key to `users`. `seen_at` is nullable. Index `ix_member_queries_user_id_created_at` is `(user_id, created_at)`. |
 | `query_programs` | Uploaded names in that lookup: optional 节目类型, matched canonical name, resolution (`exact` / `alias` / `manual` / `miss` / `pending` / `failed`), and the 说明 text. |
 
 `PlatformNames` maps a variant such as `GD移动` to operator `移动` and province `广东`. OTT and 百视通 are stored in `platform_subtype` and are not part of the count. The same class is used for the CSV `平台名` and for the filename parser. A name that cannot be parsed leaves the three fields null and `source_unverified` true. `is_test` is set when the raw filename, the raw platform, or the canonical platform starts with `test_` (case-insensitive, after full/half-width fold). Test rows are stored so a later export can clear the flag, and they never appear in search or in the workbook export.
@@ -203,7 +203,7 @@ If the newest successful run is more than two days old, the job calls `Notifier`
 
 ## Query workbook export
 
-`GET /api/v1/queries/{query_id}/export` writes the caller's view of one saved query. Missing `X-User-Id` is a free caller. An unknown user id is 404. A missing query id is 404.
+`GET /api/v1/queries/{query_id}/export` writes the caller's view of one saved query. Missing `X-User-Id` is a free caller. An unknown user id is 404. A missing query id is 404. The query must belong to the caller (`member_queries.user_id`). Another member, and a row with no owner, gets 404. Non-members still get 403 before that check.
 
 Only a live `regular` (普通会员) or `vip` grant can export. Free callers, and callers whose only live grants are `program_90`, `program_30`, or `screenshot`, get 403. Expired grants do not count. There is no row cap. If both `regular` and `vip` are live, VIP wins and the wider age floor is used.
 
@@ -362,3 +362,14 @@ Some `index_records` rows have no task in the export and a NULL `uploaded_at`. F
 `membership_dev` 永久留在 `TEST_PRODUCTS` 和 `ck_orders_product` 里，当作已经写下的订单的标记。从 `TEST_PRODUCTS` 拿掉之后，这些金额为 0 的订单会重新被算进付费转化。从约束里拿掉需要再做一次迁移，库里只要还有 `membership_dev` 行，迁移就会失败。
 
 `NADOU_WECHAT_PAY_TEST_USERS` 和 `user_may_use_test_tier` 与 0.01 元档共用。只下线体验版切换时不要删它们。
+
+## 待办：查询记录保留期
+
+本变更只负责按用户保存和查看查询记录，不删除过期行。
+
+- 免费用户（清理当时没有仍在有效期内的普通会员或 VIP）：从 `member_queries.created_at` 起保留 30 天。
+- 会员（清理当时有仍在有效期内的普通会员或 VIP）：从 `member_queries.created_at` 起保留 180 天。
+- 到期后删除该用户的 `member_queries` 行，并一并删除其 `query_programs`。
+- 按用户和时间清理。索引用 `ix_member_queries_user_id_created_at`（`user_id`, `created_at`），不要全表扫描。
+- 定时清理不在本变更里，另开 PR。本接口对超过保留期的行仍照常返回。
+- `user_id` 为空的历史行不属于任何用户，本变更不删除，也不对任何人开放查看或导出。

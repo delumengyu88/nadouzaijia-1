@@ -501,7 +501,9 @@ class QueryExport:
         if tier is None:
             raise ExportForbidden(user_id)
         query = self.session.get(MemberQuery, query_id)
-        if query is None:
+        # Membership is already required. Someone else's query, and a row
+        # saved with no owner, is the same as a missing id.
+        if query is None or query.user_id != user_id:
             raise UnknownQuery(query_id)
         items = list(
             self.session.scalars(

@@ -23,6 +23,7 @@ from nadou.devtools.trial_tools import register_trial_tools
 from nadou.models import User
 from nadou.payments.api import PaymentApi
 from nadou.public_config import PublicConfig
+from nadou.query_records import QueryRecords
 from nadou.schemas import SearchOut
 from nadou.search import EmptyQuery, ProgramSearch, UnknownUser
 from nadou.signed_url import FakeSignedUrlProvider, SignedUrlProvider
@@ -134,6 +135,7 @@ def create_app(
         }
 
     PublicConfig.register(app, get_session)
+    QueryRecords.register(app, get_session, clock)
     PaymentApi.register(app, get_session, clock, alerts, grant_writer)
     # Experience-build only. Delete this line with src/nadou/devtools before review.
     register_trial_tools(app, get_session, clock)

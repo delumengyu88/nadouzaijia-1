@@ -94,6 +94,7 @@ def test_export_excludes_generated_date_records(session, clock):
             {"uploaded": "混合节目", "matched": "混合节目", "resolution": "exact"},
             {"uploaded": "只有生成", "matched": "只有生成", "resolution": "exact"},
         ],
+        user_id="user-vip",
     )
     session.commit()
 
@@ -131,6 +132,7 @@ def test_export_count_in_first_row_and_filename_matches_rows(session, clock):
         clock,
         "q-count",
         [{"uploaded": "计数节目", "matched": "计数节目", "resolution": "exact"}],
+        user_id="user-vip",
     )
     session.commit()
     client = make_client(session, clock)
@@ -251,6 +253,7 @@ def test_other_platform_sorts_last(session, client, clock):
         clock,
         "q-order",
         [{"uploaded": "排序节目", "matched": "排序节目", "resolution": "exact"}],
+        user_id="user-vip",
     )
     session.commit()
     body = search(client, "排序节目", "user-vip")
@@ -375,6 +378,7 @@ def test_backfill_then_task_import_restores_export_and_evidence(
         [
             {"uploaded": "恢复日期节目", "matched": "恢复日期节目", "resolution": "exact"},
         ],
+        user_id="user-vip",
     )
     session.commit()
     generated = load_backfill()

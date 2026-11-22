@@ -146,6 +146,11 @@ def test_missing_configuration_fails_closed(anonymous, monkeypatch):
     [
         ("/api/v1/programs/search?name=测试节目", "GET", None),
         ("/api/v1/queries/any/export", "GET", None),
+        ("/api/v1/queries", "GET", None),
+        ("/api/v1/queries", "POST", {"name": "测试节目"}),
+        ("/api/v1/queries/any", "GET", None),
+        ("/api/v1/queries/any/results", "POST", {"name": "测试节目"}),
+        ("/api/v1/queries/any/seen", "POST", None),
         ("/api/v1/invite-codes/redeem", "POST", {"code": "A8K3N2P7"}),
         ("/api/v1/auth/me", "GET", None),
     ],
