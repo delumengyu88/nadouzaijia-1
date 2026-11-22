@@ -300,8 +300,9 @@ function storeProfile(user) {
   return data.auth.user
 }
 
-function refreshMembership() {
+function refreshMembership(sent) {
   return request('/api/v1/auth/me').then(function (user) {
+    if (sent !== state.token()) return null
     return storeProfile(user) || user
   })
 }
@@ -332,6 +333,7 @@ function inviteFailure(code) {
 function loadInviteState() {
   var sent = state.token()
   return request('/api/v1/invite-codes/state', {}, { exposeStatus: true, optionalAuth: true }).then(function (res) {
+    if (sent !== state.token()) return { ok: false, sessionChanged: true }
     var detail = inviteErrorCode(res && res.data)
     if (res && res.statusCode === 403 && detail === 'account is disabled') {
       return { ok: false, banned: true, message: '服务暂不可用' }
@@ -474,9 +476,11 @@ module.exports = {
   },
   inviteState: function () { return loadInviteState() },
   redeem: function (raw) {
+    var sent = state.token()
     var code = raw == null ? '' : String(raw)
     return request('/api/v1/invite-codes/redeem', { code: code }, { method: 'POST', exposeStatus: true })
       .then(function (res) {
+        if (sent !== state.token()) return { ok: false, sessionChanged: true }
         var failure = inviteFailure(inviteErrorCode(res && res.data))
         if (failure) return failure
         if (!res || res.statusCode < 200 || res.statusCode >= 300) {
@@ -484,11 +488,13 @@ module.exports = {
         }
         var cached = state.load().auth && state.load().auth.user
         var expiresAt = res.data && res.data.expires_at
-        return refreshMembership().then(function (user) {
+        return refreshMembership(sent).then(function (user) {
+          if (sent !== state.token()) return { ok: false, sessionChanged: true }
           rememberInvite(code, expiresAt)
           loadInviteState()
           return inviteSuccess(res.data, user || cached)
         }, function () {
+          if (sent !== state.token()) return { ok: false, sessionChanged: true }
           rememberInvite(code, expiresAt)
           loadInviteState()
           return inviteSuccess(res.data, cached)

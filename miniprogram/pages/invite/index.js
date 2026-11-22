@@ -1,10 +1,13 @@
 var api = require('../../api/index')
+var session = require('../../api/state')
 var nav = require('../../utils/nav')
 
 Page({
   data: { title: '兑换邀请码', showBack: true, phase: 'loading', code: '', fieldError: false, loginLoading: false, loginError: '' },
   onLoad: function (query) {
     this._query = query || {}
+    this._busy = false
+    this._sent = session.token()
     var layout = nav.layout('invite', this.query)
     var base = {
       statusBarHeight: layout.statusBarHeight,
@@ -29,14 +32,25 @@ Page({
     this.setData(Object.assign({ phase: 'loading', code: '', message: '' }, base))
     var self = this
     var ticket = (this._inviteTicket = (this._inviteTicket || 0) + 1)
-    Promise.resolve().then(function () { return api.inviteState() }).then(function (next) {
-      if (ticket !== self._inviteTicket) return
+    Promise.resolve(api.inviteState()).then(function (next) {
+      if (!self.current(ticket)) return
       self.applyState(next)
     }, function () {
-      if (ticket !== self._inviteTicket) return
+      if (!self.current(ticket)) return
       self.setData({ phase: 'unavailable', message: '网络异常，请重试', code: '' })
     })
   },
+  current: function (ticket) {
+    if (ticket !== this._inviteTicket) return false
+    if (this._sent === session.token()) return true
+    this.retryLoad()
+    return false
+  },
+  onShow: function () {
+    if (require('../../config').mode === 'live' && this._sent !== session.token()) this.retryLoad()
+  },
+  onUnload: function () { this._inviteTicket++ },
+  retryLoad: function () { this.onLoad(this._query) },
   applyState: function (state) {
     if (!state || !state.ok) {
       this.setData({
@@ -95,12 +109,17 @@ Page({
     if (code.length < 8) return
     var self = this
     if (require('../../config').mode === 'live') {
+      if (this._sent !== undefined && this._sent !== session.token()) { this.retryLoad(); return }
+      this._sent = session.token()
+      var ticket = this._inviteTicket = (this._inviteTicket || 0) + 1
       this._busy = true
       this.setData({ phase: 'redeeming', code: code, fieldError: false })
-      Promise.resolve().then(function () { return api.redeem(code) }).then(function (result) {
+      Promise.resolve(api.redeem(code)).then(function (result) {
+        if (!self.current(ticket)) return
         self._busy = false
         self.showResult(result, code)
       }, function () {
+        if (!self.current(ticket)) return
         self._busy = false
         self.setData({ phase: 'error', message: '网络异常，请重试', code: code, fieldError: false })
       })
