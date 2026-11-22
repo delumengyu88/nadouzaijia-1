@@ -69,7 +69,8 @@ Page({
     }, function (error) {
       if (self.detailToken !== token) return
       self.remote = false
-      self.applyQueryError(error)
+      if (error && error.sessionChanged) self.refresh()
+      else self.applyQueryError(error)
     })
   },
   applyQuery: function (current, local) {
@@ -121,8 +122,12 @@ Page({
       this.setData(Object.assign(base, { missing: true, needLogin: false, loadError: false }))
       return
     }
+    if (code === 403) {
+      this.setData(Object.assign(base, { loadError: true, failureText: '当前账户无权查看查询记录', missing: false, needLogin: false }))
+      return
+    }
     if (!code || code >= 500 || (error && error.message === '网络异常，请重试')) {
-      this.setData(Object.assign(base, { loadError: true, missing: false, needLogin: false }))
+      this.setData(Object.assign(base, { loadError: true, failureText: '网络异常，请重试', missing: false, needLogin: false }))
       return
     }
     this.setData(Object.assign(base, { loadError: false, missing: false, needLogin: false, head: '查询记录不可用，请重新查询。' }))

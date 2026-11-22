@@ -8,7 +8,7 @@ var knownQueries = {}
 var seenOnce = {}
 
 function rememberQuery(id) {
-  if (id) knownQueries[id] = true
+  if (id) knownQueries[id] = state.userId()
 }
 function queryError(message, statusCode) {
   var error = new Error(message)
@@ -21,6 +21,13 @@ function queryRequest(path, data, method, raw) {
   var token = state.token()
   if (!token) return Promise.reject(queryError('请先登录', 401))
   return new Promise(function (resolve, reject) {
+    function sessionChanged() {
+      if (state.token() === token) return false
+      var error = queryError('登录状态已变化', 0)
+      error.sessionChanged = true
+      reject(error)
+      return true
+    }
     try {
       wx.request({
         url: base + path,
@@ -30,6 +37,7 @@ function queryRequest(path, data, method, raw) {
         dataType: raw ? 'text' : 'json',
         header: { Authorization: 'Bearer ' + token },
         success: function (res) {
+          if (sessionChanged()) return
           var code = res.statusCode
           if (code >= 200 && code < 300) {
             resolve(res.data || {})
@@ -42,7 +50,7 @@ function queryRequest(path, data, method, raw) {
           else if (code >= 500) message = '网络异常，请重试'
           reject(queryError(message, code))
         },
-        fail: function () { reject(queryError('网络异常，请重试', 0)) }
+        fail: function () { if (!sessionChanged()) reject(queryError('网络异常，请重试', 0)) }
       })
     } catch (err) {
       reject(queryError('网络异常，请重试', 0))
@@ -50,7 +58,7 @@ function queryRequest(path, data, method, raw) {
   })
 }
 function postResult(id, name, failed) {
-  if (!id || !knownQueries[id]) return
+  if (!id || knownQueries[id] !== state.userId()) return
   var body = { name: name }
   if (failed) body.failed = true
   queryRequest('/api/v1/queries/' + encodeURIComponent(id) + '/results', body, 'POST').then(function () {}, function () {})
@@ -213,7 +221,7 @@ function advance(id) {
     if (job.pending === pending) applyFailure(item, error)
   }).then(function () {
     if (job.pending === pending) job.pending = null
-    syncReports(job)
+    if (currentJobs()[id] === job) syncReports(job)
   })
   return view(job)
 }
@@ -247,6 +255,7 @@ module.exports = {
       currentJobs()[id] = { id: id, items: titles.map(function (name) { return { name: name } }) }
       return { ok: true, id: id }
     }, function (error) {
+      if (error && error.sessionChanged) return { ok: false, sessionChanged: true }
       return { ok: false, message: (error && error.message) || '网络异常，请重试', statusCode: error && error.statusCode }
     })
   },
@@ -263,8 +272,8 @@ module.exports = {
   retryItem: retry,
   retryAll: function (id) { return retry(id) },
   markQuerySeen: function (id) {
-    if (!id || !knownQueries[id] || seenOnce[id]) return
-    seenOnce[id] = true
+    if (!id || knownQueries[id] !== state.userId() || seenOnce[id] === state.userId()) return
+    seenOnce[id] = state.userId()
     queryRequest('/api/v1/queries/' + encodeURIComponent(id) + '/seen', {}, 'POST').then(function () {}, function () {})
   },
   listRecords: function (limit) {

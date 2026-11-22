@@ -36,7 +36,8 @@ Page({
         self.setData({ loading: false, failed: false, needLogin: false, rows: decorate(list), empty: !list.length })
       }, function (error) {
         if (self.loadToken !== token) return
-        self.showError(error)
+        if (error && error.sessionChanged) self.onShow()
+        else self.showError(error)
       })
       return
     }
@@ -55,7 +56,8 @@ Page({
       return
     }
     var network = code === 0 || code >= 500 || (error && error.message === '网络异常，请重试')
-    this.setData({ loading: false, failed: !!network, empty: false, rows: [], needLogin: false })
+    var failureText = network ? '网络异常，请重试' : (code === 403 ? '当前账户无权查看查询记录' : '查询记录暂不可用')
+    this.setData({ loading: false, failed: true, failureText: failureText, empty: false, rows: [], needLogin: false })
   },
   retryLoad: function () { this.onShow() },
   goQuery: function () { wx.switchTab({ url: '/pages/home/index' }) },

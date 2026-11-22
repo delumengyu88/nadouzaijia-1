@@ -74,11 +74,11 @@ var recordsWxml = fs.readFileSync(path.join(root, 'pages/records/index.wxml'), '
 var recordsWxss = fs.readFileSync(path.join(root, 'pages/records/index.wxss'), 'utf8')
 var queryWxml = fs.readFileSync(path.join(root, 'pages/query/index.wxml'), 'utf8')
 
-function session() {
+function session(id) {
   state.setSession({
-    token: 'rec-token',
+    token: (id || 'rec') + '-token',
     expires_at: new Date(Date.now() + 86400000).toISOString(),
-    user: { id: 'rec', tier: 'free' }
+    user: { id: id || 'rec', tier: 'free' }
   })
 }
 function resetTraffic() {
@@ -451,6 +451,56 @@ async function main() {
   await drain()
   assert.strictEqual(toasts[toasts.length - 1].title, '网络异常，请重试')
   assert.strictEqual(redirects.length, 0)
+
+  var pending = []
+  route = function (opt) { pending.push(opt) }
+  session()
+  var privateList = makePage('pages/records/index')
+  privateList.onShow()
+  state.clearSession()
+  pending.shift().success({ statusCode: 200, data: { items: [{ name: 'old' }] } })
+  await drain()
+  assert.strictEqual(privateList.data.needLogin, true)
+  assert.deepStrictEqual(privateList.data.rows, [])
+
+  session()
+  var detailPage = makePage('pages/query/index')
+  detailPage.onLoad({ id: 'private-detail' })
+  state.load().auth.expires_at = new Date(0).toISOString()
+  pending.shift().success({ statusCode: 200, data: { items: [{ name: 'old' }] } })
+  await drain()
+  assert.strictEqual(detailPage.data.needLogin, true)
+  assert.deepStrictEqual(detailPage.data.items, [])
+
+  session()
+  privateList.onShow()
+  session('replacement')
+  pending.shift().success({ statusCode: 401, data: {} })
+  await drain()
+  assert.strictEqual(pending.length, 1)
+  assert.strictEqual(pending[0].header.Authorization, 'Bearer replacement-token')
+  pending.shift().success({ statusCode: 403, data: {} })
+  await drain()
+  assert.strictEqual(privateList.data.failed, true)
+  assert.strictEqual(privateList.data.failureText, '当前账户无权查看查询记录')
+  detailPage.retryLoad()
+  pending.shift().success({ statusCode: 403, data: {} })
+  await drain()
+  assert.strictEqual(detailPage.data.loadError, true)
+  assert.strictEqual(detailPage.data.failureText, privateList.data.failureText)
+
+  session()
+  resetTraffic()
+  input.confirm()
+  session('replacement')
+  pending.shift().success({ statusCode: 200, data: { id: 'private-create' } })
+  await drain()
+  assert.strictEqual(redirects.length, 0)
+  assert.strictEqual(toasts.length, 0)
+  var unknownJob = api.getQuery('private-create')
+  assert.strictEqual(pending.length, 1, 'old create response did not install a local job for the new user')
+  pending.shift().success({ statusCode: 404, data: {} })
+  await assert.rejects(unknownJob, function (error) { return error.statusCode === 404 })
 
   console.log('query record timing, empty list, auth, 404 and badge checks ok')
 }

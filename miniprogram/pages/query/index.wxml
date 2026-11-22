@@ -22,7 +22,7 @@
 <view class="body" wx:elif="{{loadError}}">
   <view class="result">
     <icon type="info" size="56" color="#8F959E" />
-    <view class="result-title">网络异常，请重试</view>
+    <view class="result-title">{{failureText || '网络异常，请重试'}}</view>
     <view class="result-primary" bindtap="retryLoad">重试</view>
   </view>
 </view>

@@ -156,6 +156,7 @@ Page({
     })
   },
   finishCreate: function (created) {
+    if (created && created.sessionChanged) return
     if (!created || !created.ok) {
       if (created && (created.statusCode === 401 || created.message === '请先登录')) {
         return require('../../utils/login')(this, function () {})
