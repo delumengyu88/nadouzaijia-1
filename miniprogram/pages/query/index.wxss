@@ -1,14 +1,22 @@
 /* local */
 
+page { overflow-x: hidden; }
+
 .evidence-link { text-align: right; color: #1D4E9E; font-size: 26rpx; padding: 16rpx 0; }
 
-/* 查询中、部分进度、满环、网络异常共用这一块固定高度，避免状态切换把圆环挤偏。 */
-.q-ring-wrap {
-  height: 280rpx;
+/* 旋转弧会画出方形包围盒。不裁切时真机会把这块算进页面宽度，右缘出现一列淡字。 */
+.query-root {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.q-ring-block {
+  width: 100%;
   padding-top: 120rpx;
-  box-sizing: border-box;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
 }
 
 .q-ring {
@@ -16,6 +24,8 @@
   width: 160rpx;
   height: 160rpx;
   flex: none;
+  border-radius: 50%;
+  overflow: hidden;
 }
 
 .q-ring-track {
@@ -37,8 +47,6 @@
   height: 160rpx;
   z-index: 1;
 }
-
-.q-ring.is-spin .q-ring-progress { visibility: hidden; }
 
 .q-ring-clip {
   position: absolute;
@@ -112,7 +120,7 @@
 }
 
 .q-ring-ratio {
-  width: 144rpx;
+  width: 128rpx;
   height: 44rpx;
   line-height: 44rpx;
   font-size: 32rpx;
@@ -121,15 +129,36 @@
   color: #1c2430;
   white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.q-ring-hint {
-  width: 144rpx;
+.q-ring-label {
+  width: 100%;
+  height: 44rpx;
+  margin-top: 28rpx;
+  padding: 0 32rpx;
+  box-sizing: border-box;
+  line-height: 44rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  text-align: center;
+  color: #1c2430;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.q-ring-wait {
+  width: 100%;
   height: 32rpx;
+  margin-top: 8rpx;
+  padding: 0 32rpx;
+  box-sizing: border-box;
   line-height: 32rpx;
-  margin-top: 4rpx;
   font-size: 24rpx;
   text-align: center;
-  color: #66707c;
+  color: #8b95a3;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

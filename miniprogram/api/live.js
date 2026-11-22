@@ -9,6 +9,7 @@ var sequence = 0
 // leave the page polling forever: after timeoutMs the item fails and can be retried.
 class QueryGuard {
   static now() { return Date.now() }
+  static slowMs() { return 30000 }
   static timeoutMs() { return 60000 }
   static timeoutText() { return '查询超时，请重试' }
   static networkText() { return '网络异常，请重试' }
@@ -71,6 +72,7 @@ function view(job) {
   return { id: job.id, queued: !job.started && !network, running: !!job.started && !done && !network, done: done,
     networkError: network, showNetworkRetry: network,
     percent: rows.length ? Math.round(count / rows.length * 100) : 0, items: rows,
+    waitStartedAt: job.pending ? job.pending.sentAt : 0,
     head: done && !network ? '共 ' + rows.length + ' 个｜命中 ' + hits + '｜未命中 ' + misses + '｜失败 ' + fails : '已完成 ' + count + ' / ' + rows.length,
     allFail: done && fails === rows.length, showFailBanner: done && fails > 0,
     failBanner: network ? QueryGuard.networkText() : timedOut ? QueryGuard.timeoutText() : fails === rows.length ? '全部查询失败，请重试。' : '部分查询失败，请重试。',

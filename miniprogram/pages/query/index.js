@@ -4,14 +4,22 @@ var config = require('../../config')
 var ring = require('./ring')
 
 function withRing(view) {
-  return Object.assign({}, view, ring.ringState(view))
+  view = view || {}
+  var guard = api.QueryGuard
+  var now = guard && guard.now ? guard.now() : 0
+  var slowMs = guard && guard.slowMs ? guard.slowMs() : 30000
+  var pictured = Object.assign({}, view, ring.ringState(view))
+  pictured.ringWait = ring.waitCopy(!!view.running, view.waitStartedAt || 0, now, slowMs)
+  // 查询还没结束时不把结果行交给模板，避免列表文字画到进度区域外面。
+  pictured.rows = view.running || view.networkError || view.queued || view.calibrating ? [] : (view.items || [])
+  return pictured
 }
 
 Page({
   data: {
     title: '查询结果', showBack: true, calibrating: config.calibrating, items: [], head: '',
     ringMode: 'progress', ringSpin: false, ringFull: false, ringRatio: 0, ringText: '0/0',
-    ringRight: -180, ringLeft: 180
+    ringDone: 0, ringTotal: 0, ringWait: ring.usualWait, ringRight: -180, ringLeft: 180, rows: []
   },
   onLoad: function (query) {
     this.id = query.id || ''
@@ -81,24 +89,26 @@ Page({
       return
     }
     if (view === 'allfail') {
+      var failed = [
+        { name: '星河旧梦', badge: '失败', badgeCls: 'bad', line: '索引暂时不可用。', failed: true },
+        { name: '南岭追光', badge: '失败', badgeCls: 'bad', line: '索引暂时不可用。', failed: true }
+      ]
       this.setData({
         done: true, allFail: true, showFailBanner: true, showRetryAll: true, itemRetry: false,
         failBanner: '全部查询失败，失败不扣次数。',
         head: '共 2 条：命中 0 · 未命中 0 · 失败 2',
-        items: [
-          { name: '星河旧梦', badge: '失败', badgeCls: 'bad', line: '索引暂时不可用。', failed: true },
-          { name: '南岭追光', badge: '失败', badgeCls: 'bad', line: '索引暂时不可用。', failed: true }
-        ]
+        items: failed, rows: failed
       })
       return
     }
+    var missed = [
+      { name: '星河旧梦', badge: '未命中', badgeCls: 'muted', line: '当前索引未收录该节目名。', missed: true },
+      { name: '雾港来信', badge: '未命中', badgeCls: 'muted', line: '当前索引未收录该节目名。', missed: true }
+    ]
     this.setData({
       done: true, allFail: false, showFailBanner: false,
       head: '共 2 条，均未命中。',
-      items: [
-        { name: '星河旧梦', badge: '未命中', badgeCls: 'muted', line: '当前索引未收录该节目名。', missed: true },
-        { name: '雾港来信', badge: '未命中', badgeCls: 'muted', line: '当前索引未收录该节目名。', missed: true }
-      ]
+      items: missed, rows: missed
     })
   },
   openHit: function (e) {
