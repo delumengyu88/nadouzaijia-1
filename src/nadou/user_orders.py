@@ -3,7 +3,8 @@
 from datetime import UTC
 from zoneinfo import ZoneInfo
 
-from fastapi import Depends, FastAPI, Header
+from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,7 @@ class UserOrders:
     """
 
     BEIJING = ZoneInfo("Asia/Shanghai")
+    CACHE_CONTROL = "no-store"
     STATUS = {
         "待支付": "pending",
         "已支付": "paid",
@@ -107,11 +109,19 @@ class UserOrders:
             authorization: str | None = Header(default=None),
             session: Session = Depends(get_session, scope="function"),
         ) -> User:
-            return UserSessions.resolve(session, authorization, clock())
+            try:
+                return UserSessions.resolve(session, authorization, clock())
+            except HTTPException as exc:
+                headers = dict(exc.headers or {})
+                headers["Cache-Control"] = UserOrders.CACHE_CONTROL
+                raise HTTPException(exc.status_code, exc.detail, headers=headers) from None
 
         @app.get("/api/v1/pay/orders")
         def list_pay_orders(
             user: User = Depends(current_user),
             session: Session = Depends(get_session, scope="function"),
-        ) -> list[dict]:
-            return UserOrders.list_for(session, user)
+        ):
+            return JSONResponse(
+                UserOrders.list_for(session, user),
+                headers={"Cache-Control": UserOrders.CACHE_CONTROL},
+            )

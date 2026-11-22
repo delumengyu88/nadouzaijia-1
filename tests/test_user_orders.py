@@ -55,6 +55,10 @@ def add_order(session, user, when, number, **fields) -> Order:
     return order
 
 
+def assert_private(response) -> None:
+    assert response.headers["cache-control"] == "no-store"
+
+
 def test_anonymous_order_list_is_401(client, session, clock):
     session.add(User(id="victim-orders", created_at=clock))
     session.commit()
@@ -68,6 +72,8 @@ def test_anonymous_order_list_is_401(client, session, clock):
     assert bare.json()["detail"] == "authentication required"
     assert bogus.json()["detail"] == "authentication required"
     assert bare.headers["www-authenticate"] == "Bearer"
+    assert_private(bare)
+    assert_private(bogus)
     assert bare.json() != []
 
 
@@ -78,12 +84,14 @@ def test_banned_account_cannot_list_orders(client, session, clock):
     response = client.get("/api/v1/pay/orders", headers=client.auth(user.id))
     assert response.status_code == 403
     assert response.json()["detail"] == "account is disabled"
+    assert_private(response)
 
 
 def test_empty_order_list_is_an_array(client):
     response = client.get("/api/v1/pay/orders")
     assert response.status_code == 200
     assert response.json() == []
+    assert_private(response)
 
 
 def test_list_is_own_orders_newest_first(client, session, clock):
@@ -249,6 +257,8 @@ def test_list_and_detail_omit_payment_secrets(client, session, clock):
     detail = client.get("/api/v1/pay/orders/ND-SECRET01")
     assert listed.status_code == 200
     assert detail.status_code == 200
+    assert_private(listed)
+    assert_private(detail)
     for response in (listed, detail):
         assert SECRET_PREPAY not in response.text
         assert SECRET_TXN not in response.text
@@ -310,6 +320,9 @@ def test_detail_of_another_user_or_missing_order_is_404(client, session, clock):
     assert missing.status_code == 404
     assert theirs.json()["detail"] == "订单不存在"
     assert missing.json()["detail"] == "订单不存在"
+    assert_private(theirs)
+    assert_private(missing)
+    assert_private(mine)
     assert SECRET_PREPAY not in theirs.text
     assert mine.status_code == 200
     assert mine.json()["orderNo"] == "ND-MINE-0001"

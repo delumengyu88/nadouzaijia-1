@@ -81,7 +81,7 @@ Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is loc
 
 ### 小程序我的订单
 
-`GET /api/v1/pay/orders` 使用和 `GET /api/v1/auth/me` 相同的登录态：`Authorization: Bearer <token>`。未登录返回 401，`detail` 为 `authentication required`。封禁返回 403，`detail` 为 `account is disabled`。只返回当前用户的订单，按 `created_at` 倒序，同一时刻再按订单 id 倒序。没有订单时正文是 `[]`。
+`GET /api/v1/pay/orders` 使用和 `GET /api/v1/auth/me` 相同的登录态：`Authorization: Bearer <token>`。未登录返回 401，`detail` 为 `authentication required`。封禁返回 403，`detail` 为 `account is disabled`。只返回当前用户的订单，按 `created_at` 倒序，同一时刻再按订单 id 倒序。没有订单时正文是 `[]`。列表和 `GET /api/v1/pay/orders/{order_number}` 的响应都带 `Cache-Control: no-store`，包括查单的 404。下单和同步不带这个头。
 
 `product` 属于 `TEST_PRODUCTS`（`membership_test`、`membership_dev`）的订单照实返回，`isTest` 为 true，由调用方决定是否展示。其他订单 `isTest` 为 false。
 
