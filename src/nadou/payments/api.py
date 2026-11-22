@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from nadou.auth import UserSessions
 from nadou.models import User
 from nadou.payments.service import PayError, PaymentService
+from nadou.payments.xpay_api import register_virtual_orders
 from nadou.user_orders import UserOrders
 
 logger = logging.getLogger("nadou.payments")
@@ -39,6 +40,8 @@ class PaymentApi:
                         401, "未登录", headers={"WWW-Authenticate": "Bearer"}
                     ) from None
                 raise
+
+        register_virtual_orders(app, get_session, payer, clock, notifier, grant_writer)
 
         def service() -> PaymentService:
             return PaymentService(clock, notifier, grant_writer)

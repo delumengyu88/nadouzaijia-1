@@ -73,6 +73,8 @@ class PaymentService:
 
     def sync(self, session: Session, user: User, order_number: str) -> dict:
         order = self._own(session, user, order_number)
+        if order.order_number.startswith("XV"):
+            raise PayError(404, "订单不存在")
         if order.status in {"已发放", "发放异常", "已退款"}:
             return _view(order, product_by_code(order.product))
         config = load_pay_settings(get_settings())
@@ -98,7 +100,7 @@ class PaymentService:
             if isinstance(number, str) and _ORDER_NUMBER.fullmatch(number)
             else None
         )
-        if order is None:
+        if order is None or order.order_number.startswith("XV"):
             raise PayError(404, "order", notify=True)
         self._confirm(session, order, config, txn, notify=True)
 

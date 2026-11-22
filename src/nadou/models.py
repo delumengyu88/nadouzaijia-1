@@ -350,6 +350,18 @@ class Order(Base):
     wechat_transaction_id: Mapped[str | None] = mapped_column(String(64))
 
 
+class VirtualOrder(Base):
+    """Immutable catalog/environment snapshot for the WeChat virtual channel."""
+
+    __tablename__ = "virtual_orders"
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), primary_key=True)
+    env: Mapped[int] = mapped_column(Integer, nullable=False)
+    product_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    delivery_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    refund_no: Mapped[str | None] = mapped_column(String(64), unique=True)
+    wx_refund_no: Mapped[str | None] = mapped_column(String(64), unique=True)
+
+
 class OrderIssuance(Base):
     """One issuance attempt chain per order. The unique order id makes it idempotent."""
 

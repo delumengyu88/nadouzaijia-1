@@ -1,6 +1,7 @@
 """Mini program identity: exchange a WeChat code, then use our own opaque session."""
 
 import hashlib
+import logging
 import secrets
 from datetime import datetime, timedelta
 from uuid import uuid4
@@ -15,15 +16,39 @@ from nadou.config import get_settings
 from nadou.models import Entitlement, User, UserSession
 
 
+class _RedactWeChatQuery(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                arg.copy_with(query=None)
+                if isinstance(arg, httpx.URL)
+                and any(
+                    key in arg.params for key in ("access_token", "pay_sig", "secret", "js_code")
+                )
+                else arg
+                for arg in record.args
+            )
+        return True
+
+
+logging.getLogger("httpx").addFilter(_RedactWeChatQuery())
+
+
 class WeChatLogin:
+    SESSION_URL = "https://api.weixin.qq.com/sns/jscode2session"
+
     @staticmethod
     def exchange(code: str) -> str:
+        return WeChatLogin.exchange_session(code)[0]
+
+    @staticmethod
+    def exchange_session(code: str) -> tuple[str, str]:
         settings = get_settings()
         if not settings.wx_appid or not settings.wx_appsecret:
             raise HTTPException(503, "WeChat login is unavailable")
         try:
             response = httpx.get(
-                "https://api.weixin.qq.com/sns/jscode2session",
+                WeChatLogin.SESSION_URL,
                 params={
                     "appid": settings.wx_appid,
                     "secret": settings.wx_appsecret.get_secret_value(),
@@ -52,7 +77,7 @@ class WeChatLogin:
             or not body["session_key"]
         ):
             raise HTTPException(503, "WeChat login is unavailable")
-        return openid
+        return openid, body["session_key"]
 
     @staticmethod
     def user(session: Session, openid: str, now: datetime) -> User:
