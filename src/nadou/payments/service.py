@@ -23,6 +23,7 @@ from nadou.payments.crypto import (
     verify_rsa,
 )
 from nadou.payments.gateway import WeChatUpstreamError, build_gateway
+from nadou.user_orders import UserOrders
 
 logger = logging.getLogger("nadou.payments")
 
@@ -208,6 +209,8 @@ def _view(order: Order, product: PayProduct | None, pay: dict | None = None) -> 
         "paid_at": order.paid_at.isoformat() if order.paid_at else None,
         "granted": order.status == "已发放",
     }
+    # Mini-program names. Keys above stay as they are, including Chinese status.
+    body.update(UserOrders.detail_fields(order))
     if pay is not None:
         body.update(pay)
     return body

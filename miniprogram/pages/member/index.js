@@ -26,6 +26,7 @@ function presentCenter(info) {
     extraLine: info.extraLine || ''
   })
 }
+
 function selectedPlan(plans, selected) {
   var found = null
   ;(plans || []).forEach(function (item) {
