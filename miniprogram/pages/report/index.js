@@ -33,8 +33,17 @@ Page({
   refreshApplication: function () {
     var name = this.data.name
     var normalize = require('../../utils/text').foldKey
-    var found = api.listEvidence().filter(function (item) { return normalize(item.name) === normalize(name || '') })[0]
-    this.setData({ appliedId: found ? found.id : '' })
+    var self = this
+    function apply(rows) {
+      var found = (rows || []).filter(function (item) { return normalize(item.name) === normalize(name || '') })[0]
+      self.setData({ appliedId: found ? found.id : '' })
+    }
+    var listed = api.listEvidence()
+    if (listed && typeof listed.then === 'function') {
+      listed.then(apply, function () { apply([]) })
+      return
+    }
+    apply(listed)
   },
   back: function () {
     if (getCurrentPages().length > 1) wx.navigateBack()

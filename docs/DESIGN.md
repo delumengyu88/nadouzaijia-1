@@ -28,6 +28,7 @@ This PR is the smallest backend later PRs can build on: import the hourly task e
 | `nadou.main` | FastAPI app |
 | `nadou.public_config` | `PublicConfig`, the unauthenticated splash switch |
 | `nadou.payments` | WeChat Pay JSAPI orders, notification, and grant |
+| `nadou.user_orders` | `UserOrders`, the signed-in mini-program order list |
 | `nadou.seed` | Synthetic CSV + index rows through the importer |
 
 Normalization and parsing are classes. `SignedUrlProvider` is the seam the real CDN signer will replace; the API calls only that.
@@ -57,11 +58,14 @@ The API shows `其他平台` (`PlatformNames.OTHER`) only on records the caller 
 2. `GET /api/v1/programs/search?name=` — canonicalize `name`, return that program's counted records filtered for the caller.
 3. `GET /api/v1/queries/{query_id}/export` — workbook for one saved query. See below. Same `X-User-Id` stand-in.
 4. `GET /api/v1/app/config` — public splash switch for the mini program. No login. See below.
-5. `POST /api/v1/evidence-requests` — 登录用户提交委托取证。见下方「用户侧委托取证」。
-6. `GET /api/v1/evidence-requests` — 只返回当前用户的工单，按 `created_at` 倒序。
-7. `GET /api/v1/evidence-requests/{id}` — 本人工单详情。非本人或不存在都是 404。
-8. `POST /api/v1/evidence-requests/{id}/withdraw` — 仅「已提交」可撤回为「已取消」。
-9. `POST /api/v1/evidence-requests/{id}/confirm` — 仅「已交付」可确认为「已完成」。
+5. `GET /api/v1/app/home` — public home content for the mini program. No login. See below.
+6. `GET /api/v1/app/examples/{name}` — public example report for one homepage example. No login. See below.
+7. `GET /api/v1/pay/orders` — the signed-in user's orders, newest first. See below. One order is the existing `GET /api/v1/pay/orders/{order_number}`.
+8. `POST /api/v1/evidence-requests` — 登录用户提交委托取证。见下方「用户侧委托取证」。
+9. `GET /api/v1/evidence-requests` — 只返回当前用户的工单，按 `created_at` 倒序。
+10. `GET /api/v1/evidence-requests/{id}` — 本人工单详情。非本人或不存在都是 404。
+11. `POST /api/v1/evidence-requests/{id}/withdraw` — 仅「已提交」可撤回为「已取消」。
+12. `POST /api/v1/evidence-requests/{id}/confirm` — 仅「已交付」可确认为「已完成」。
 
 Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is local-only until WeChat login lands.** Do not expose this header as account authentication on a shared or deployed API. There is no import endpoint; import is `TaskExportImporter`, used by the seed script and tests. Workbench upload can call the same class later.
 
@@ -76,6 +80,73 @@ Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is loc
 ```
 
 表里没有这一行时返回 `splash_enabled: true`、`slogan: ""`，表的行数不变。工作台 `PUT /api/v1/admin/content/splash` 改过 `enabled` 之后，下一次这个 GET 按库里的当前值返回。服务端不做缓存；响应带 `Cache-Control: public, max-age=60`，给调用方自己缓存。
+
+### 小程序首页
+
+`GET /api/v1/app/home` 和 `GET /api/v1/app/examples/{name}` 都不需要 `Authorization`，未登录也可以读。只做查询，不插入、不更新。不要复用 `SplashBook.get()`，也不要走会写审计的工作台保存方法。响应不带用户、权益或签名地址。两个接口都带 `Cache-Control: public, max-age=60`。平台数是一次查询后在进程里按平台键去重，没有另做超时缓存。
+
+首页对应小程序现在的 `platformTotal`、`examples[{name,line,sub}]`，以及首页公告弹窗（文案目前写在 `miniprogram/pages/home/index.wxml`）。示例详情对应 `exampleReport(name)`。
+
+```json
+{
+  "announcements": [
+    {
+      "id": "…",
+      "title": "索引更新",
+      "body": "…",
+      "button_text": "我知道了",
+      "jump_label": null,
+      "frequency": "once",
+      "starts_at": "…",
+      "ends_at": "…"
+    }
+  ],
+  "examples": [
+    {"name": "示例节目", "line": "涉及 2 个平台", "sub": "命中 2 条记录 · 2026-08-13"}
+  ],
+  "platformTotal": 2
+}
+```
+
+公告只返回 `online` 且 `starts_at <= now < ends_at` 的行，排序与工作台列表相同：`starts_at` 降序，再按 `id`。已下线、未开始、已到期（含 `ends_at` 等于当前时刻）都不返回。工作台在多条同时落在窗口内时，会把除 `starts_at` 最新的一条外标成「已被更新覆盖」；这个接口不另做这层隐藏，窗口内的上线条都返回，调用方可以取第一条当作当前弹窗。没有公告时 `announcements` 是 `[]`。
+
+示例只返回 `homepage_examples.online` 的行，排序与工作台相同：`sort_order`，再按 `id`。卡片不读添加时写下的 `platform_hits` 和 `detected_on`。`line` / `sub` 按该节目当前仍可进入报告的索引记录现算：`hit_type` 为 `consensus`，任务规则与检索的 `ProgramSearch.included` 相同（没有任务的行保留，测试任务和未完成任务去掉），并且 `date_generated` 为假。`line` 里的平台数与检索的 `platform_count` 同一口径，只统计真实检测日龄满 30 天的记录。`sub` 的条数也只数这些记录；日期是这些记录里最晚的真实检测日（北京日历日）。真实检测日用 `ProgramSearch.record_time`（任务提交时间，否则文件上传时间，否则记录上的 `uploaded_at`），从不用 `generated_uploaded_at`，也从不用当天填空。一条都没有时 `sub` 为 `命中 0 条记录`，后面不接日期。
+
+`platformTotal` 是全库已收录平台数，不是某一个节目的 `platform_count`。口径：`index_records.hit_type = consensus` 的记录所关联的任务里，能通过 `ProgramSearch.included` 和 `ProgramSearch._unverified` 的，再取 `ProgramSearch._platform_key`（省份可以为空，加上运营商）去重。子类型（OTT、百视通）和公网/专网不另算一个平台。`其他平台` 和 `平台未识别` 是未核实来源的展示名，不计入。这个数不按 30 天过滤，也不因 `date_generated` 把平台拿掉：生成日期只影响示例上能不能把该行的时间当成检测日。没有可计平台时返回 `0`，不写死固定数字。
+
+`GET /api/v1/app/examples/{name}` 用与检索相同的标题折叠找到一条上线示例。找不到、未上线，或标题折叠后为空，返回 404 `example not found`，同样带上面的缓存头。返回的 `name` 是工作台保存的节目名，`program_name` 是折叠后的索引名。`records` 与上面的 `line` / `sub` 是同一批行：有真实检测日，并且 `EntitlementPolicy.age_bucket` 不是 `lt_30`（不满 30 天，任何权益都看不到字段）。`date_generated` 的行、没有真实检测日的行、不满 30 天的行都不出现，也不以打码形式返回平台或精确时间。记录按真实检测日从新到旧。只有这类行时 `records` 为空；`evidence_program_name` 仍是示例节目名，只要去掉 `date_generated` 之后还有索引行。没有任何可报告行时它为 `null`。
+
+下面这些字段没有公开来源（没有登录用户，也不签名），每条记录固定为 `null`：`thumbnail_url`、`hd_url`、`access`、`can_download_report`、`can_download_screenshot`、`locked`。没有可报告记录时 `evidence_program_name` 为 `null`。不返回 `locked_summary`、`locked_window`，也不返回首页会话字段（登录态、草稿、是否已看过公告）。
+
+### 小程序我的订单
+
+`GET /api/v1/pay/orders` 使用和 `GET /api/v1/auth/me` 相同的登录态：`Authorization: Bearer <token>`。未登录返回 401，`detail` 为 `authentication required`。封禁返回 403，`detail` 为 `account is disabled`。只返回当前用户的订单，按 `created_at` 倒序，同一时刻再按订单 id 倒序。没有订单时正文是 `[]`。列表和 `GET /api/v1/pay/orders/{order_number}` 的响应都带 `Cache-Control: no-store`，包括查单的 404。下单和同步不带这个头。
+
+`product` 属于 `TEST_PRODUCTS`（`membership_test`、`membership_dev`）的订单照实返回，`isTest` 为 true，由调用方决定是否展示。其他订单 `isTest` 为 false。
+
+| 字段 | 来源 |
+|---|---|
+| `orderNo` | `orders.order_number` |
+| `title` | 在售目录里的商品名。目录没有该编码时为 `null`（`membership_dev` 不在目录里） |
+| `line` | `statusText · 价格 · 北京时间的日期`。有 `amount_fen` 时按分换算，整元不写小数，否则保留两位；没有 `amount_fen` 时用元整数 `amount` |
+| `status` | 下表的英文码。库里没有对应码时为 `null` |
+| `statusText` | 库内中文状态原文 |
+| `product` | 商品编码，没有则为 `null` |
+| `isTest` | 商品编码在 `TEST_PRODUCTS` 中 |
+
+| 库内状态 | `status` | 说明 |
+|---|---|---|
+| 待支付 | `pending` | 小程序已有 |
+| 已支付 | `paid` | 小程序没有这个英文码，本接口自定 |
+| 已发放 | `granted` | 小程序已有 |
+| 发放异常 | `grant_error` | 小程序已有 |
+| 已退款 | `refunded` | 小程序没有这个英文码，本接口自定 |
+
+不返回预支付标识、微信交易号、退款原因、用户 id、商户信息或回调正文。
+
+单笔详情不另建路由，复用 `GET /api/v1/pay/orders/{order_number}`。不是当前用户的订单，或订单不存在，都是 404，`detail` 为 `订单不存在`。该接口原有字段不变：`status` 仍是中文库内状态，`title` 仍是目录商品名（目录没有则为 `null`）。查单响应在这些字段之外附上 `orderNo`、`line`、`statusText`、`product`、`isTest`。英文 `status` 不写入详情，避免改掉原有的中文 `status`。下单和同步走同一个视图，因此也会带上这五个字段，原有字段同样不改。
+
+支付页还用到、这里不返回的字段（没有库内数据，不编造）：`programName`、`card`、`priceText`、`blurb`、`renewLine`、`coverLine`、`payText`、`allowRepay`、`allowCheck`、`showPay`、`successLine`。
 
 ### 用户侧委托取证
 

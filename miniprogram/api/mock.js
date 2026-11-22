@@ -42,17 +42,7 @@ var EVIDENCE_TEXT = {
   cancelled: ''
 }
 
-var EVIDENCE_BADGE = {
-  submitted: '已提交',
-  accepted: '已受理',
-  pay: '待付款（线下）',
-  working: '取证中',
-  delivered: '已交付',
-  done: '已完成',
-  failed: '取证失败',
-  closed: '已关闭',
-  cancelled: '已取消'
-}
+var EVIDENCE_BADGE = require('./evidence').badge
 
 function save() { state.save() }
 function acc() { return state.account() }
@@ -357,17 +347,20 @@ function profile() {
 function memberCenter() {
   var account = acc()
   var tier = tierOf(account)
-  var statusLine = ''
-  if (account && tier === 'vip') statusLine = '当前 VIP，有效至 ' + account.paidVipExpiry
+  var until = ''
+  if (account && tier === 'vip') until = account.paidVipExpiry
   else if (account && tier === 'regular') {
-    var until = date.active(account.paidRegularExpiry) ? account.paidRegularExpiry : account.inviteExpiry
-    statusLine = '当前普通会员，有效至 ' + until
-  } else if (account) statusLine = '当前免费用户'
+    until = date.active(account.paidRegularExpiry) ? account.paidRegularExpiry : account.inviteExpiry
+  }
   return {
     guest: !account,
     tier: tier,
-    statusLine: statusLine
+    statusLine: require('../utils/member').statusLine(tier, until)
   }
+}
+
+function membershipPlans() {
+  return require('../utils/member').plansFromProducts(PRODUCTS)
 }
 
 function queryView(query) {
@@ -639,7 +632,24 @@ function viewEvidence(item) {
     refundTime: item.refundTime || '',
     canWithdraw: item.status === 'submitted',
     canConfirm: item.status === 'delivered',
-    contactFrom: 'evidence:' + item.no
+    contactFrom: 'evidence:' + item.no,
+    phoneText: maskPhone(item.phone) || '—',
+    quoteText: '—',
+    reasonText: item.reason || '—',
+    platformText: item.platform || '—',
+    noteText: item.note || '—',
+    refundText: item.refundAmount > 0 ? ('¥' + item.refundAmount) : '—',
+    times: [
+      { label: '提交', value: item.day || '—' },
+      { label: '受理', value: '—' },
+      { label: '报价', value: '—' },
+      { label: '付款', value: '—' },
+      { label: '交付', value: '—' },
+      { label: '完成', value: '—' },
+      { label: '失败', value: '—' },
+      { label: '关闭', value: '—' },
+      { label: '取消', value: '—' }
+    ]
   }
 }
 
@@ -683,6 +693,7 @@ module.exports = {
   accountKind: function () { return state.currentId() },
   profile: profile,
   memberCenter: memberCenter,
+  membershipPlans: membershipPlans,
   setDraft: function (value) {
     state.load().draft = String(value || '')
     save()
@@ -945,6 +956,7 @@ module.exports = {
       vipUnchanged: account.paidVipExpiry === vipBefore
     }
   },
+  evidenceSampleName: function () { return '雾港来信' },
   listEvidence: function () {
     var account = acc()
     if (!account) return []
@@ -953,6 +965,7 @@ module.exports = {
       return {
         id: view.id,
         name: view.name,
+        platform: item.platform || '',
         badge: view.badge,
         badgeCls: view.badgeCls,
         line: view.hasRefund ? '已全额退款 ¥' + view.refundAmount : view.day
