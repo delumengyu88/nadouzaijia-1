@@ -98,15 +98,14 @@ class EvidenceUserPhone:
         return f"{phone[:3]}****{phone[-4:]}"
 
     @staticmethod
-    def choose(provided: bool, given: object, account_phone: str | None) -> str:
-        if not provided:
-            if account_phone is None or not account_phone.strip():
-                raise EvidenceUserError(422, "phone_required", "请填写联系手机号")
-            candidate = account_phone.strip()
-        elif not isinstance(given, str):
+    def require(value: object) -> str:
+        if value is None:
+            raise EvidenceUserError(422, "phone_required", "请填写联系手机号")
+        if not isinstance(value, str):
             raise EvidenceUserError(422, "invalid_phone", "请填写正确的手机号")
-        else:
-            candidate = given.strip()
+        candidate = value.strip()
+        if not candidate:
+            raise EvidenceUserError(422, "phone_required", "请填写联系手机号")
         if EvidenceUserPhone.PATTERN.fullmatch(candidate) is None:
             raise EvidenceUserError(422, "invalid_phone", "请填写正确的手机号")
         return candidate
@@ -266,9 +265,7 @@ class EvidenceUserBook:
         stored_kind = EvidenceUserKind.require(kind)
         platform = EvidenceUserPlatform.clean(kind, fields.get("platform"))
         note = EvidenceUserNote.clean(fields.get("note"))
-        account_phone = user.phone
-        provided = "phone" in fields and fields.get("phone") is not None
-        phone = EvidenceUserPhone.choose(provided, fields.get("phone"), account_phone)
+        phone = EvidenceUserPhone.require(fields.get("phone"))
         EvidenceUserLock.hold(self.session, user.id)
         existing = EvidenceUserBook.find_open(self.session, user.id, name)
         if existing is not None:

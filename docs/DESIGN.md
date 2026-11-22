@@ -81,9 +81,9 @@ Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is loc
 
 鉴权和 `GET /api/v1/auth/me` 相同，请求头是 `Authorization: Bearer`。未登录 401。数据库里的状态继续用中文，工作台接口不改。
 
-`POST /api/v1/evidence-requests` 的字段：`name`（必填，去掉首尾空白并做 NFKC 之后必须非空，最长 200）、`kind`（只能是 `normal` 或 `recent`）、`platform`（可选；`recent` 忽略且不存）、`note`（可选，最长 500，写入 `requirement`）、`phone`（可选，11 位并且以 1 开头）。这个接口不接收 `record_ref`，也不会去读检索记录或生成日期来填任何字段。
+`POST /api/v1/evidence-requests` 的字段：`name`（必填，去掉首尾空白并做 NFKC 之后必须非空，最长 200）、`kind`（只能是 `normal` 或 `recent`）、`platform`（可选；`recent` 忽略且不存）、`note`（可选，最长 500，写入 `requirement`）、`phone`（必填，11 位并且以 1 开头）。这个接口不接收 `record_ref`，也不会去读检索记录或生成日期来填任何字段。
 
-`normal` 存成 `request_type=常规`，`recent` 存成 `近期`。成功时 201，正文只有 `{id, no}`。`no` 就是 `application_number`，仍由工作台的 `ApplicationNumbers.next_value` 生成。联系电话写在新增的可空列 `evidence_requests.contact_phone`（迁移 `20261122_0012`，可升级也可降级，不改已有行的其他列）。传了 `phone` 就校验并使用它；没传就用 `users.phone`；两个都没有则 422 `{code:"phone_required", message:"请填写联系手机号"}`。格式不对是 422 `{code:"invalid_phone", message:"请填写正确的手机号"}`。用户侧响应和钉钉通知里的手机号都是脱敏的（如 `138****1234`）。
+`normal` 存成 `request_type=常规`，`recent` 存成 `近期`。成功时 201，正文只有 `{id, no}`。`no` 就是 `application_number`，仍由工作台的 `ApplicationNumbers.next_value` 生成。联系电话写在新增的可空列 `evidence_requests.contact_phone`（迁移 `20261122_0012`，可升级也可降级，不改已有行的其他列）。`phone` 必须由本次请求带上，不读取 `users.phone`。缺失或空白是 422 `{code:"phone_required", message:"请填写联系手机号"}`。格式不对是 422 `{code:"invalid_phone", message:"请填写正确的手机号"}`。用户侧响应和钉钉通知里的手机号都是脱敏的（如 `138****1234`）。
 
 列表每条是 `id, no, name, platform, kind, status, status_text, created_at`。详情在此基础上增加 `note`、脱敏 `phone`、`quote_amount`、`failure_reason`、`refund_method`、`refund_amount`、`refund_note`，以及 `accepted_at`、`quoted_at`、`payment_confirmed_at`、`delivered_at`、`completed_at`、`failed_at`、`cancelled_at`、`closed_at`。`status` 与中文的对应是：已提交 `submitted`，已受理 `accepted`，待付款（线下） `pay`，取证中 `working`，已交付 `delivered`，已完成 `done`，取证失败 `failed`，已关闭 `closed`，已取消 `cancelled`。`status_text` 是库里的中文原值。
 

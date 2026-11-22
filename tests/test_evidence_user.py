@@ -137,42 +137,26 @@ def test_recent_request_drops_platform(workbench):
     assert "广东移动" not in detail.text
 
 
-def test_phone_falls_back_to_the_account(workbench):
-    _user, headers = login(workbench, "13900001111")
-    response = submit(workbench, headers, name="回退节目", kind="normal")
-    assert response.status_code == 201, response.text
-    row = fresh(workbench, response.json()["id"])
-    assert row.contact_phone == "13900001111"
-    detail = workbench.client.get(f"/api/v1/evidence-requests/{row.id}", headers=headers)
-    assert detail.json()["phone"] == "139****1111"
-    assert "13900001111" not in detail.text
-
-
-def test_phone_required_and_invalid_phone_are_422(workbench):
-    _user, headers = login(workbench, None)
+def test_phone_is_required_and_not_taken_from_the_account(workbench):
+    user, headers = login(workbench, "13900001111")
+    required = {"code": "phone_required", "message": "请填写联系手机号"}
     missing = submit(workbench, headers, name="无号节目", kind="normal")
-    assert missing.status_code == 422
-    assert missing.json() == {"code": "phone_required", "message": "请填写联系手机号"}
+    blank = submit(workbench, headers, name="无号节目", kind="normal", phone="   ")
+    empty = submit(workbench, headers, name="无号节目", kind="normal", phone=None)
+    for response in (missing, blank, empty):
+        assert response.status_code == 422
+        assert response.json() == required
+        assert "13900001111" not in response.text
     wrong = submit(workbench, headers, name="无号节目", kind="normal", phone="23812348000")
     assert wrong.status_code == 422
-    assert wrong.json()["code"] == "invalid_phone"
-    assert wrong.json()["message"] == "请填写正确的手机号"
+    assert wrong.json() == {"code": "invalid_phone", "message": "请填写正确的手机号"}
     assert "23812348000" not in wrong.text
-    blank = submit(workbench, headers, name="无号节目", kind="normal", phone="   ")
-    assert blank.status_code == 422
-    assert blank.json()["code"] == "invalid_phone"
+    assert "13900001111" not in wrong.text
     assert workbench.session.query(EvidenceRequest).count() == 0
-
-
-def test_invalid_account_phone_is_not_stored(workbench):
-    user = User(id=str(uuid4()), created_at=workbench.clock.now, phone="12345")
-    workbench.session.add(user)
-    workbench.session.commit()
-    headers = workbench.client.auth(user.id)
-    response = submit(workbench, headers, name="坏号节目", kind="normal")
-    assert response.status_code == 422
-    assert response.json()["code"] == "invalid_phone"
-    assert "12345" not in response.text
+    created = submit(workbench, headers, name="自填节目", kind="normal", phone="13700008888")
+    assert created.status_code == 201, created.text
+    assert fresh(workbench, created.json()["id"]).contact_phone == "13700008888"
+    assert user.phone == "13900001111"
 
 
 def test_name_kind_and_note_validation(workbench):
@@ -246,8 +230,8 @@ def test_finished_status_allows_the_same_name(workbench, status):
 def test_another_user_can_submit_the_same_name(workbench):
     _first, first_headers = login(workbench, "13800001001")
     _second, second_headers = login(workbench, "13800001002")
-    one = submit(workbench, first_headers, name="同名节目", kind="normal")
-    two = submit(workbench, second_headers, name="同名节目", kind="normal")
+    one = submit(workbench, first_headers, name="同名节目", kind="normal", phone="13800001001")
+    two = submit(workbench, second_headers, name="同名节目", kind="normal", phone="13800001002")
     assert one.status_code == 201
     assert two.status_code == 201
     assert one.json()["id"] != two.json()["id"]
@@ -256,12 +240,18 @@ def test_another_user_can_submit_the_same_name(workbench):
 def test_list_is_only_mine_and_newest_first(workbench):
     owner, headers = login(workbench, "13800002001")
     other, other_headers = login(workbench, "13800002002")
-    older = submit(workbench, headers, name="较早节目", kind="normal")
+    older = submit(workbench, headers, name="较早节目", kind="normal", phone="13800002001")
     assert older.status_code == 201, older.text
     workbench.clock.now = workbench.clock.now + timedelta(hours=2)
-    newer = submit(workbench, headers, name="较新节目", kind="recent")
+    newer = submit(workbench, headers, name="较新节目", kind="recent", phone="13800002001")
     assert newer.status_code == 201, newer.text
-    foreign = submit(workbench, other_headers, name="别人的节目", kind="normal")
+    foreign = submit(
+        workbench,
+        other_headers,
+        name="别人的节目",
+        kind="normal",
+        phone="13800002002",
+    )
     assert foreign.status_code == 201, foreign.text
     listed = workbench.client.get("/api/v1/evidence-requests", headers=headers)
     assert listed.status_code == 200
