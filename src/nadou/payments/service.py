@@ -14,8 +14,19 @@ from sqlalchemy.orm import Session
 from nadou.admin.orders import EntitlementIssuer, OrderGrantWriter, OrderLookup
 from nadou.config import get_settings
 from nadou.models import Order, User
-from nadou.payments.catalog import PayProduct, product_by_code, product_for_sale, products_for
-from nadou.payments.config import WeChatPaySettings, load_pay_settings, user_may_use_test_tier
+from nadou.payments.catalog import (
+    LIVE_TEST,
+    PayProduct,
+    product_by_code,
+    product_for_sale,
+    products_for,
+)
+from nadou.payments.config import (
+    WeChatPaySettings,
+    live_test_product_id,
+    load_pay_settings,
+    user_may_use_test_tier,
+)
 from nadou.payments.crypto import (
     decrypt_resource,
     mini_program_pay_sign,
@@ -45,9 +56,11 @@ class PaymentService:
         self.notifier = notifier
         self.grant_writer = grant_writer or OrderGrantWriter()
 
-    def list_tiers(self, user: User) -> dict:
-        visible = products_for(user_may_use_test_tier(user.id))
-        return {"tiers": [product.public() for product in visible]}
+    def list_tiers(self, user: User, *, virtual: bool = False) -> dict:
+        tiers = [product.public() for product in products_for(user_may_use_test_tier(user.id))]
+        if virtual and (product_id := live_test_product_id(user.id)):
+            tiers.append({**LIVE_TEST.public(), "product_id": product_id})
+        return {"tiers": tiers}
 
     def create(self, session: Session, user: User, tier: str | None) -> dict:
         product = product_for_sale(
@@ -73,6 +86,8 @@ class PaymentService:
 
     def sync(self, session: Session, user: User, order_number: str) -> dict:
         order = self._own(session, user, order_number)
+        if order.order_number.startswith("XV"):
+            raise PayError(404, "订单不存在")
         if order.status in {"已发放", "发放异常", "已退款"}:
             return _view(order, product_by_code(order.product))
         config = load_pay_settings(get_settings())
@@ -98,7 +113,7 @@ class PaymentService:
             if isinstance(number, str) and _ORDER_NUMBER.fullmatch(number)
             else None
         )
-        if order is None:
+        if order is None or order.order_number.startswith("XV"):
             raise PayError(404, "order", notify=True)
         self._confirm(session, order, config, txn, notify=True)
 
@@ -116,6 +131,7 @@ class PaymentService:
             raise _mismatch(identity, notify)
         if txn.get("trade_state") != "SUCCESS":
             return
+        OrderLookup.lock_membership(session, order)
         user = session.get(User, order.user_id)
         reason = _success_reason(order, user, txn)
         if reason is not None:

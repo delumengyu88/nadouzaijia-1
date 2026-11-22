@@ -84,6 +84,15 @@ def test_evidence_flow_for_each_role(workbench, who):
     ).json()
     assert delivered["status"] == "已交付"
     assert delivered["delivery_method"] == "当面"
+    assert delivered["completed_at"] is None
+    workbench.clock.now += timedelta(minutes=5)
+    completed = call(
+        workbench, "POST", f"/api/v1/admin/evidence-requests/{request_id}/complete", token
+    ).json()
+    assert completed["status"] == "已完成"
+    delivered_at = datetime.fromisoformat(delivered["delivered_at"])
+    assert datetime.fromisoformat(completed["delivered_at"]) == delivered_at
+    assert datetime.fromisoformat(completed["completed_at"]) == delivered_at + timedelta(minutes=5)
     blob = str(delivered)
     assert "http://" not in blob
     assert "https://" not in blob
@@ -116,6 +125,7 @@ def test_evidence_flow_for_each_role(workbench, who):
         "set_quote",
         "confirm_payment",
         "record_delivery",
+        "complete_evidence",
         "fail_evidence",
     } <= actions
 

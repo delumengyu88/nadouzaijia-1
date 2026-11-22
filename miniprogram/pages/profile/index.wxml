@@ -31,9 +31,14 @@
       <view class="row-main"><view class="row-title">查询记录</view></view>
       <text class="chev">›</text>
     </view>
-    <view class="row" data-url="/pages/invite/index" bindtap="go">
-      <view class="row-main"><view class="row-title">{{bindText}}</view></view>
-      <text class="chev" wx:if="{{!bound}}">›</text>
+    <view class="row invite-row" wx:if="{{!inviteLoading && bound && !inviteError}}">
+      <view class="row-main"><view class="row-title">邀请码</view></view>
+      <text class="invite-bound">已绑定 {{inviteMask}}</text>
+    </view>
+    <button class="row invite-row" wx:elif="{{inviteError}}" bindtap="retryLoad">网络异常，请重试 · 重试</button>
+    <view class="row invite-row" wx:elif="{{!inviteLoading}}" data-url="/pages/invite/index" bindtap="go">
+      <view class="row-main"><view class="row-title">{{inviteError || bindText}}</view></view>
+      <text class="chev" wx:if="{{!inviteError}}">›</text>
     </view>
     <view class="row" data-url="/pages/orders/index" bindtap="go">
       <view class="row-main"><view class="row-title">我的订单</view></view>
@@ -44,7 +49,7 @@
     <view class="row-main"><view class="row-title">协议与隐私</view></view>
     <text class="chev">›</text>
   </view>
-  <button class="row" open-type="contact" session-from="profile">
+  <button class="row contact-row" open-type="contact" session-from="profile">
     <view class="row-main"><view class="row-title">联系客服</view></view>
     <text class="chev">›</text>
   </button>

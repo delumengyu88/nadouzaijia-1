@@ -31,8 +31,12 @@
     <view class="row-main">
       <view class="row-title record-name">{{item.name}}</view>
       <view class="row-sub" wx:if="{{item.line}}">{{item.line}}</view>
+      <text class="evidence-link" data-index="{{index}}" catchtap="requestEvidence">维权取证</text>
     </view>
     <text class="tag {{item.badgeCls}}">{{item.badge}}</text>
     <text class="chev">›</text>
   </view>
+  <button wx:if="{{hasMore}}" class="records-more" bindtap="loadMore" loading="{{loadingMore}}" disabled="{{loadingMore}}">
+    {{moreError ? '网络异常，点击重试' : '加载更多'}}
+  </button>
 </view>

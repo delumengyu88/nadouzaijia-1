@@ -1,6 +1,8 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
 var member = require('../../utils/member')
+var testOffer = require('../../api/live-test-offer')
+var state = require('../../api/state')
 
 function defaultPlanId(tier) {
   if (tier === 'regular') return 'membership_regular'
@@ -40,6 +42,8 @@ Page({
     loadError: false
   },
   onShow: function () {
+    this.setData({ testBuild: testOffer.dedicated() })
+    this.refreshTestOffer()
     var info = this.readCenter()
     var self = this
     this._seq = (this._seq || 0) + 1
@@ -91,6 +95,32 @@ Page({
     Object.keys(info).forEach(function (key) { data[key] = info[key] })
     this.setData(data)
   },
+  onHide: function () { this.clearTestOffer() },
+  onUnload: function () { this.clearTestOffer() },
+  clearTestOffer: function () {
+    this._offerSeq = (this._offerSeq || 0) + 1
+    this._offerSession = ''
+    if (this.data.showTestOffer) this.setData({ showTestOffer: false })
+  },
+  refreshTestOffer: function () {
+    this.clearTestOffer()
+    if (!testOffer.enabled() || !state.token()) return
+    var token = state.token()
+    var seq = this._offerSeq
+    var self = this
+    testOffer.discover().then(function (productId) {
+      if (!productId || seq !== self._offerSeq || state.token() !== token) return
+      self._offerSession = token
+      self.setData({ showTestOffer: true })
+    })
+  },
+  openTestOffer: function () {
+    if (!this.data.showTestOffer || !testOffer.enabled() || !this._offerSession || this._offerSession !== state.token()) {
+      this.clearTestOffer()
+      return
+    }
+    wx.navigateTo({ url: '/pages/pay/index?product=' + testOffer.id })
+  },
   retryLoad: function () { this.onShow() },
   pick: function (e) {
     var plan = selectedPlan(this.data.plans, e.currentTarget.dataset.id)
@@ -102,7 +132,7 @@ Page({
     })
   },
   go: function () {
-    if (!this.data.showPay || !this.data.selected) return
+    if (testOffer.dedicated() || !this.data.showPay || !this.data.selected) return
     if (this.data.guest) return require('../../utils/login')(this, this.onShow)
     if (require('../../utils/trial').blockPayment()) return
     wx.navigateTo({ url: '/pages/pay/index?product=' + this.data.selected })

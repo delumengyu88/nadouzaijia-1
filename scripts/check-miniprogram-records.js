@@ -266,6 +266,71 @@ async function main() {
   records.goQuery()
   assert.strictEqual(tabs[tabs.length - 1], '/pages/home/index')
 
+  assert(recordsWxml.includes('catchtap="requestEvidence"'))
+  var openedForms = []
+  wx.navigateTo = function (opt) { openedForms.push(opt.url) }
+  var batchRows = Array.from({ length: 26 }, function (_, i) {
+    return { id: 'batch', name: '节目&' + i, badge: ['已命中', '未命中', '失败'][i % 3], line: '' }
+  })
+  batchRows[24].name = ''
+  function listPage(opt) {
+    var start = opt.data.offset
+    opt.success({ statusCode: 200, data: { items: batchRows.slice(start, start + opt.data.limit), total: batchRows.length } })
+  }
+  route = listPage
+  records.onShow()
+  await drain()
+  assert.strictEqual(records.data.rows.length, 20)
+  assert(records.data.hasMore)
+  var firstCalls = calls.length
+  for (var i of [0, 1, 2]) {
+    records.requestEvidence({ currentTarget: { dataset: { index: i } } })
+    var formUrl = openedForms[openedForms.length - 1]
+    assert.strictEqual(formUrl, '/pages/evidence/index?fromRecord=1&kind=normal&name=' + encodeURIComponent(batchRows[i].name))
+    records.onShow()
+  }
+  assert.strictEqual(calls.length, firstCalls, 'opening forms never submits or refreshes the list on return')
+  route = function (opt) { opt.fail() }
+  records.loadMore()
+  await drain()
+  assert(records.data.moreError && records.data.hasMore)
+  assert.strictEqual(records.data.rows.length, 20)
+  route = listPage
+  records.loadMore()
+  records.loadMore()
+  await drain()
+  assert.strictEqual(calls[calls.length - 1].data.offset, 19)
+  assert.strictEqual(calls[calls.length - 1].data.limit, 21)
+  assert.deepStrictEqual(records.data.rows.map(row => row.name), batchRows.map(row => row.name))
+  assert(!records.data.hasMore)
+  records.requestEvidence({ currentTarget: { dataset: { index: 25 } } })
+  assert(openedForms.pop().endsWith(encodeURIComponent(batchRows[25].name)))
+  records.onShow()
+  assert.strictEqual(records.data.rows.length, 26, 'return preserves additional pages')
+  records.requestEvidence({ currentTarget: { dataset: { index: 24 } } })
+  assert(openedForms.pop().endsWith('name='))
+  records.onShow()
+  records.onShow()
+  await drain()
+  batchRows.unshift({ id: 'new', name: '新查询', badge: '未命中' })
+  records.loadMore()
+  await drain()
+  assert.strictEqual(records.data.rows[0].name, '新查询', 'shifted page boundary refreshes rather than skipping names')
+  var pendingPage
+  route = function (opt) { pendingPage = opt }
+  records.loadMore()
+  var oldPage = pendingPage
+  session('another')
+  var formsBeforeSwitch = openedForms.length
+  records.requestEvidence({ currentTarget: { dataset: { index: 0 } } })
+  assert.strictEqual(openedForms.length, formsBeforeSwitch)
+  var newList = pendingPage
+  listPage(oldPage)
+  route = function (opt) { opt.success({ statusCode: 200, data: { items: [], total: 0 } }) }
+  newList.success({ statusCode: 200, data: { items: [], total: 0 } })
+  await drain()
+  assert.strictEqual(records.data.rows.length, 0)
+  session()
   // 5. 未登录与 401 走登录引导，不显示空列表或网络错误。
   resetTraffic()
   state.clearSession()
