@@ -41,7 +41,9 @@ Page({
     loading: require('../../config').mode !== 'mock',
     loadError: false
   },
+  onIdentityReady: function () { this.onShow() },
   onShow: function () {
+    require('../../utils/login').onShow(this)
     this.setData({ testBuild: testOffer.dedicated() })
     this.refreshTestOffer()
     var info = this.readCenter()

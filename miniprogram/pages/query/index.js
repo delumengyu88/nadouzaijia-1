@@ -14,7 +14,9 @@ Page({
     }
     this.refresh()
   },
+  onIdentityReady: function () { this.onShow() },
   onShow: function () {
+    require('../../utils/login').onShow(this)
     if (this.view) return
     var self = this
     this.stop()

@@ -55,7 +55,9 @@ Page({
     needLogin: false,
     live: false
   },
+  onIdentityReady: function () { this.onShow() },
   onShow: function () {
+    require('../../utils/login').onShow(this)
     this.ticket = (this.ticket || 0) + 1
     var data = nav.layout('orders', this.query)
     data.title = '我的订单'

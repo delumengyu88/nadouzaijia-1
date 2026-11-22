@@ -56,8 +56,8 @@
 </view>
 <view class="mask" wx:if="{{needLogin}}">
   <view class="dialog">
-    <view class="dialog-title">登录后继续</view>
-    <button class="btn" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">微信登录</button>
+    <view class="dialog-title">暂时无法读取账户信息</view>
+    <button class="btn" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">重试</button>
     <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
   </view>
 </view>

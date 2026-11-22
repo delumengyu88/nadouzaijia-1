@@ -1,5 +1,6 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
+var state = require('../../api/state')
 
 var EMPTY = {
   missing: true,
@@ -37,12 +38,24 @@ Page({
     })
     this.load()
   },
+  onShow: function () {
+    if (this.id && this.revision !== state.sessionRevision()) this.load()
+  },
+  onIdentityReady: function () { this.onShow() },
+  onUnload: function () { this.visit += 1 },
   load: function () {
+    var revision = this.revision = state.sessionRevision()
+    var visit = this.visit = (this.visit || 0) + 1
     var detail = api.evidenceDetail(this.id)
     var self = this
     if (detail && typeof detail.then === 'function') {
-      this.setData({ loading: true })
-      return detail.then(function (view) { self.showDetail(view) }, function () { self.showDetail(null) })
+      this.setData(Object.assign({}, EMPTY, { loading: true, acting: false }))
+      function show(view) {
+        if (visit !== self.visit) return
+        if (revision !== state.sessionRevision()) { self.load(); return }
+        self.showDetail(view)
+      }
+      return detail.then(show, function () { show(null) })
     }
     this.showDetail(detail)
   },
@@ -79,14 +92,17 @@ Page({
   },
   withdraw: function () {
     var self = this
-    this.ask('确定撤回这份取证申请？', function () { self.withdrawRequest() })
+    var revision = state.sessionRevision()
+    this.ask('确定撤回这份取证申请？', function () { if (revision === state.sessionRevision()) self.withdrawRequest() })
   },
   withdrawRequest: function () {
-    if (this.data.acting) return
+    if (this.data.acting || this.revision !== state.sessionRevision()) return
     this.setData({ acting: true })
     var result = api.withdrawEvidence(this.id)
     var self = this
+    var visit = this.visit
     function done(res) {
+      if (visit !== self.visit || self.revision !== state.sessionRevision()) return
       self.setData({ acting: false })
       if (res && res.code === 'invalid_state') {
         wx.showToast({ title: '状态已变化', icon: 'none' })

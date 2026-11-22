@@ -46,7 +46,9 @@ Page({
     this.retryLoad()
     return false
   },
+  onIdentityReady: function () { this.onShow() },
   onShow: function () {
+    require('../../utils/login').onShow(this)
     if (require('../../config').mode === 'live' && this._sent !== session.token()) this.retryLoad()
   },
   onUnload: function () { this._inviteTicket++ },

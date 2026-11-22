@@ -740,9 +740,10 @@ try {
   cover('P04-guest')
   home.setData({ draft: '星河旧梦' })
   home.start()
-  expect(home.data.needLogin, 'guest query should ask for login')
+  expect(!home.data.needLogin && api.getDraft() === '星河旧梦', 'guest can prepare a query before identity is ready')
   await home.login()
   expect(!api.profile().guest && api.profile().tier === 'free', 'login should enter the free account')
+  api.setDraft('')
   // Commerce below is an offline prototype flow, separate from real session membership.
   api.switchAccount('free')
   home = open('pages/home/index', {}, 'show')
@@ -1257,6 +1258,10 @@ if (privacyCheck.status !== 0) fail(privacyCheck.stderr || privacyCheck.stdout |
 var homeContentCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-home.js')], { encoding: 'utf8' })
 console.log(homeContentCheck.stdout || '')
 if (homeContentCheck.status !== 0) fail(homeContentCheck.stderr || homeContentCheck.stdout || 'home content check failed')
+var entryCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-free-entry.js')], { encoding: 'utf8' })
+console.log(entryCheck.stdout || '')
+if (entryCheck.status !== 0) fail(entryCheck.stderr || entryCheck.stdout || 'automatic free entry check failed')
+
 var recordsCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-records.js')], { encoding: 'utf8' })
 console.log(recordsCheck.stdout || '')
 if (recordsCheck.status !== 0) fail(recordsCheck.stderr || recordsCheck.stdout || 'records check failed')

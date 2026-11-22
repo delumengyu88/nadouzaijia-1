@@ -2,6 +2,8 @@ var date = require('../utils/date')
 
 var KEY = 'nadou.session.v1'
 var memory = null
+var sessionRevision = 0
+var entryDraft = ''
 
 function blankAccount() {
   return {
@@ -187,6 +189,8 @@ function save() {
 }
 
 function reset() {
+  entryDraft = ''
+  sessionRevision += 1
   memory = buildSeed()
   save()
   return memory
@@ -222,6 +226,8 @@ function token() {
 function clearSession(expectedToken) {
   var data = load()
   if (expectedToken && (!data.auth || data.auth.token !== expectedToken)) return
+  entryDraft = ''
+  sessionRevision += 1
   data.auth = null
   data.current = 'guest'
   save()
@@ -239,10 +245,26 @@ function syncMembership(account, user) {
   account.paidRegularExpiry = membershipDay(user.regular_expires_at)
 }
 
-function setSession(auth) {
+function getDraft() {
+  var owner = account()
+  return owner ? owner.draft || '' : entryDraft
+}
+
+function setDraft(value) {
+  var text = String(value || '')
+  var owner = account()
+  if (!owner) { entryDraft = text; return }
+  owner.draft = text
+  save()
+}
+
+function setSession(auth, acceptEntryDraft) {
   var data = load()
   var id = 'wx:' + auth.user.id
+  sessionRevision += 1
   var account = data.accounts[id] || blankAccount()
+  if (acceptEntryDraft && entryDraft) account.draft = entryDraft
+  entryDraft = ''
   syncMembership(account, auth.user)
   data.accounts[id] = account
   data.current = id
@@ -258,6 +280,9 @@ module.exports = {
   currentId: currentId,
   userId: userId,
   token: token,
+  getDraft: getDraft,
+  setDraft: setDraft,
+  sessionRevision: function () { token(); return sessionRevision },
   setSession: setSession,
   clearSession: clearSession,
   blankAccount: blankAccount

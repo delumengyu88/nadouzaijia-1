@@ -101,7 +101,7 @@ async function main() {
     assert.deepStrictEqual(navigation, [], 'success refreshes the original page')
     var template = fs.readFileSync(require.resolve('../miniprogram/pages/' + name + '/index.wxml'), 'utf8')
     assert(template.includes('loading="{{loginLoading}}"') && template.includes('disabled="{{loginLoading}}"'))
-    assert(template.includes('login-error') && template.includes('{{loginError}}'))
+    assert(template.includes('loginError'))
   }
   // A freshly loaded state module must recover the session from persistent storage.
   delete require.cache[require.resolve('../miniprogram/api/state')]

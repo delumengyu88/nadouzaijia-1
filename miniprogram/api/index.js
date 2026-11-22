@@ -15,4 +15,13 @@ var client = Object.assign({}, api, mode === 'mock' ? {} : require('./live'))
   }
 })
 client.login = require('./auth').login
+client.ensureEntry = function () {
+  var state = require('./state')
+  if (state.token()) return Promise.resolve(state.load().auth.user)
+  if (config.mode === 'mock') {
+    if (api.accountKind() === 'guest') api.switchAccount('free')
+    return Promise.resolve(api.profile())
+  }
+  return client.login()
+}
 module.exports = client
