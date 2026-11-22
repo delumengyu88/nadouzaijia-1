@@ -15,9 +15,11 @@ function describe(item) {
   if (!body) return { name: item.name, failed: !!item.error, badge: item.error ? '失败' : '查询中',
     badgeCls: 'bad', line: item.error || '' }
   var hit = body.outcome !== 'miss'
-  var platforms = body.records.filter(function (r) { return !r.locked && r.platform && r.platform !== '平台未识别' }).map(function (r) { return r.platform })
+  // The server lists only platforms that may prefill 委托取证 (never generated-date rows).
+  var platforms = (body.evidence_platforms || []).slice()
   return { name: item.name, hit: hit, missed: !hit, failed: false,
     badge: hit ? '已命中' : '未命中', badgeCls: hit ? 'ok' : 'muted',
+    evidenceName: body.evidence_program_name || '',
     evidencePlatform: platforms.filter(function (p, i) { return platforms.indexOf(p) === i }).join('、'),
     line: !hit ? '当前索引未收录该节目名。' : body.outcome === 'recent_only' ? '有最新记录，可委托取证' :
       '命中 ' + body.records.length + ' 条 · 涉及 ' + body.platform_count + ' 个平台' }
@@ -77,11 +79,12 @@ module.exports = {
     return http.searchProgram(name).then(function (body) {
       if (require('../config').calibrating) return require('../utils/calibration').blockedResult()
       var rows = body.records.filter(function (r) { return !r.locked && r.can_download_report }).map(function (r) {
-        return { platform: r.platform || '平台未识别', subtype: r.platform_subtype || '', category: r.category || '',
+        return { platform: r.platform || '其他平台', subtype: r.platform_subtype || '', category: r.category || '',
           type: '', uploaded: name, matched: body.program_name, date: (r.checked_at || '').slice(0, 10) }
       })
       if (!rows.length) return { ok: false, message: '没有可导出的记录' }
-      return { ok: true, filename: '汇总.xlsx', bytes: require('../utils/xlsx').build({ title: '那豆在架 命中结果',
+      var book = require('../utils/xlsx')
+      return { ok: true, count: rows.length, filename: book.filename(rows.length), bytes: book.build({ title: '那豆在架 命中结果',
         scope: '节目 ' + name, day: new Date().toISOString().slice(0, 10), rows: rows }) }
     })
   }

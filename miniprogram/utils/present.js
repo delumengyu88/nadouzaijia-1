@@ -1,4 +1,5 @@
 var catalog = require('../api/catalog')
+var OTHER = '其他平台'
 
 function findRow(id) {
   var found = null
@@ -13,13 +14,13 @@ function findRow(id) {
 function toRow(rec, programName, mock) {
   var extra = mock ? (findRow(rec.record_id) || {}) : {}
   var platform = rec.platform || extra.platform
-  var unknown = !platform || platform === '平台未识别'
+  var unknown = !platform || platform === OTHER || platform === '平台未识别'
   return {
     id: rec.record_id,
     mock: mock,
     image: /^https:\/\//.test(rec.thumbnail_url || '') ? rec.thumbnail_url : '',
     title: extra.title || programName,
-    platform: unknown ? '平台未识别' : platform,
+    platform: unknown ? OTHER : platform,
     unknown: unknown,
     sub: unknown ? '' : (rec.platform_subtype || extra.sub || ''),
     category: rec.category || '',
@@ -32,15 +33,31 @@ function toRow(rec, programName, mock) {
   }
 }
 
+// 其他平台 always goes last on P08; the rest keep server order (stable sort).
+function otherLast(rows) {
+  var known = rows.filter(function (row) { return !row.unknown })
+  return known.concat(rows.filter(function (row) { return row.unknown }))
+}
+
 function groupRows(rows) {
   var groups = []
-  rows.forEach(function (row) {
+  otherLast(rows).forEach(function (row) {
     var last = groups.length ? groups[groups.length - 1] : null
     if (!last || last.platform !== row.platform) {
       groups.push({ platform: row.platform, unknown: row.unknown, rows: [row] })
     } else last.rows.push(row)
   })
   return groups
+}
+
+// Live searches carry the server list, which never includes generated-date rows.
+function evidencePlatforms(search, opens) {
+  if (Array.isArray(search.evidence_platforms)) return search.evidence_platforms.slice()
+  var names = []
+  opens.forEach(function (row) {
+    if (!row.unknown && names.indexOf(row.platform) === -1) names.push(row.platform)
+  })
+  return names
 }
 
 function present(search, meta) {
@@ -82,6 +99,8 @@ function present(search, meta) {
     platformLine: '涉及 ' + search.platform_count + ' 个平台',
     showOpen: showOpen,
     groups: showOpen ? groupRows(opens) : [],
+    evidencePlatforms: evidencePlatforms(search, opens),
+    evidenceName: typeof search.evidence_program_name === 'string' ? search.evidence_program_name : name,
     showLocked: showLocked,
     lockedCount: lockedCount,
     lockedRange: range,
@@ -98,4 +117,4 @@ function present(search, meta) {
   }
 }
 
-module.exports = { present: present, findRow: findRow }
+module.exports = { present: present, findRow: findRow, otherLast: otherLast, OTHER: OTHER }

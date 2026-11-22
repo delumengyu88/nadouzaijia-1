@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime
 
 from sqlalchemy import select
@@ -31,7 +32,7 @@ class EmptyQuery(Exception):
 class ProgramSearch:
     """Search one program and filter every record for the caller."""
 
-    UNRECOGNIZED_PLATFORM = PlatformNames.UNRECOGNIZED
+    UNRECOGNIZED_PLATFORM = PlatformNames.OTHER
     HIT_LABEL = "已命中"
     REASON_UNKNOWN_AGE = "检测时间待核实"
     _LOCKED_KEYS = ("record_id", "age_bucket", "locked", "lock_reason")
@@ -66,7 +67,7 @@ class ProgramSearch:
             task = tasks.get(record.task_id)
             if not self.included(task) or not self.confirmed(record):
                 continue
-            when = self.record_time(task, record)
+            when = self.tier_time(task, record)
             age = RecordAge.days(when, self.now) if when is not None else None
             if age is not None and age >= 30:
                 key = self._platform_key(task)
@@ -76,14 +77,17 @@ class ProgramSearch:
                     platforms.add(key)
             kept.append((age, record, task))
 
+        # Real dates first, then generated placeholders, then rows with no date.
         kept.sort(
             key=lambda item: (
                 item[0] is None,
+                self.has_generated_date(item[2], item[1]),
                 item[0] if item[0] is not None else 0,
                 item[1].id,
             )
         )
         open_records: list[OpenRecordOut] = []
+        evidence_platforms: list[str] = []
         locked_records: list[LockedRecordOut] = []
         locked_ages: list[int] = []
         any_old = False
@@ -104,6 +108,14 @@ class ProgramSearch:
                 locked_records.append(presented)
             else:
                 open_records.append(presented)
+                name = presented.platform
+                if (
+                    self.reportable(record)
+                    and name
+                    and name != self.UNRECOGNIZED_PLATFORM
+                    and name not in evidence_platforms
+                ):
+                    evidence_platforms.append(name)
 
         if any_old:
             outcome = "hit"
@@ -123,6 +135,10 @@ class ProgramSearch:
             locked_summary=self._summary_out(summary),
             platform_groups=self._group_by_platform(open_records),
             locked_records=locked_records,
+            evidence_platforms=evidence_platforms,
+            evidence_program_name=canonical
+            if any(self.reportable(record) for _age, record, _task in kept)
+            else "",
         )
 
     def _live_grants(self, user_id: str | None) -> list[Entitlement]:
@@ -196,8 +212,41 @@ class ProgramSearch:
         return record.uploaded_at
 
     @staticmethod
+    def reportable(record: IndexRecord) -> bool:
+        """False for rows whose date is a generated placeholder.
+
+        Those rows never enter an xlsx export, 委托取证 prefill, or any formal
+        report, whatever date or tier they show in search.
+        """
+        return not record.date_generated
+
+    @staticmethod
+    def has_generated_date(task: Task | None, record: IndexRecord) -> bool:
+        """The row's only date is a generated placeholder."""
+        return (
+            ProgramSearch.record_time(task, record) is None
+            and record.date_generated
+            and record.generated_uploaded_at is not None
+        )
+
+    @staticmethod
+    def tier_time(task: Task | None, record: IndexRecord) -> datetime | None:
+        """Real detection time, else the generated placeholder. Search only."""
+        real = ProgramSearch.record_time(task, record)
+        if real is not None:
+            return real
+        if record.date_generated:
+            return record.generated_uploaded_at
+        return None
+
+    @staticmethod
     def _unverified(task: Task | None) -> bool:
-        return task is None or task.source_unverified or not task.platform_name
+        return (
+            task is None
+            or task.source_unverified
+            or not (task.platform_name or "").strip()
+            or task.platform_name in (PlatformNames.UNRECOGNIZED, PlatformNames.OTHER)
+        )
 
     @staticmethod
     def _summary_out(summary: LockedSummary) -> LockedSummaryOut:
@@ -224,7 +273,10 @@ class ProgramSearch:
             )
             buckets.setdefault(key, []).append(record)
         groups: list[PlatformGroupOut] = []
-        for platform, province, operator in sorted(buckets):
+        # Unrecognized platforms (shown as 其他平台) always come last.
+        for platform, province, operator in sorted(
+            buckets, key=lambda key: (key[0] in ("", PlatformNames.OTHER), key)
+        ):
             groups.append(
                 PlatformGroupOut(
                     platform=platform or ProgramSearch.UNRECOGNIZED_PLATFORM,
@@ -251,6 +303,8 @@ class ProgramSearch:
         decision: AccessDecision,
         user_id: str | None,
     ) -> LockedRecordOut | OpenRecordOut:
+        if not decision.locked and not self.reportable(record):
+            decision = replace(decision, can_download_report=False)
         bucket = decision.age_bucket
         if decision.locked:
             return LockedRecordOut(
@@ -283,7 +337,7 @@ class ProgramSearch:
                 payload["network_type"] = task.network_type
             payload["frame_count"] = record.frame_count
             payload["timestamps"] = list(record.timestamps or [])
-            when = self.record_time(task, record)
+            when = self.tier_time(task, record)
             if when is not None:
                 payload["checked_at"] = when.astimezone(RecordAge.TZ).isoformat()
             if record.category:

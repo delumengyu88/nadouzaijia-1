@@ -47,7 +47,7 @@ Page({
       navHeight: layout.navHeight,
       title: '截图',
       showBack: true,
-      platform: (row && row.platform) || extra.platform || '平台未识别',
+      platform: (row && row.platform) || extra.platform || '其他平台',
       category: row ? (row.category || '') : '',
       unknown: !(row && row.platform) && !extra.platform,
       mock: !real,

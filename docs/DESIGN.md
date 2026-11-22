@@ -32,7 +32,7 @@ Normalization and parsing are classes. `SignedUrlProvider` is the seam the real 
 
 ## Data model
 
-Ages use the Beijing calendar date of `tasks.created_at`. If that is null, use `tasks.file_uploaded_at`, then `index_records.uploaded_at`. If all three are null, the row is not treated as younger than 30 days: it stays locked with `检测时间待核实`, is omitted from `platform_count` and from `unverified_source_count`, and does not by itself make the outcome `hit` or `recent_only`. A hit-list row whose `task_id` is absent from the export counts as `done`.
+Ages use the Beijing calendar date of `tasks.created_at`. If that is null, use `tasks.file_uploaded_at`, then `index_records.uploaded_at`. If all three are null, search falls back to `index_records.generated_uploaded_at` when `date_generated` is set (see 生成日期 below). If there is still no time, the row is not treated as younger than 30 days: it stays locked with `检测时间待核实`, is omitted from `platform_count` and from `unverified_source_count`, and does not by itself make the outcome `hit` or `recent_only`. A hit-list row whose `task_id` is absent from the export counts as `done`.
 
 | Table | Why it exists |
 |---|---|
@@ -47,7 +47,7 @@ Ages use the Beijing calendar date of `tasks.created_at`. If that is null, use `
 
 `PlatformNames` maps a variant such as `GD移动` to operator `移动` and province `广东`. OTT and 百视通 are stored in `platform_subtype` and are not part of the count. The same class is used for the CSV `平台名` and for the filename parser. A name that cannot be parsed leaves the three fields null and `source_unverified` true. `is_test` is set when the raw filename, the raw platform, or the canonical platform starts with `test_` (case-insensitive, after full/half-width fold). Test rows are stored so a later export can clear the flag, and they never appear in search or in the workbook export.
 
-The API shows `平台未识别` only on records the caller is allowed to see. Those rows still count as hits, and they are not part of the distinct platform count. The workbench section adds staff, audit, evidence, order, and index-run tables. There is still no evidence ZIP or download-archive table.
+The API shows `其他平台` (`PlatformNames.OTHER`) only on records the caller is allowed to see. Those rows still count as hits, and they are not part of the distinct platform count. The workbench section adds staff, audit, evidence, order, and index-run tables. There is still no evidence ZIP or download-archive table.
 
 ## Endpoints
 
@@ -103,7 +103,7 @@ Product ids: `screenshot` (one purchase opens one ≥90-day locked record; the c
 
 The index stores titles only. One normalized title is one program, so search returns all of that title's records together. There is no `ambiguous` outcome.
 
-`platform_count` is distinct province+operator pairs on records with a known age `≥30`. 广东移动 and 浙江移动 are two. OTT, 百视通, 公网, and 专网 are display tags on the same pair and do not add to the count. A name that cannot be parsed is still a hit, shown as `平台未识别`, and is left out of `platform_count`. `unverified_source_count` is how many of those aged rows are unrecognized. Rows with no check time are in neither count.
+`platform_count` is distinct province+operator pairs on records with a known age `≥30`. 广东移动 and 浙江移动 are two. OTT, 百视通, 公网, and 专网 are display tags on the same pair and do not add to the count. A name that cannot be parsed is still a hit, shown as `其他平台`, and is left out of `platform_count`. `unverified_source_count` is how many of those aged rows are unrecognized. Rows with no check time are in neither count.
 
 `ProgramTitleGuard` is a configurable stop-word hook. The built-in list is empty. A blocked title is `miss` with an empty `locked_summary` and is not priced. There is no character-length cutoff.
 
@@ -217,7 +217,7 @@ Columns, in order: 平台, 子类型, 节目类型, 上传节目名, 匹配节�
 
 Exports contain only visible consensus hits. Columns are 平台、子类型、类别、节目类型、上传节目名、匹配节目名、检测日期、命中画面截图. Category comes from the index record, independently of query program type. Historic resolution values never remap the uploaded title.
 
-平台 is the province+operator name from `PlatformNames`, such as `山东移动` or `示例视频`. 子类型 is the network and subtype tags joined by a space, such as `专网 OTT`. A name that cannot be parsed is still a hit row: 平台 is `平台未识别` and 子类型 is blank.
+平台 is the province+operator name from `PlatformNames`, such as `山东移动` or `示例视频`. 子类型 is the network and subtype tags joined by a space, such as `专网 OTT`. A name that cannot be parsed is still a hit row: 平台 is `其他平台` and 子类型 is blank. Within each program, 其他平台 rows come last.
 
 节目类型 is the query program's type, or blank. 上传节目名 is the uploaded text. 匹配节目名 is the canonical name. 检测日期 is the Beijing calendar date of the same timestamp search uses (`tasks.created_at`, else `tasks.file_uploaded_at`, else `index_records.uploaded_at`). Date only, not a time.
 
@@ -271,3 +271,14 @@ filtering; do not deploy such a list without business approval. There is no edit
 The mini program's bundled `miniprogram/stop-words.json` is the same first batch;
 when an approved list changes, synchronize the bundle and rebuild it. The backend
 remains authoritative. Tests verify the two checked-in lists stay identical.
+
+
+## 生成日期（孤儿记录）
+
+Some `index_records` rows have no task in the export and a NULL `uploaded_at`. For the trial build they may get a generated placeholder date, stored apart from real times:
+
+- `uploaded_at` stays NULL. The placeholder lives in `generated_uploaded_at`, and `date_generated = true` marks the row. A check constraint (`ck_index_generated_date`) forbids a flag without a placeholder, a placeholder without a flag, or a flag next to a real `uploaded_at`. A later real `uploaded_at` from `IndexRecordStore.upsert` clears both fields, and so does `TaskExportImporter` when it imports the record's task with a real time (`created_at` or `file_uploaded_at`); importing the task without a time leaves the placeholder in place.
+- Search (`/api/v1/programs/search`) uses the real time first, else the placeholder, for age tiers and ordering. Rows with real dates sort before rows with placeholders. Pages and the API show the placeholder like any other date, with no wording or badge; only the database flag tells them apart.
+- Flagged rows are never formal output, decided server-side: `RecordWindow.permitted` drops them from `/api/v1/queries/{query_id}/export`; in search they always have `can_download_report = false` (so the mini program's own xlsx skips them) and they never contribute to `evidence_platforms` or `evidence_program_name`, the only values the mini program uses to prefill 委托取证. When every visible row of a program is flagged, `evidence_program_name` is intentionally empty, so P07/P08 open 委托取证 with a blank program name for the member to fill in rather than prefilling from generated rows.
+- Because of that exclusion the exported row count can be lower than the count on P08. Every member xlsx prints the exported count in A1 (`那豆在架 命中结果（共导出 N 条）`) and in the file name (`汇总-共导出N条.xlsx`, or `.zip` when split). For a split archive the outer file name counts all rows; A1 in each part counts that part’s rows.
+- `scripts/backfill_generated_dates.py` writes the placeholders. Each date is `2026-11-22` minus `60 + sha256("nadou-orphan-dates-v1:" + id) mod 131` days at 12:00 Beijing time, so reruns give the same result. `--dry-run` only counts; `--undo` clears every flagged row. Before launch, either fill in real dates or remove these rows.

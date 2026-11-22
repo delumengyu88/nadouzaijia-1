@@ -405,11 +405,12 @@ def test_header_columns_and_exact_strings(session, clock):
     response = export(make_client(session, clock), "q-layout", "user-vip")
     assert response.status_code == 200
     disposition = response.headers["content-disposition"]
-    assert quote(PartNames.single()) in disposition
+    assert quote(PartNames.single(3)) in disposition
+    assert quote("汇总-共导出3条.xlsx") in disposition
     workbook = load_workbook(BytesIO(response.content))
     assert workbook.sheetnames == ["命中结果", "未命中与待处理"]
     sheet = workbook["命中结果"]
-    assert sheet["A1"].value == "那豆在架 命中结果"
+    assert sheet["A1"].value == "那豆在架 命中结果（共导出 3 条）"
     block = meta_block(sheet)
     assert block["查询编号"] == "q-layout"
     assert block["查询范围"] == "3 个节目 · 已收录平台 · ≥30 天记录"
@@ -619,7 +620,7 @@ def test_excludes_test_prefix_and_non_done(session, clock):
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
     assert len(records) == 2
-    assert {row[0] for row in records} == {"示例视频", PlatformNames.UNRECOGNIZED}
+    assert {row[0] for row in records} == {"示例视频", PlatformNames.OTHER}
     assert rest_table(workbook["未命中与待处理"]) == [("只有新记录", RestStatus.MISS, None)]
     text = " ".join(str(value) for row in records for value in row if value)
     assert "TEST_台" not in text
@@ -903,13 +904,13 @@ def test_unrecognized_platform_is_still_a_hit(session, clock):
     _headers, records, _styled = hit_table(workbook["命中结果"])
     by_name = {row[4]: (row[0], row[1]) for row in records}
     assert by_name == {
-        "多解节目": (PlatformNames.UNRECOGNIZED, None),
-        "无解节目": (PlatformNames.UNRECOGNIZED, None),
+        "多解节目": (PlatformNames.OTHER, None),
+        "无解节目": (PlatformNames.OTHER, None),
         "已知节目": ("示例视频", "专网 OTT"),
         "山东节目": ("山东移动", "专网 OTT"),
     }
     assert len(records) == 4
-    assert PlatformNames.UNRECOGNIZED == "平台未识别"
+    assert PlatformNames.OTHER == "其他平台"
     assert rest_table(workbook["未命中与待处理"]) == []
     workbook.close()
 
@@ -976,7 +977,7 @@ def test_splits_when_the_workbook_would_exceed_the_limit(session, clock):
     whole = export(make_client(session, clock), "q-split", "user-vip")
     assert whole.status_code == 200
     assert whole.headers["content-type"].startswith(ExportMedia.XLSX)
-    assert quote(PartNames.single()) in whole.headers["content-disposition"]
+    assert quote(PartNames.single(3)) in whole.headers["content-disposition"]
     whole_book = load_workbook(BytesIO(whole.content))
     assert whole_book.sheetnames == ["命中结果", "未命中与待处理"]
     assert "部分" not in meta_block(whole_book["命中结果"])
@@ -986,7 +987,7 @@ def test_splits_when_the_workbook_would_exceed_the_limit(session, clock):
 
     forced = export(make_client(session, clock, max_bytes=1024), "q-split", "user-vip")
     assert forced.headers["content-type"].startswith("application/zip")
-    assert quote(PartNames.archive()) in forced.headers["content-disposition"]
+    assert quote(PartNames.archive(3)) in forced.headers["content-disposition"]
     _assert_parts(forced.content, expected_rows=3)
 
     boundary = export(
@@ -1010,12 +1011,12 @@ def _assert_parts(blob: bytes, expected_rows: int):
         workbook = load_workbook(BytesIO(payload))
         try:
             block = meta_block(workbook["命中结果"])
-            assert workbook["命中结果"]["A1"].value == "那豆在架 命中结果"
             assert block["查询编号"] == "q-split"
             assert block["查询范围"] == "5 个节目 · 已收录平台 · ≥30 天记录"
             assert block["生成日期"] == "2026-11-21"
             assert block["部分"] == PartNames.label(index, len(payloads))
             _headers, rows, _styled = hit_table(workbook["命中结果"])
+            assert workbook["命中结果"]["A1"].value == f"那豆在架 命中结果（共导出 {len(rows)} 条）"
             total_rows += len(rows)
             assert len(rows) >= 1
             last = index == len(payloads)

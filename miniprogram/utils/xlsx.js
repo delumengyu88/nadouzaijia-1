@@ -111,10 +111,20 @@ function cell(col, row, value) {
   return '<c r="' + col + row + '" t="inlineStr"><is><t>' + esc(value) + '</t></is></c>'
 }
 
+// Rows with a generated date are excluded server-side, so the exported count can
+// differ from the count on P08. Print the real exported count in A1 and the name.
+function countLabel(count) {
+  return '共导出 ' + count + ' 条'
+}
+
+function filename(count) {
+  return '汇总-共导出' + count + '条.xlsx'
+}
+
 function build(table) {
   var header = ['平台', '子类型', '类别', '节目类型', '上传节目名', '匹配节目名', '检测日期', '命中画面截图']
   var lines = []
-  lines.push('<row r="1">' + cell('A', 1, table.title) + '</row>')
+  lines.push('<row r="1">' + cell('A', 1, table.title + '（' + countLabel(table.rows.length) + '）') + '</row>')
   lines.push('<row r="2">' + cell('A', 2, '查询范围') + cell('B', 2, table.scope) + '</row>')
   lines.push('<row r="3">' + cell('A', 3, '生成日期') + cell('B', 3, table.day) + '</row>')
   var head = header.map(function (name, i) {
@@ -167,4 +177,4 @@ function build(table) {
   ])
 }
 
-module.exports = { build: build }
+module.exports = { build: build, countLabel: countLabel, filename: filename }

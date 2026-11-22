@@ -36,6 +36,9 @@ class PlatformNames:
     """
 
     UNRECOGNIZED = "平台未识别"
+    # Member-facing label (API, mini program, member xlsx) for an empty or
+    # unrecognized platform. The workbench keeps UNRECOGNIZED for staff.
+    OTHER = "其他平台"
     _NAME_MAP: tuple[tuple[str, str], ...] = (("gd移动", "广东移动"), ("示例视频平台", "示例视频"))
     _SUBTYPES: tuple[tuple[str, str], ...] = (("百视通", "百视通"), ("ott", "OTT"))
     _NETWORK_TAGS = ("专网", "公网")

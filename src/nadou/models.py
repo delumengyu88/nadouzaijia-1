@@ -8,6 +8,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     event,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -161,6 +162,11 @@ class IndexRecord(Base):
             "hit_type IN ('consensus', 'dispute', 'review')",
             name="ck_index_hit_type",
         ),
+        CheckConstraint(
+            "(date_generated AND generated_uploaded_at IS NOT NULL AND uploaded_at IS NULL)"
+            " OR (NOT date_generated AND generated_uploaded_at IS NULL)",
+            name="ck_index_generated_date",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -172,6 +178,14 @@ class IndexRecord(Base):
     frame_count: Mapped[int] = mapped_column(Integer, nullable=False)
     timestamps: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     uploaded_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+    # Placeholder detection time for rows with no task and no uploaded_at.
+    # It is never a real detection time: search may use it for age tiers and
+    # ordering, but exports, evidence prefill, and formal reports exclude any
+    # row with date_generated set. uploaded_at stays NULL on these rows.
+    generated_uploaded_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+    date_generated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
 
 
 class StaffAccount(Base):

@@ -80,3 +80,7 @@ class SearchOut(BaseModel):
     locked_summary: LockedSummaryOut
     platform_groups: list[PlatformGroupOut]
     locked_records: list[LockedRecordOut]
+    # Recognized platforms of visible rows that may prefill 委托取证.
+    # Rows with a generated date are never included.
+    evidence_platforms: list[str] = []
+    evidence_program_name: str = ""

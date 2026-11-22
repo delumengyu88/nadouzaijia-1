@@ -335,7 +335,7 @@ def test_counts_exclusions_and_fallbacks(session, client, clock):
     assert by_id(body)["rec-fresh"]["age_bucket"] == "lt_30"
     assert "平台乙" not in json.dumps(body)
     assert by_id(body)["rec-orphan"]["access"] == "lowres"
-    assert by_id(body)["rec-orphan"]["platform"] == "平台未识别"
+    assert by_id(body)["rec-orphan"]["platform"] == "其他平台"
     assert by_id(body)["rec-fallback"]["access"] == "lowres"
     assert by_id(body)["rec-fallback"]["platform"] == "平台己"
     assert "checked_at" in by_id(body)["rec-fallback"]
@@ -755,8 +755,8 @@ def test_unrecognized_platform_still_counts_as_a_hit(session, client, clock):
     assert body["unverified_source_count"] == 2
     rows = by_id(body)
     assert rows["plat-known-rec"]["platform"] == "广东移动"
-    assert rows["plat-unknown-rec"]["platform"] == "平台未识别"
-    assert rows["plat-many-rec"]["platform"] == "平台未识别"
+    assert rows["plat-unknown-rec"]["platform"] == "其他平台"
+    assert rows["plat-many-rec"]["platform"] == "其他平台"
     assert "双解平台" not in json.dumps(body)
 
 
@@ -810,7 +810,7 @@ def test_platform_count_is_province_plus_operator(session, client, clock):
     assert rows["op-gd-bestv-rec"]["platform_subtype"] == "百视通"
     assert rows["op-zj-rec"]["platform"] == "浙江移动"
     assert rows["op-zj-rec"]["network_type"] == "专网"
-    assert rows["op-bad-rec"]["platform"] == "平台未识别"
+    assert rows["op-bad-rec"]["platform"] == "其他平台"
     assert "platform_operator" not in rows["op-bad-rec"]
 
 

@@ -84,7 +84,7 @@ class PlatformLabel:
         raw = task.platform_name if task is not None else None
         resolved = PlatformNames.normalize(raw)
         if resolved.unrecognized or not resolved.name:
-            return PlatformNames.UNRECOGNIZED, ""
+            return PlatformNames.OTHER, ""
         tags: list[str] = []
         network = task.network_type if task is not None else None
         if network:
@@ -120,21 +120,41 @@ class BeijingDate:
         return when.astimezone(RecordAge.TZ).strftime("%Y-%m-%d")
 
 
+class ExportCount:
+    """How many hit rows were actually exported. Printed in A1 and the file name.
+
+    Rows with a generated date are excluded from export, so this can be lower
+    than the count shown in the mini program.
+    """
+
+    @staticmethod
+    def label(count: int) -> str:
+        return f"共导出 {count} 条"
+
+    @staticmethod
+    def stem(count: int) -> str:
+        return f"共导出{count}条"
+
+
 class PartNames:
     STEM = "汇总"
     MEASURE_LABEL = "第 999 部分 / 共 999 部分"
 
     @staticmethod
-    def single() -> str:
-        return f"{PartNames.STEM}.xlsx"
+    def single(count: int | None = None) -> str:
+        if count is None:
+            return f"{PartNames.STEM}.xlsx"
+        return f"{PartNames.STEM}-{ExportCount.stem(count)}.xlsx"
 
     @staticmethod
     def part(index: int) -> str:
         return f"{PartNames.STEM}-{index}.xlsx"
 
     @staticmethod
-    def archive() -> str:
-        return f"{PartNames.STEM}.zip"
+    def archive(count: int | None = None) -> str:
+        if count is None:
+            return f"{PartNames.STEM}.zip"
+        return f"{PartNames.STEM}-{ExportCount.stem(count)}.zip"
 
     @staticmethod
     def label(index: int, total: int) -> str:
@@ -227,6 +247,10 @@ class HitWorkbook:
     def __init__(self, max_bytes: int = ExportLimits.MAX_BYTES) -> None:
         self.max_bytes = max_bytes
 
+    @classmethod
+    def first_row(cls, exported_count: int) -> str:
+        return f"{cls.TITLE}（{ExportCount.label(exported_count)}）"
+
     def render(self, header: ExportHeader, hits: list[HitRow], rest: list[RestRow]) -> ExportFile:
         ranges = self._ranges(header, hits, rest)
         total = len(ranges)
@@ -237,9 +261,10 @@ class HitWorkbook:
             blob = self._bytes(header, hits[start:end], sheet_rest, label)
             name = PartNames.single() if total == 1 else PartNames.part(index)
             parts.append((name, blob))
+        count = len(hits)
         if total == 1:
-            return ExportFile(parts[0][0], ExportFile.XLSX, parts[0][1])
-        return ExportFile(PartNames.archive(), ExportFile.ZIP, WorkbookArchive.zip(parts))
+            return ExportFile(PartNames.single(count), ExportFile.XLSX, parts[0][1])
+        return ExportFile(PartNames.archive(count), ExportFile.ZIP, WorkbookArchive.zip(parts))
 
     def _ranges(
         self,
@@ -329,7 +354,7 @@ class HitWorkbook:
         part_label: str | None,
         columns: tuple[str, ...],
     ) -> None:
-        sheet["A1"] = self.TITLE
+        sheet["A1"] = self.first_row(len(hits))
         sheet["A1"].font = SheetStyle.title()
         sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(columns))
         sheet.row_dimensions[1].height = 24
@@ -438,6 +463,9 @@ class RecordWindow:
         grants: AccessGrants,
     ) -> bool:
         if not ProgramSearch.included(task) or not ProgramSearch.confirmed(record):
+            return False
+        # Generated placeholder dates never enter an export or formal report.
+        if not ProgramSearch.reportable(record):
             return False
         filename = task.raw_filename if task is not None else ""
         platform_raw = task.platform_name if task is not None else ""
@@ -564,7 +592,14 @@ class QueryExport:
             if when is None:
                 continue
             kept.append((when, record, task))
-        kept.sort(key=lambda item: (item[0], item[1].id))
+        # 其他平台 rows go last, as in the mini program.
+        kept.sort(
+            key=lambda item: (
+                PlatformLabel.cells(item[2])[0] == PlatformNames.OTHER,
+                item[0],
+                item[1].id,
+            )
+        )
         return [(record, task) for _when, record, task in kept]
 
     def _hit(
