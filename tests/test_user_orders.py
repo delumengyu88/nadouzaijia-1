@@ -232,6 +232,9 @@ def test_test_products_and_statuses_are_returned_as_stored(client, session, cloc
     assert by_no["ND-NOPRODUCT"]["product"] is None
     assert by_no["ND-NOPRODUCT"]["isTest"] is False
     assert by_no["ND-NOPRODUCT"]["line"] == "待支付 · ¥10 · 2026-11-21"
+    legacy = client.get("/api/v1/pay/orders/ND-NOPRODUCT").json()
+    assert legacy["amount_fen"] is None
+    assert legacy["paid_at"] is None
 
 
 def test_list_and_detail_omit_payment_secrets(client, session, clock):
@@ -276,7 +279,7 @@ def test_list_and_detail_omit_payment_secrets(client, session, clock):
     assert body["title"] == "VIP"
     assert body["membership"] == "vip"
     assert body["duration_days"] == 30
-    assert body["amount_fen"] == 59900
+    assert body["amount_fen"] == "59900"
     assert body["paid_at"] == clock.astimezone(UTC).isoformat()
     assert body["granted"] is True
     assert body["orderNo"] == "ND-SECRET01"
@@ -329,3 +332,28 @@ def test_detail_of_another_user_or_missing_order_is_404(client, session, clock):
     assert mine.json()["status"] == "待支付"
     assert mine.json()["statusText"] == "待支付"
     assert mine.json()["isTest"] is False
+
+
+def test_private_order_responses_encode_typed_money_and_dates(client, clock, monkeypatch):
+    from decimal import Decimal
+
+    from nadou.payments.service import PaymentService
+    from nadou.user_orders import UserOrders
+
+    row = {"amount": Decimal("999.90"), "paid_at": clock, "day": clock.date(), "amount_fen": 99990}
+    expected = {
+        "amount": "999.90",
+        "paid_at": clock.isoformat(),
+        "day": clock.date().isoformat(),
+        "amount_fen": "99990",
+    }
+    monkeypatch.setattr(UserOrders, "list_for", staticmethod(lambda session, user: [row]))
+    monkeypatch.setattr(PaymentService, "get_order", lambda self, session, user, number: row)
+    for path, body in (
+        ("/api/v1/pay/orders", [expected]),
+        ("/api/v1/pay/orders/ND-TYPED", expected),
+    ):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.json() == body
+        assert_private(response)

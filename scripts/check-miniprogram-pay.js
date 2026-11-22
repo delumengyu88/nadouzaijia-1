@@ -375,6 +375,11 @@ async function main() {
   await drain()
   assert.strictEqual(page.data.phase, 'grant_error')
   assert.strictEqual(page.data.title, '发放异常')
+  for (var pair of [['1', '¥0.01'], ['000100', '¥1'], ['9007199254740993123', '¥90071992547409931.23'], [null, ''], ['1.5', '']]) {
+    var detail = api.getOrder(ORDER_NO)
+    respond(200, orderBody('待支付', { amount_fen: pair[0] }))
+    assert.strictEqual((await detail).priceText, pair[1])
+  }
   console.log('异常: 发放异常')
 
   resetTransport()
