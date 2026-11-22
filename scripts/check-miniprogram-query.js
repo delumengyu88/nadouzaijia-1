@@ -80,7 +80,7 @@ async function main() {
   throwNext = true
   page = open(['抛错片']); await drain(); page.tick()
   assert(page.data.done && page.data.items[0].failed)
-  assert.strictEqual(page.data.items[0].line, '查询失败，请重试')
+  assert.strictEqual(page.data.items[0].line, '网络异常，请稍后再试')
   assert.strictEqual(activeTimers(), 0)
 
   // 4. 多个节目：进度只随真实返回变化，时间流逝不推进度。
