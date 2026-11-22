@@ -20,7 +20,7 @@ function walk(dir, out) {
   return out
 }
 
-var banned = ['待确认', '疑似命中', '确认命中', '别名', '匹配方式', '命中类型', '顺延', 'VIP 结束后生效']
+var banned = ['待确认', '疑似命中', '确认命中', '别名', '匹配方式', '命中类型', '顺延', 'VIP 结束后生效', '13800002610']
 walk(root, []).forEach(function (file) {
   if (['.png', '.webp'].indexOf(path.extname(file)) !== -1) return
   var text = fs.readFileSync(file, 'utf8')
@@ -900,17 +900,20 @@ try {
     if (evidenceIds[id] === 'P12-failed') expect(!detail.data.hasRefund && detail.data.badge === '取证失败', 'failed without refund')
     cover(evidenceIds[id])
   })
+  var blankEvidence = open('pages/evidence/index', {}, 'load')
+  expect(blankEvidence.data.phone === '' && blankEvidence.data.name === '雾港来信', 'mock sample title only, phone stays empty')
   var form = open('pages/evidence/index', { name: encodeURIComponent('星河旧梦'), kind: 'normal' }, 'load')
-  expect(form.data.phase === 'form' && form.data.kind === 'normal', 'evidence form')
+  expect(form.data.phase === 'form' && form.data.kind === 'normal' && form.data.phone === '', 'evidence form')
   cover('P11')
   var recent = open('pages/evidence/index', { name: encodeURIComponent('雾港来信'), kind: 'recent' }, 'load')
   expect(recent.data.kindText === '近期取证', 'recent evidence')
   cover('P11-recent')
+  form.onPhone({ detail: { value: '13912345678' } })
   form.submit()
   expect(form.data.phase === 'submitted', 'submitted evidence')
   cover('P11-submitted')
   form.submit()
-  expect(form.data.phase === 'duplicate', 'duplicate evidence')
+  expect(form.data.showDuplicate && form.data.dupId, 'duplicate evidence')
   cover('P11-duplicate')
   report = open('pages/report/index', { name: encodeURIComponent('星河旧梦') }, 'load')
   flush()
@@ -1105,6 +1108,9 @@ if (liveCheck.status !== 0) fail(liveCheck.stderr || 'hybrid check failed')
   console.log(loginCheck.stdout || '')
   if (loginCheck.status !== 0) fail(loginCheck.stderr || 'login check failed: ' + mode)
 })
+var requestOptionCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-request-options.js')], { encoding: 'utf8' })
+console.log(requestOptionCheck.stdout || '')
+if (requestOptionCheck.status !== 0) fail(requestOptionCheck.stderr || requestOptionCheck.stdout || 'request option check failed')
 var redeemCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-redeem.js')], { encoding: 'utf8' })
 console.log(redeemCheck.stdout || '')
 if (redeemCheck.status !== 0) fail(redeemCheck.stderr || redeemCheck.stdout || 'redeem check failed')
@@ -1114,6 +1120,9 @@ if (inviteStateCheck.status !== 0) fail(inviteStateCheck.stderr || inviteStateCh
 var uploadCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-upload.js')], { encoding: 'utf8' })
 console.log(uploadCheck.stdout || '')
 if (uploadCheck.status !== 0) fail(uploadCheck.stderr || uploadCheck.stdout || 'upload check failed')
+var evidenceCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-evidence.js')], { encoding: 'utf8' })
+console.log(evidenceCheck.stdout || '')
+if (evidenceCheck.status !== 0) fail(evidenceCheck.stderr || evidenceCheck.stdout || 'evidence check failed')
 var privacyCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-privacy.js')], { encoding: 'utf8' })
 console.log(privacyCheck.stdout || '')
 if (privacyCheck.status !== 0) fail(privacyCheck.stderr || privacyCheck.stdout || 'privacy check failed')

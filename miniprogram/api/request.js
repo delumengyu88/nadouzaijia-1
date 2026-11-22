@@ -18,10 +18,11 @@ module.exports = function (path, data, options) {
         data: data || {},
         header: token ? { Authorization: 'Bearer ' + token } : {},
         success: function (res) {
-          // Redeem reads the body `detail` code and must not collapse it to a status error.
-          if (options.exposeStatus) {
+          // Evidence uses readBody. Redeem uses exposeStatus. Invite state uses optionalAuth.
+          if (options.readBody || options.exposeStatus) {
             if (res.statusCode === 401 && token) state.clearSession(token)
-            resolve({ statusCode: res.statusCode, data: res.data })
+            if (options.exposeStatus) resolve({ statusCode: res.statusCode, data: res.data })
+            else resolve(res.data === undefined || res.data === null ? {} : res.data)
             return
           }
           if (res.statusCode >= 200 && res.statusCode < 300) resolve(res.data || {})
