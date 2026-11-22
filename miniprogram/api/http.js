@@ -300,8 +300,9 @@ function storeProfile(user) {
   return data.auth.user
 }
 
-function refreshMembership() {
+function refreshMembership(sent) {
   return request('/api/v1/auth/me').then(function (user) {
+    if (sent !== state.token()) return null
     return storeProfile(user) || user
   })
 }
@@ -325,6 +326,28 @@ function inviteFailure(code) {
   if (!message) return { ok: false, code: 'unknown', message: '网络异常，请重试' }
   if (code === 'bound') rememberInvite()
   return { ok: false, code: code, message: message }
+}
+
+// GET /api/v1/invite-codes/state. Always hits the network; nothing is stored.
+// 403 account is disabled uses the same client error as other non-401 responses.
+function loadInviteState() {
+  var sent = state.token()
+  return request('/api/v1/invite-codes/state', {}, { exposeStatus: true, optionalAuth: true }).then(function (res) {
+    if (sent !== state.token()) return { ok: false, sessionChanged: true }
+    var detail = inviteErrorCode(res && res.data)
+    if (res && res.statusCode === 403 && detail === 'account is disabled') {
+      return { ok: false, banned: true, message: '服务暂不可用' }
+    }
+    var body = res && res.data
+    if (!res || res.statusCode < 200 || res.statusCode >= 300 || !body || typeof body !== 'object' || Array.isArray(body) ||
+        typeof body.guest !== 'boolean' || typeof body.bound !== 'boolean' || typeof body.bindText !== 'string') {
+      return { ok: false, message: '网络异常，请重试' }
+    }
+    if (body.guest && sent) state.clearSession(sent)
+    return { ok: true, guest: body.guest, bound: body.bound, bindText: body.bindText }
+  }, function () {
+    return { ok: false, message: '网络异常，请重试' }
+  })
 }
 
 module.exports = {
@@ -451,14 +474,13 @@ module.exports = {
       return { ok: true, code: 'paying', order: paying, pay: pay }
     })
   },
-  inviteState: function () {
-    var account = state.account()
-    return { guest: !state.userId(), bound: !!(account && account.inviteBound) }
-  },
+  inviteState: function () { return loadInviteState() },
   redeem: function (raw) {
+    var sent = state.token()
     var code = raw == null ? '' : String(raw)
     return request('/api/v1/invite-codes/redeem', { code: code }, { method: 'POST', exposeStatus: true })
       .then(function (res) {
+        if (sent !== state.token()) return { ok: false, sessionChanged: true }
         var failure = inviteFailure(inviteErrorCode(res && res.data))
         if (failure) return failure
         if (!res || res.statusCode < 200 || res.statusCode >= 300) {
@@ -466,11 +488,15 @@ module.exports = {
         }
         var cached = state.load().auth && state.load().auth.user
         var expiresAt = res.data && res.data.expires_at
-        return refreshMembership().then(function (user) {
+        return refreshMembership(sent).then(function (user) {
+          if (sent !== state.token()) return { ok: false, sessionChanged: true }
           rememberInvite(code, expiresAt)
+          loadInviteState()
           return inviteSuccess(res.data, user || cached)
         }, function () {
+          if (sent !== state.token()) return { ok: false, sessionChanged: true }
           rememberInvite(code, expiresAt)
+          loadInviteState()
           return inviteSuccess(res.data, cached)
         })
       }, function () {

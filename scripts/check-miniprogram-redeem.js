@@ -29,6 +29,15 @@ function drain() {
   return new Promise(function (resolve) { setImmediate(resolve) })
 }
 
+async function takeState() {
+  await drain()
+  assert.strictEqual(requests.length, 1)
+  var opt = requests.shift()
+  assert.strictEqual(opt.method, 'GET')
+  assert.strictEqual(opt.url, '/test-api/api/v1/invite-codes/state')
+  return opt
+}
+
 function login(tier) {
   state.setSession({
     token: 'test-token',
@@ -134,6 +143,7 @@ async function main() {
   assert.strictEqual(vipResult.sub, '有效至 ' + beijingDay(iso))
   assert.strictEqual(vipResult.hasVip, true)
   assert.strictEqual(state.load().auth.user.tier, 'vip')
+  await takeState()
   var shownVip = http.profile()
   await drain()
   requests.shift().success({
@@ -141,7 +151,6 @@ async function main() {
     data: { id: 'user-1', tier: 'vip', vip_expires_at: iso, regular_expires_at: iso }
   })
   assert.strictEqual((await shownVip).tier, 'vip')
-  assert.strictEqual(http.inviteState().bound, true)
 
   clearBound()
   login('free')
@@ -161,6 +170,7 @@ async function main() {
   assert.strictEqual(regularResult.headline, '兑换成功')
   assert.strictEqual(regularResult.sub, '有效至 ' + beijingDay(iso))
   assert.strictEqual(regularResult.hasVip, false)
+  await takeState()
   var shownRegular = http.profile()
   await drain()
   requests.shift().success({
@@ -184,7 +194,7 @@ async function main() {
   var keptResult = await kept.pending
   assert.strictEqual(keptResult.ok, true)
   assert.strictEqual(keptResult.hasVip, true)
-  assert.strictEqual(requests.length, 0)
+  await takeState()
 
   var wxml = fs.readFileSync(path.join(__dirname, '../miniprogram/pages/invite/index.wxml'), 'utf8')
   var wxss = fs.readFileSync(path.join(__dirname, '../miniprogram/pages/invite/index.wxss'), 'utf8')
@@ -212,16 +222,22 @@ async function main() {
   var def
   global.Page = function (page) { def = page }
   require('../miniprogram/pages/invite/index')
-  function open() {
+  async function open(body) {
     var page = Object.assign({}, def, {
       data: Object.assign({}, def.data),
       setData: function (patch) { Object.assign(this.data, patch) }
     })
     page.onLoad({})
+    assert.strictEqual(page.data.phase, 'loading')
+    await drain()
+    var opt = requests.shift()
+    assert.strictEqual(opt.url, '/test-api/api/v1/invite-codes/state')
+    opt.success({ statusCode: 200, data: body || { guest: false, bound: false, bindText: '兑换邀请码' } })
+    await drain()
     return page
   }
 
-  var page = open()
+  var page = await open()
   page.onCode({ detail: { value: 'GOODCODE' } })
   page.submit()
   page.submit()
@@ -253,7 +269,7 @@ async function main() {
   assert.strictEqual(requests.length, blocked, 'fewer than 8 characters does not redeem')
   assert.notStrictEqual(page.data.phase, 'redeeming')
 
-  page = open()
+  page = await open()
   page.onCode({ detail: { value: 'USEDCODE' } })
   page.submit()
   await drain()
@@ -263,7 +279,7 @@ async function main() {
   assert.strictEqual(page.data.message, '邀请码已被使用。')
   assert.strictEqual(page.data.code, 'USEDCODE')
 
-  page = open()
+  page = await open()
   page.onCode({ detail: { value: 'EXPIRED1' } })
   page.submit()
   await drain()
@@ -273,7 +289,7 @@ async function main() {
   assert.strictEqual(page.data.code, 'EXPIRED1')
   assert.strictEqual(page.data.fieldError, true)
 
-  page = open()
+  page = await open()
   page.onCode({ detail: { value: 'KEEPCODE' } })
   page.submit()
   await drain()
@@ -290,7 +306,7 @@ async function main() {
   assert.strictEqual(page.data.message, '网络异常，请重试')
   assert.strictEqual(page.data.code, 'KEEPCODE')
 
-  page = open()
+  page = await open()
   page.onCode({ detail: { value: 'GOODCODE' } })
   page.submit()
   await drain()
@@ -308,12 +324,13 @@ async function main() {
   assert.strictEqual(page.data.hasVip, false)
   assert.strictEqual(page.data.headline, '兑换成功')
   assert.strictEqual(page.data.sub, '有效至 ' + beijingDay(iso))
+  await takeState()
 
   clearBound()
   state.load().auth.user.tier = 'vip'
   state.load().auth.user.vip_expires_at = iso
   state.save()
-  page = open()
+  page = await open()
   page.onCode({ detail: { value: 'GOODCODE' } })
   page.submit()
   await drain()
@@ -330,8 +347,9 @@ async function main() {
   assert.strictEqual(page.data.phase, 'success')
   assert.strictEqual(page.data.hasVip, true)
   assert.strictEqual(page.data.sub, '有效至 ' + beijingDay(iso))
+  await takeState()
 
-  page = open()
+  page = await open({ guest: false, bound: true, bindText: '邀请码 ABCD****' })
   assert.strictEqual(page.data.phase, 'bound')
   assert.strictEqual(page.data.message, '已绑定过邀请码，不能再填')
   var before = requests.length
