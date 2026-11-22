@@ -97,7 +97,7 @@ Hourly index import, after the database has been migrated:
 NADOU_TASK_EXPORT_PATH=./export.csv python -m nadou index-run
 ```
 
-`NADOU_TASK_EXPORT_PATH` is a local CSV. DingTalk alerts use `NADOU_DINGTALK_WEBHOOK_URL` and `NADOU_DINGTALK_WEBHOOK_SECRET` when both are set. Leave them empty to disable alerts. Do not commit real values.
+`NADOU_TASK_EXPORT_PATH` is a local CSV. DingTalk alerts use `NADOU_DINGTALK_WEBHOOK_URL` and `NADOU_DINGTALK_WEBHOOK_SECRET` when both are set. Leave them empty to disable alerts. Do not commit real values. `NADOU_TRUSTED_PROXIES` defaults to `127.0.0.1`.
 
 ## 创建第一个工作台管理员
 

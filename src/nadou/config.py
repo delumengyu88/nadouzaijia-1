@@ -1,7 +1,32 @@
+import ipaddress
 from functools import lru_cache
 
-from pydantic import AliasChoices, Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def parse_trusted_proxies(
+    value: str,
+) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    """Comma-separated IPs and CIDRs. An empty value trusts no proxy."""
+
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for part in value.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        try:
+            if "/" in token:
+                network = ipaddress.ip_network(token, strict=True)
+            else:
+                address = ipaddress.ip_address(token)
+                network = ipaddress.ip_network(f"{address}/{address.max_prefixlen}")
+        except ValueError as exc:
+            raise ValueError(
+                "NADOU_TRUSTED_PROXIES entries must be IP addresses or CIDR networks"
+            ) from exc
+        networks.append(network)
+    return tuple(networks)
 
 
 class Settings(BaseSettings):
@@ -34,6 +59,16 @@ class Settings(BaseSettings):
         default="demo",
         validation_alias=AliasChoices("NADOU_DATA_SOURCE"),
     )
+    trusted_proxies: str = Field(
+        default="127.0.0.1",
+        validation_alias=AliasChoices("NADOU_TRUSTED_PROXIES"),
+    )
+
+    @field_validator("trusted_proxies")
+    @classmethod
+    def _trusted_proxies_are_networks(cls, value: str) -> str:
+        parse_trusted_proxies(value)
+        return value
 
 
 @lru_cache
