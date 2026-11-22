@@ -42,6 +42,19 @@ function readJson(rel) {
 }
 
 var frontendStopWords = readJson('stop-words.json')
+if (JSON.stringify(require(path.join(root, 'stop-words.js'))) !== JSON.stringify(frontendStopWords)) {
+  fail('miniprogram/stop-words.js must match stop-words.json')
+}
+// 小程序运行时 require 只能加载 .js，加载 .json 会白屏。
+;(function scan(dir) {
+  fs.readdirSync(dir, { withFileTypes: true }).forEach(function (e) {
+    var p = path.join(dir, e.name)
+    if (e.isDirectory()) return scan(p)
+    if (/\.js$/.test(e.name) && /require\(\s*['"][^'"]+\.json['"]\s*\)/.test(fs.readFileSync(p, 'utf8'))) {
+      fail('mini program must not require .json: ' + path.relative(root, p))
+    }
+  })
+})(root)
 var backendStopWords = JSON.parse(fs.readFileSync(path.join(repo, 'src/nadou/stop_words.json'), 'utf8'))
 if (JSON.stringify(frontendStopWords) !== JSON.stringify(backendStopWords)) {
   fail('miniprogram stop words must exactly match backend defaults')
