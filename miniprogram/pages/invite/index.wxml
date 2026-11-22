@@ -17,7 +17,7 @@
   <view class="note" wx:if="{{phase == 'form'}}">8 位字母或数字</view>
   <view class="note" wx:if="{{phase == 'rate'}}">8 位字母或数字</view>
   <input class="field code-input" value="{{code}}" bindinput="onCode" disabled="{{phase == 'bound' || phase == 'rate' || phase == 'redeeming'}}" maxlength="8" />
-  <view class="note" wx:if="{{phase == 'redeeming'}}" style="color:#1D4E9E;text-align:center;">正在兑换…</view>
+  <view class="note" wx:if="{{phase == 'redeeming'}}" style="color:#1f4ed8;text-align:center;">正在兑换…</view>
   <view class="err-box" wx:if="{{phase == 'error' || phase == 'bound' || phase == 'rate'}}">{{message}}</view>
   <view class="btn block {{phase == 'bound' || phase == 'rate' || phase == 'redeeming' ? 'off' : ''}}" bindtap="submit">兑换</view>
   <view class="btn block plain" wx:if="{{phase == 'error'}}" bindtap="reset">重新输入</view>
