@@ -15,12 +15,24 @@ services:
   api:
     build: .
     environment:
-      DATABASE_URL: postgresql+psycopg://nadou:nadou_dev_password@db:5432/nadou
+      DATABASE_URL: &application_database postgresql+psycopg://nadou:nadou_dev_password@db:5432/nadou
       APP_ENV: local
       NADOU_ALLOW_DEV_SEED: "1"
       NADOU_DATA_SOURCE: demo
     ports:
       - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  query-retention:
+    profiles: ["query-retention"]
+    build: .
+    restart: unless-stopped
+    entrypoint: ["python", "-m", "nadou", "query-retention", "--daily"]
+    command: ["${NADOU_RETENTION_MODE:---dry-run}"]
+    environment:
+      DATABASE_URL: *application_database
     depends_on:
       db:
         condition: service_healthy

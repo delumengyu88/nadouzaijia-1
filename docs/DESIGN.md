@@ -484,5 +484,5 @@ Some `index_records` rows have no task in the export and a NULL `uploaded_at`. F
 - 会员（清理当时有仍在有效期内的普通会员或 VIP）：从 `member_queries.created_at` 起保留 180 天。
 - 到期后删除该用户的 `member_queries` 行，并一并删除其 `query_programs`。
 - 按用户和时间清理。索引用 `ix_member_queries_user_id_created_at`（`user_id`, `created_at`），不要全表扫描。
-- 运行 `python -m nadou query-retention` 可只读统计到期行数。经授权备份后，可使用 `--apply` 分批清理，或使用 `--apply --daily` 持续每 24 小时运行。新版本默认不启动清理进程。
+- 运行 `python -m nadou query-retention` 可只读统计到期行数。经授权备份后，可使用 `--apply` 分批清理，或使用 `--apply --daily` 持续每 24 小时运行。使用 Compose 的 `query-retention` 配置档启动同名服务。默认每天只读统计；备份且另获实际清理授权后，显式设置 `NADOU_RETENTION_MODE=--apply` 并重新创建该服务才会删除到期行。服务共用应用数据库配置，进程失败后由 Docker 重启并重新检查到期行。默认配置档不启动清理。
 - `user_id` 为空的历史行无法核对归属：任何人导出都是 404，`GET /api/v1/queries/{id}` 也是 404，并且不会出现在 `GET /api/v1/queries` 列表里。本变更不删除这些行。
