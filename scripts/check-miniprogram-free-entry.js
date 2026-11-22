@@ -139,6 +139,29 @@ async function run() {
   assert(created.url.endsWith('/queries') && created.method === 'POST')
   assert.strictEqual(created.header.Authorization, 'Bearer token-new')
   assert.deepStrictEqual(created.data, { name: '仅测试一次提交' })
+  var form = page('evidence')
+  form.onLoad({kind:'normal'})
+  form.setData({phone:'13800000000',note:'原账户联系信息',name:'测试节目'})
+  var submission = form.submit()
+  var oldForm = requests.shift()
+  state.setSession(account('different', 'free'))
+  form.onShow()
+  assert.strictEqual(form.data.phone + form.data.note + form.data.name, '')
+  oldForm.success({statusCode:200,data:{id:'old-only',no:'old-number'}})
+  await submission
+  assert.strictEqual(form.data.phase, 'form')
+  assert(!form.data.newId)
+
+  state.clearSession()
+  var tab = page('profile')
+  stack = [tab]
+  var retry = tab.login()
+  stack = []
+  logins.shift().fail()
+  await retry
+  stack = [tab]
+  tab.onShow()
+  assert(!tab.data.loginLoading && !tab.loginAttempt, 'returning tab can retry')
   console.log('automatic free entry, paid identity, offline retry, isolated drafts and private callbacks ok')
 }
 run().catch(function (e) { console.error(e); process.exitCode = 1 })

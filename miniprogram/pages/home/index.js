@@ -38,6 +38,7 @@ Page({
     return !splash.shownThisLaunch()
   },
   onShow: function () {
+    require('../../utils/login').onShow(this)
     if (api.entryFailed && api.accountKind() === 'guest') this.onIdentityError()
     var show = this.splashVisible()
     if (show) {

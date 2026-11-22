@@ -35,6 +35,7 @@ Page({
     lines: []
   },
   onShow: function () {
+    require('../../utils/login').onShow(this)
     if (api.entryFailed && api.accountKind() === 'guest') this.onIdentityError()
     var data = nav.layout('profile', this.query)
     data.identifying = !!(typeof getApp === 'function' && getApp().identifying)

@@ -25,6 +25,7 @@ Page({
   data: { title: '查询记录', showBack: true, rows: [], empty: false, loading: false, failed: false, needLogin: false },
   onIdentityReady: function () { this.onShow() },
   onShow: function () {
+    require('../../utils/login').onShow(this)
     if (this.returning && this.session === sessionKey()) {
       this.returning = false
       return

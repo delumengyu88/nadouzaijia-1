@@ -1,5 +1,6 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
+var state = require('../../api/state')
 
 function decode(value) {
   if (!value) return ''
@@ -28,6 +29,8 @@ Page({
     showDuplicate: false
   },
   onLoad: function (query) {
+    this.owner = api.accountKind()
+    this.revision = state.sessionRevision()
     var layout = nav.layout('evidence', query)
     var kind = query.kind === 'recent' ? 'recent' : 'normal'
     var sample = ''
@@ -53,6 +56,21 @@ Page({
       nameError: ''
     })
   },
+  onShow: function () { this.checkOwner() },
+  onIdentityReady: function () { this.checkOwner() },
+  onUnload: function () { this.disposed = true },
+  checkOwner: function () {
+    var owner = api.accountKind()
+    var revision = state.sessionRevision()
+    if (owner === this.owner && revision === this.revision) return true
+    var initial = this.owner === 'guest' && owner !== 'guest' && revision === this.revision + 1
+    this.owner = owner
+    this.revision = revision
+    if (initial) return true
+    this.setData({ phase: 'form', name: '', platform: '', note: '', phone: '', phoneError: '', phoneFocus: false,
+      nameError: '', submitting: false, showDuplicate: false, dupId: '', newId: '', no: '', networkError: false })
+    return false
+  },
   back: function () {
     if (getCurrentPages().length > 1) wx.navigateBack()
     else wx.switchTab({ url: '/pages/profile/index' })
@@ -66,7 +84,7 @@ Page({
     this.setData({ phoneFocus: true })
   },
   submit: function () {
-    if (this.data.submitting) return
+    if (!this.checkOwner() || this.data.submitting) return
     var phone = compact(this.data.phone)
     if (!phone) {
       this.markPhone('请填写手机号')
@@ -82,6 +100,7 @@ Page({
       return
     }
     this.setData({ submitting: true, phoneError: '', networkError: false, nameError: '' })
+    var revision = this.revision
     var result = api.createEvidence({
       name: name,
       note: this.data.note,
@@ -91,9 +110,11 @@ Page({
     })
     if (result && typeof result.then === 'function') {
       var self = this
-      return result.then(function (res) { self.finishSubmit(res) }, function () {
-        self.finishSubmit({ ok: false, code: 'network' })
-      })
+      function finish(reply) {
+        if (self.disposed || !self.checkOwner() || revision !== self.revision) return
+        self.finishSubmit(reply)
+      }
+      return result.then(finish, function () { finish({ ok: false, code: 'network' }) })
     }
     this.finishSubmit(result)
   },
