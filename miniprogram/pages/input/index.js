@@ -1,5 +1,6 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
+var text = require('../../utils/text')
 var SheetReader = require('../../utils/sheet')
 
 var FAIL = {
@@ -112,7 +113,10 @@ Page({
           return
         }
         var owners = {}
-        result.items.forEach(function (item) { if (!owners[item.name]) owners[item.name] = item.owner })
+        result.items.forEach(function (item) {
+          var shown = text.displayOf(item.name)
+          if (shown && !owners[shown]) owners[shown] = item.owner
+        })
         self.showParsed(result.items.map(function (item) { return item.name }).join('\n'), owners)
       },
       fail: function () { self.showFail('read') }
