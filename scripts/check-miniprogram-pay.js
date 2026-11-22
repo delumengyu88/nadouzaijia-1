@@ -190,6 +190,14 @@ async function checkOneYuan() {
   require('../miniprogram/pages/member/index')
   var center = createPage()
   pageDef = payDef
+  center.onShow()
+  assert.deepStrictEqual(pending.map(req => req.url.replace('/test-api','')), ['/api/v1/pay/tiers?channel=virtual','/api/v1/auth/me'])
+  respond(200,catalog)
+  respond(200,{id:'test-customer',tier:'regular'})
+  await drain()
+  assert.strictEqual(pending.length,0,'dedicated build never requests regular tiers')
+  assert(center.data.showTestOffer && !center.data.showPay && center.data.plans.length === 0)
+  center.onHide()
   var opened = []
   wx.navigateTo = function (opt) { opened.push(opt.url) }
   center.refreshTestOffer()
@@ -358,7 +366,7 @@ async function main() {
   assert.strictEqual(clock.length, 1)
   assert.strictEqual(clock[0].ms, 2000)
   clock.shift().fn()
-  respond(404, orderBody('已发放'))
+  respond(200, orderBody('已发放'))
   await drain()
   assert.strictEqual(page.data.phase, 'granted')
   assert.ok(page.data.successLine.indexOf('已发放') !== -1)
@@ -662,6 +670,22 @@ async function main() {
   assert.strictEqual(payment,null)
   await checkOneYuan()
   console.log('virtual goods SDK, signed payload and server confirmation checks ok')
+
+  resetTransport()
+  config.virtualPayment = false
+  page = createPage()
+  page.onLoad({product:'membership_regular'})
+  page.orderNo = ORDER_NO
+  page.beginPoll()
+  respond(404, {detail:'订单不存在'})
+  await drain()
+  assert.strictEqual(page.data.phase,'orderUnavailable')
+  assert.strictEqual(clock.length,0)
+  page.beginPoll()
+  respond(401,{detail:'authentication required'})
+  await drain()
+  assert.strictEqual(page.data.phase,'sessionEnded')
+  assert.strictEqual(clock.length,0)
   console.log('pay check ok')
 }
 

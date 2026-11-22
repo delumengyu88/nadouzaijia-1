@@ -8,9 +8,9 @@
 <view class="body" wx:if="{{phase == 'trial'}}">
   <view class="card"><view>{{trialMessage}}</view><view class="btn" bindtap="pay">立即支付</view></view>
 </view>
-<view class="body" wx:if="{{phase == 'sessionEnded'}}">
+<view class="body" wx:if="{{phase == 'sessionEnded' || phase == 'orderUnavailable'}}">
   <view class="result">
-    <view class="result-title">登录状态已变化</view>
+    <view class="result-title">{{phase == 'orderUnavailable' ? centerTitle : '登录状态已变化'}}</view>
     <view class="result-primary" bindtap="back">返回</view>
   </view>
 </view>
