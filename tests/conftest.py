@@ -23,6 +23,17 @@ from tests.user_helpers import UserClient
 BEIJING = ZoneInfo("Asia/Shanghai")
 
 
+@pytest.fixture(autouse=True)
+def synthetic_catalog(monkeypatch):
+    # Tests below build synthetic records; the normal application defaults to verified sources.
+    from nadou.config import get_settings
+
+    monkeypatch.setenv("NADOU_DATA_SOURCE", "demo")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 @pytest.fixture
 def clock() -> datetime:
     return datetime(2026, 11, 21, 12, 0, tzinfo=BEIJING)

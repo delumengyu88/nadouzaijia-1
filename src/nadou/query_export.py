@@ -11,6 +11,7 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from nadou.config import get_settings
 from nadou.entitlements import AccessGrants, EntitlementPolicy
 from nadou.frames import DerivedFrameSource, FrameImage, FrameUnavailable
 from nadou.importer import TestTaskFilter
@@ -462,7 +463,7 @@ class RecordWindow:
         now: datetime,
         grants: AccessGrants,
     ) -> bool:
-        if not ProgramSearch.included(task) or not ProgramSearch.confirmed(record):
+        if not ProgramSearch.visible(record, task):
             return False
         # Generated placeholder dates never enter an export or formal report.
         if not ProgramSearch.reportable(record):
@@ -486,7 +487,7 @@ class QueryExport:
     def __init__(
         self,
         session: Session,
-        frames: DerivedFrameSource,
+        frames: DerivedFrameSource | None,
         now: datetime,
         max_bytes: int = ExportLimits.MAX_BYTES,
     ) -> None:
@@ -495,7 +496,9 @@ class QueryExport:
         self.now = now
         self.max_bytes = max_bytes
 
-    def export(self, query_id: str, user_id: str | None) -> ExportFile:
+    def export(
+        self, query_id: str, user_id: str | None, *, program_name: str | None = None
+    ) -> ExportFile:
         query = self.session.get(MemberQuery, query_id)
         # No owner means the row cannot be attributed. Reject it before the
         # membership gate so every caller gets 404. Allowing it would let
@@ -508,13 +511,12 @@ class QueryExport:
             raise ExportForbidden(user_id)
         if query is None or query.user_id != user_id:
             raise UnknownQuery(query_id)
-        items = list(
-            self.session.scalars(
-                select(QueryProgram)
-                .where(QueryProgram.query_id == query.id)
-                .order_by(QueryProgram.position)
-            ).all()
-        )
+        selection = select(QueryProgram).where(QueryProgram.query_id == query.id)
+        if program_name is not None:
+            selection = selection.where(QueryProgram.uploaded_name == program_name)
+        items = list(self.session.scalars(selection.order_by(QueryProgram.position)))
+        if program_name is not None and not items:
+            raise UnknownQuery(query_id)
         hits, rest = self._rows(items, MembershipGate.grants(tier), user_id)
         header = ExportHeader(
             query_id=query.id,
@@ -532,7 +534,9 @@ class QueryExport:
         programs = ProgramNormalizer()
         names: set[str] = set()
         for item in items:
-            if item.resolution not in RecordWindow.HIT_RESOLUTIONS:
+            if item.resolution in {"pending", "failed"} or (
+                get_settings().demo_data and item.resolution not in RecordWindow.HIT_RESOLUTIONS
+            ):
                 continue
             canonical = self._title(programs, item)
             if canonical and ProgramTitleGuard.is_billable(canonical):
@@ -547,13 +551,16 @@ class QueryExport:
             if item.resolution == "failed":
                 rest.append(RestRow(item.uploaded_name, RestStatus.FAILED, item.detail or ""))
                 continue
-            if item.resolution == "miss":
+            if item.resolution == "miss" and get_settings().demo_data:
                 rest.append(RestRow(item.uploaded_name, RestStatus.MISS, item.detail or ""))
                 continue
             canonical = self._title(programs, item)
             visible = self._visible(by_program.get(canonical, []), tasks, grants)
             if not visible:
-                rest.append(RestRow(item.uploaded_name, RestStatus.MISS, item.detail or ""))
+                if ProgramSearch.empty_outcome() == "unverified":
+                    rest.append(RestRow(item.uploaded_name, "待核验", "数据待核验"))
+                else:
+                    rest.append(RestRow(item.uploaded_name, RestStatus.MISS, item.detail or ""))
                 continue
             for record, task in visible:
                 hits.append(self._hit(item, canonical, record, task, grants, user_id))
@@ -637,7 +644,7 @@ class QueryExport:
         )
 
     def _frame(self, variant: str | None, record_id: str, user_id: str | None):
-        if not variant:
+        if not variant or self.frames is None:
             return None
         try:
             raw = self.frames.fetch_representative(variant, record_id, user_id)

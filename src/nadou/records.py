@@ -35,6 +35,7 @@ class IndexRecordStore:
         uploaded_at: datetime | None = None,
         record_id: str | None = None,
         category: str | None = None,
+        hitlist_sha256: str | None = None,
     ) -> IndexRecord:
         if hit_type not in _HIT_TYPES:
             raise ValueError(f"unknown hit_type {hit_type!r}")
@@ -58,6 +59,7 @@ class IndexRecordStore:
                 program_name=canonical,
                 program_name_raw=program_name_raw,
                 hit_type=hit_type,
+                hitlist_sha256=hitlist_sha256,
                 frame_count=frame_count,
                 timestamps=list(timestamps),
                 uploaded_at=uploaded_at,
@@ -67,6 +69,7 @@ class IndexRecordStore:
         else:
             existing.program_name_raw = program_name_raw
             existing.hit_type = hit_type
+            existing.hitlist_sha256 = hitlist_sha256
             existing.frame_count = frame_count
             existing.timestamps = list(timestamps)
             existing.category = category

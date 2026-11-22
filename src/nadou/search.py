@@ -4,7 +4,9 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from nadou.config import get_settings
 from nadou.entitlements import AccessDecision, AccessGrants, EntitlementPolicy, LockedSummary
+from nadou.importer import TestTaskFilter
 from nadou.models import Entitlement, IndexRecord, Task, User
 from nadou.normalize import ProgramNormalizer
 from nadou.platform_names import PlatformNames
@@ -37,7 +39,7 @@ class ProgramSearch:
     REASON_UNKNOWN_AGE = "检测时间待核实"
     _LOCKED_KEYS = ("record_id", "age_bucket", "locked", "lock_reason")
 
-    def __init__(self, session: Session, urls: SignedUrlProvider, now: datetime) -> None:
+    def __init__(self, session: Session, urls: SignedUrlProvider | None, now: datetime) -> None:
         self.session = session
         self.urls = urls
         self.now = now
@@ -65,7 +67,7 @@ class ProgramSearch:
         unverified = 0
         for record in rows:
             task = tasks.get(record.task_id)
-            if not self.included(task) or not self.confirmed(record):
+            if not self.visible(record, task):
                 continue
             when = self.tier_time(task, record)
             age = RecordAge.days(when, self.now) if when is not None else None
@@ -122,7 +124,7 @@ class ProgramSearch:
         elif any_recent:
             outcome = "recent_only"
         else:
-            outcome = "miss"
+            outcome = self.empty_outcome()
         summary = EntitlementPolicy.summarize_locked(
             locked_ages,
             self._grants_for(grants, canonical, ""),
@@ -176,7 +178,7 @@ class ProgramSearch:
         summary = EntitlementPolicy.summarize_locked([], AccessGrants())
         return SearchOut(
             program_name=canonical,
-            outcome="miss",
+            outcome=self.empty_outcome(),
             platform_count=0,
             unverified_source_count=0,
             locked_summary=self._summary_out(summary),
@@ -189,6 +191,26 @@ class ProgramSearch:
         if task is None or task.source_unverified or not task.platform_operator:
             return None
         return (task.platform_province or "", task.platform_operator)
+
+    @staticmethod
+    def empty_outcome() -> str:
+        # A partial or absent source manifest cannot establish a catalog-wide miss.
+        return "miss" if get_settings().demo_data else "unverified"
+
+    @classmethod
+    def visible(cls, record: IndexRecord, task: Task | None) -> bool:
+        if not cls.confirmed(record) or not cls.included(task):
+            return False
+        if get_settings().demo_data:
+            return True
+        return (
+            task is not None
+            and bool(task.approved_hitlist_sha256)
+            and record.hitlist_sha256 == task.approved_hitlist_sha256
+            and not record.date_generated
+            and cls.record_time(task, record) is not None
+            and TestTaskFilter.commercial_task(task)
+        )
 
     @staticmethod
     def confirmed(record: IndexRecord) -> bool:
@@ -319,7 +341,7 @@ class ProgramSearch:
             "locked": False,
             "access": decision.access,
             "can_download_report": decision.can_download_report,
-            "can_download_screenshot": decision.can_download_screenshot,
+            "can_download_screenshot": decision.can_download_screenshot and self.urls is not None,
         }
         if decision.reveal_fields:
             payload["platform"] = (
@@ -342,9 +364,9 @@ class ProgramSearch:
                 payload["checked_at"] = when.astimezone(RecordAge.TZ).isoformat()
             if record.category:
                 payload["category"] = record.category
-        if decision.thumbnail:
+        if decision.thumbnail and self.urls is not None:
             payload["thumbnail_url"] = self._sign(decision.thumbnail, record.id, user_id)
-        if decision.hd:
+        if decision.hd and self.urls is not None:
             payload["hd_url"] = self._sign("hd", record.id, user_id)
         return OpenRecordOut(**payload)
 
