@@ -8,7 +8,7 @@
 <view class="body" wx:if="{{phase == 'form'}}">
   <view class="note">客服线下交付，会尽快联系您。</view>
   <view class="field-label">类型</view>
-  <view class="field">{{kindText}}</view>
+  <view class="field type-field"><text>{{kindText}}</text><text class="chev">›</text></view>
   <view class="field-label">节目名</view>
   <input class="field" value="{{name}}" bindinput="onName" />
   <view class="field-error" wx:if="{{nameError}}">{{nameError}}</view>
