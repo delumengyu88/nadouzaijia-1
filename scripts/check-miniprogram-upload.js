@@ -57,6 +57,12 @@ load(p, put('/tmp/name-owner.xlsx', [['2026 片单'], [], ['序号', '版权方'
 assert.strictEqual(p.data.phase, 'preview')
 assert.deepStrictEqual(p.data.items.map(function (i) { return [i.name, i.owner] }), [['星河旧梦', '云豆传媒'], ['南岭追光 & 续', '']])
 
+// 全角字母会被 parseTitles 收成半角，版权方仍按同一个显示名挂上。
+p = page()
+load(p, put('/tmp/half.xlsx', [['节目名称', '版权方'], ['星河旧梦Ａ', '云豆传媒']]))
+assert.strictEqual(p.data.phase, 'preview')
+assert.deepStrictEqual([p.data.items[0].name, p.data.items[0].owner], ['星河旧梦A', '云豆传媒'])
+
 var COL = '未找到「节目名称」列，请确认它在表格前 10 行内'
 var READ = '文件读取失败，请重新选择文件'
 var XLSX = '仅支持 .xlsx 文件'
@@ -111,6 +117,63 @@ p = page(); load(p, put('/tmp/header.xlsx', [['节目名称']]))
 assert.strictEqual(p.data.failText, '文件为空，请重新选择。')
 p = page(); load(p, { name: 'a.xls', size: 10, path: '/tmp/a.xls' })
 expectPrompt(p, XLSX)
+
+// WPS 共享字符串：<si> 带属性，节目名后面跟 <rPh> 注音。注音不能拼进片名。
+function wpsBook() {
+  var sst = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<si><t>节目名称</t></si><si><t>版权方</t></si>'
+    + '<si xml:space="preserve"><t>星河旧梦</t><rPh sb="0" eb="4"><t>xinghejiumeng</t></rPh><phoneticPr fontId="1" type="noConversion"/></si>'
+    + '<si><r><t>云豆传媒</t></r><rPh sb="0" eb="2"><t>yundou</t></rPh></si></sst>'
+  var sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+    + '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>'
+    + '<row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2" t="s"><v>3</v></c></row>'
+    + '</sheetData></worksheet>'
+  var buf = XlsxFixture.zip({
+    '[Content_Types].xml': '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+    'xl/workbook.xml': '<?xml version="1.0"?><workbook xmlns:r="r"><sheets><sheet name="片单" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    'xl/_rels/workbook.xml.rels': '<?xml version="1.0"?><Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+    'xl/sharedStrings.xml': sst,
+    'xl/worksheets/sheet1.xml': sheet
+  })
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length)
+}
+files['/tmp/wps.xlsx'] = wpsBook()
+p = page()
+load(p, { name: 'wps.xlsx', size: files['/tmp/wps.xlsx'].byteLength, path: '/tmp/wps.xlsx' })
+assert.strictEqual(p.data.phase, 'preview')
+assert.deepStrictEqual([p.data.items[0].name, p.data.items[0].owner], ['星河旧梦', '云豆传媒'])
+assert.strictEqual(p.data.items[0].name.indexOf('xinghe'), -1)
+assert.strictEqual(p.data.items[0].owner.indexOf('yundou'), -1)
+
+// <si/> 和带属性的自闭合 <si/> 后面跟着普通字符串与 <rPh> 字符串，单元格索引不能错位。
+function indexedBook(sstBody, rowsXml) {
+  var buf = XlsxFixture.zip({
+    '[Content_Types].xml': '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+    'xl/workbook.xml': '<?xml version="1.0"?><workbook xmlns:r="r"><sheets><sheet name="片单" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    'xl/_rels/workbook.xml.rels': '<?xml version="1.0"?><Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+    'xl/sharedStrings.xml': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' + sstBody + '</sst>',
+    'xl/worksheets/sheet1.xml': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' + rowsXml + '</sheetData></worksheet>'
+  })
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length)
+}
+var siGap = '<si/>'
+  + '<si xml:space="preserve"/>'
+  + '<si><t>节目名称</t></si>'
+  + '<si><t>星河旧梦</t></si>'
+  + '<si xml:space="preserve"><t>版权方</t><rPh sb="0" eb="3"><t>banquanfang</t></rPh></si>'
+  + '<si><r><t>云豆传媒</t></r><rPh sb="0" eb="2"><t>yundou</t></rPh></si>'
+files['/tmp/si-gap.xlsx'] = indexedBook(siGap,
+  '<row r="1"><c r="A1" t="s"><v>2</v></c><c r="B1" t="s"><v>4</v></c></row>'
+  + '<row r="2"><c r="A2" t="s"><v>3</v></c><c r="B2" t="s"><v>5</v></c></row>'
+  + '<row r="3"><c r="A3" t="s"><v>0</v></c><c r="B3" t="s"><v>1</v></c></row>')
+var gapRows = SheetReader.rows(new Uint8Array(files['/tmp/si-gap.xlsx']))
+assert.deepStrictEqual(gapRows, [['节目名称', '版权方'], ['星河旧梦', '云豆传媒'], ['', '']])
+p = page()
+load(p, { name: 'si-gap.xlsx', size: files['/tmp/si-gap.xlsx'].byteLength, path: '/tmp/si-gap.xlsx' })
+assert.strictEqual(p.data.phase, 'preview')
+assert.deepStrictEqual([p.data.items[0].name, p.data.items[0].owner], ['星河旧梦', '云豆传媒'])
 
 // 解压：deflate 各种压缩级别和策略都能还原（Excel/WPS 导出都是 deflate）。
 var big = Buffer.from(Array.from({ length: 2000 }, function (_, n) { return '<c r="A' + n + '"><v>节目' + (n % 13) + '</v></c>' }).join(''))

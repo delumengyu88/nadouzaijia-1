@@ -176,10 +176,12 @@ class SheetReader {
     return m ? m[1] : ''
   }
   static texts(xml) {
+    // WPS 在共享字符串里写注音 <rPh><t>…</t></rPh>，那些 <t> 不是节目名。
+    var body = String(xml || '').replace(/<rPh\b[^>]*>[\s\S]*?<\/rPh>/g, '')
     var out = ''
     var re = /<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g
     var m
-    while ((m = re.exec(xml))) out += SheetReader.unescape(m[1])
+    while ((m = re.exec(body))) out += SheetReader.unescape(m[1])
     return out
   }
   static firstSheet(files) {
@@ -210,7 +212,8 @@ class SheetReader {
     if (!name) throw new Error('xlsx: no sheet')
     var shared = []
     var sst = SheetReader.entry(files, 'xl/sharedStrings.xml') || ''
-    var si = /<si>([\s\S]*?)<\/si>|<si\/>/g
+    // 自闭合 <si/> 必须先匹配。若放在后面，<si\b[^>]*> 会把 <si/> 的斜杠吃进属性，一直配到下一个 </si>，后面的共享字符串就整表错一位。
+    var si = /<si\b[^>]*\/>|<si\b[^>]*>([\s\S]*?)<\/si>/g
     var m
     while ((m = si.exec(sst))) shared.push(SheetReader.texts(m[1] || ''))
     var xml = SheetReader.entry(files, name)
