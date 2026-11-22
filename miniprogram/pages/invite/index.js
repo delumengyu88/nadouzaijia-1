@@ -46,6 +46,7 @@ Page({
     this.retryLoad()
     return false
   },
+  onIdentityReady: function () { this.onShow() },
   onShow: function () {
     if (require('../../config').mode === 'live' && this._sent !== session.token()) this.retryLoad()
   },

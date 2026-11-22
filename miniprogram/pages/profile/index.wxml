@@ -12,8 +12,8 @@
     <button class="retry-btn" bindtap="retryLoad">重试</button>
   </view>
   <view class="card choice-top" wx:elif="{{guest}}">
-    <text class="row-title">未登录</text>
-    <view><button class="login-link" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">微信登录</button><view class="login-error" wx:if="{{loginError}}">{{loginError}}</view></view>
+    <text class="row-title">免费用户</text>
+    <button wx:if="{{loginError || !identifying}}" class="login-link" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">重试</button>
   </view>
   <view class="card" wx:else>
     <view class="choice-top">
@@ -22,7 +22,7 @@
     <view class="ex-line" wx:if="{{detail}}">{{detail}}</view>
     <view class="ex-line" wx:for="{{lines}}" wx:key="*this">{{item}}</view>
   </view>
-  <block wx:if="{{!guest && !loading}}">
+  <block>
     <view class="row" data-url="/pages/evidence-list/index" bindtap="go">
       <view class="row-main"><view class="row-title">取证申请</view></view>
       <text class="chev">›</text>
@@ -31,13 +31,13 @@
       <view class="row-main"><view class="row-title">查询记录</view></view>
       <text class="chev">›</text>
     </view>
-    <view class="row invite-row" wx:if="{{!inviteLoading && bound && !inviteError}}">
+    <view class="row invite-row" wx:if="{{!guest && !loading && !loadError && !inviteLoading && bound && !inviteError}}">
       <view class="row-main"><view class="row-title">邀请码</view></view>
       <text class="invite-bound">已绑定 {{inviteMask}}</text>
     </view>
     <button class="row invite-row" wx:elif="{{inviteError}}" bindtap="retryLoad">网络异常，请重试 · 重试</button>
     <view class="row invite-row" wx:elif="{{!inviteLoading}}" data-url="/pages/invite/index" bindtap="go">
-      <view class="row-main"><view class="row-title">{{inviteError || bindText}}</view></view>
+      <view class="row-main"><view class="row-title">{{inviteError || bindText || '兑换邀请码'}}</view></view>
       <text class="chev" wx:if="{{!inviteError}}">›</text>
     </view>
     <view class="row" data-url="/pages/orders/index" bindtap="go">

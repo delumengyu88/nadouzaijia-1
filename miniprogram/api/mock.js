@@ -306,7 +306,7 @@ function homeState() {
     examplesError: !!session.examplesError,
     examples: session.examplesError ? [] : homeExamples(),
     platformTotal: 26,
-    draft: session.draft || ''
+    draft: state.getDraft()
   }
 }
 
@@ -697,11 +697,8 @@ module.exports = {
   profile: profile,
   memberCenter: memberCenter,
   membershipPlans: membershipPlans,
-  setDraft: function (value) {
-    state.load().draft = String(value || '')
-    save()
-  },
-  getDraft: function () { return state.load().draft || '' },
+  setDraft: state.setDraft,
+  getDraft: state.getDraft,
   parseTitles: function (raw) { return text.parseTitles(raw) },
   parseFile: function (name, size) {
     var lower = String(name || '').toLowerCase()

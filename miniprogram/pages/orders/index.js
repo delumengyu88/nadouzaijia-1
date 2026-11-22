@@ -55,6 +55,7 @@ Page({
     needLogin: false,
     live: false
   },
+  onIdentityReady: function () { this.onShow() },
   onShow: function () {
     this.ticket = (this.ticket || 0) + 1
     var data = nav.layout('orders', this.query)

@@ -23,6 +23,7 @@ function decorate(rows, offset) {
 
 Page({
   data: { title: '查询记录', showBack: true, rows: [], empty: false, loading: false, failed: false, needLogin: false },
+  onIdentityReady: function () { this.onShow() },
   onShow: function () {
     if (this.returning && this.session === sessionKey()) {
       this.returning = false

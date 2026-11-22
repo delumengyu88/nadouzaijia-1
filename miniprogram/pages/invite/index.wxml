@@ -21,7 +21,7 @@
   <view class="center-box"><view class="center-title">正在加载</view></view>
 </view>
 <view class="body" wx:elif="{{phase == 'guest'}}">
-  <button class="btn block" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">微信登录</button>
+  <button class="btn block" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">重试</button>
   <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
 </view>
 <view class="body" wx:elif="{{phase == 'unavailable'}}">

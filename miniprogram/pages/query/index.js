@@ -14,6 +14,7 @@ Page({
     }
     this.refresh()
   },
+  onIdentityReady: function () { this.onShow() },
   onShow: function () {
     if (this.view) return
     var self = this

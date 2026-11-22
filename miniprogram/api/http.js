@@ -373,11 +373,12 @@ module.exports = {
   markSplashSeen: function () { require('./splash').markSeen() },
   markAnnounceSeen: function () {},
   homeState: function () {
+    var access = require('./identity').syncAccess()
     return {
-      loggedIn: !!state.userId(),
-      tier: 'free',
-      banner: state.userId() ? 'free' : 'guest',
-      bannerText: state.userId() ? '尚未开通会员' : '未登录',
+      loggedIn: !access.guest,
+      tier: access.tier,
+      banner: access.guest ? 'guest' : access.tier,
+      bannerText: access.tier === 'free' ? '尚未开通会员' : '',
       runningId: '',
       showAnnounce: false,
       showDone: false,
@@ -385,7 +386,7 @@ module.exports = {
       doneQueryId: '',
       examples: [],
       platformTotal: 0,
-      draft: state.load().draft || ''
+      draft: state.getDraft()
     }
   },
   login: require('./auth').login,
@@ -394,8 +395,8 @@ module.exports = {
   profile: function () { return require('./identity').loadProfile() },
   memberCenter: function () { return require('./identity').loadMemberCenter() },
   membershipPlans: function () { return require('./mock').membershipPlans() },
-  setDraft: function (value) { state.load().draft = String(value || ''); state.save() },
-  getDraft: function () { return state.load().draft || '' },
+  setDraft: state.setDraft,
+  getDraft: state.getDraft,
   parseTitles: function (raw) { return require('../utils/text').parseTitles(raw) },
   parseFile: function () { return { ok: false, message: '请改为粘贴节目名' } },
   createQuery: function () { return notReady() },

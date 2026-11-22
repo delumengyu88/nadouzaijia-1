@@ -1,13 +1,19 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
+var state = require('../../api/state')
 
 Page({
   data: { title: '取证申请', showBack: true, rows: [], loading: true, empty: false, loadError: '' },
+  onIdentityReady: function () { this.onShow() },
   onShow: function () {
     var layout = nav.layout('evidence-list', this.query)
+    var revision = state.sessionRevision()
+    var visit = this.visit = (this.visit || 0) + 1
     var listed = api.listEvidence()
     var self = this
     function apply(rows, failed) {
+      if (visit !== self.visit) return
+      if (revision !== state.sessionRevision()) { self.onShow(); return }
       var list = rows || []
       self.setData({
         statusBarHeight: layout.statusBarHeight,
@@ -36,6 +42,7 @@ Page({
     }
     apply(listed, false)
   },
+  onUnload: function () { this.visit += 1 },
   back: function () {
     if (getCurrentPages().length > 1) wx.navigateBack()
     else wx.switchTab({ url: '/pages/profile/index' })

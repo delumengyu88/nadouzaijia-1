@@ -1,5 +1,6 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
+var state = require('../../api/state')
 var calibration = require('../../utils/calibration')
 var present = require('../../utils/present')
 var config = require('../../config')
@@ -20,12 +21,24 @@ Page({
   onLoad: function (query) {
     if (calibration.blockReport(query)) return
     this.query = query
+    this.read()
+  },
+  onShow: function () {
+    if (this.query && this.query.example !== '1' && this.revision !== state.sessionRevision()) this.read()
+  },
+  onIdentityReady: function () { this.onShow() },
+  onUnload: function () { this.disposed = true },
+  read: function () {
+    var query = this.query
+    var revision = this.revision = state.sessionRevision()
     var name = decode(query.name)
     var search = query.example === '1' && !mockMode() ? httpApi.exampleReport(name) : (query.example === '1' ? api.exampleReport(name) : api.searchProgram(name))
     var self = this
     if (search && typeof search.then === 'function') {
-      this.setData(Object.assign(nav.layout('viewer', this.query), { loading: true, missing: false }))
-      search.then(function (result) { self.applySearch(result, query) }).catch(function () {
+      this.setData(Object.assign(nav.layout('viewer', this.query), { loading: true, missing: false, image: '', canSave: false, downloadEntry: false }))
+      function current() { return !self.disposed && (query.example === '1' || revision === state.sessionRevision()) }
+      search.then(function (result) { if (current()) self.applySearch(result, query) }).catch(function () {
+        if (!current()) return
         self.setData({ loading: false, missing: true })
       })
       return
@@ -112,10 +125,13 @@ Page({
     else wx.switchTab({ url: '/pages/home/index' })
   },
   save: function () {
-    if (!this.data.canSave) return
+    var page = this
+    var revision = this.revision
+    if (!this.data.canSave || revision !== state.sessionRevision()) return
     if (!this.data.mock) {
       if (!this.data.image) { wx.showToast({ title: '截图暂不可用', icon: 'none' }); return }
       wx.downloadFile({ url: this.data.image, success: function (res) {
+        if (page.disposed || revision !== state.sessionRevision()) return
         if (res.statusCode === 200) wx.saveImageToPhotosAlbum({ filePath: res.tempFilePath })
         else wx.showToast({ title: '截图下载失败', icon: 'none' })
       }, fail: function () { wx.showToast({ title: '截图下载失败', icon: 'none' }) } })

@@ -41,6 +41,7 @@ Page({
     loading: require('../../config').mode !== 'mock',
     loadError: false
   },
+  onIdentityReady: function () { this.onShow() },
   onShow: function () {
     this.setData({ testBuild: testOffer.dedicated() })
     this.refreshTestOffer()

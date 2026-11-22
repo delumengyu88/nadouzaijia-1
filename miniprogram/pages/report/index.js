@@ -1,5 +1,6 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
+var state = require('../../api/state')
 var calibration = require('../../utils/calibration')
 var present = require('../../utils/present').present
 var config = require('../../config')
@@ -19,6 +20,7 @@ Page({
   onLoad: function (query) {
     if (calibration.blockReport(query)) return
     if (api.isLive) query.view = ''
+    this.revision = state.sessionRevision()
     this.query = query || {}
     this.setData(Object.assign(nav.layout('report', this.query), { showBack: true, phase: 'loading', title: decode(query.name) }))
     if (query.view === 'loading') return
@@ -29,12 +31,22 @@ Page({
     var self = this
     nav.later(280, function () { self.load() })
   },
-  onShow: function () { this.refreshApplication() },
+  onShow: function () {
+    if (this.query && this.query.example !== '1' && this.revision !== state.sessionRevision()) {
+      this.setData({ phase: 'loading', appliedId: '', showDownload: false, downloadLoading: false, groups: [], records: [] })
+      this.load()
+    }
+    this.refreshApplication()
+  },
+  onIdentityReady: function () { this.onShow() },
+  onUnload: function () { this.disposed = true },
   refreshApplication: function () {
     var name = this.data.name
     var normalize = require('../../utils/text').foldKey
     var self = this
+    var revision = state.sessionRevision()
     function apply(rows) {
+      if (self.disposed || revision !== state.sessionRevision()) return
       var found = (rows || []).filter(function (item) { return normalize(item.name) === normalize(name || '') })[0]
       self.setData({ appliedId: found ? found.id : '' })
     }
@@ -50,7 +62,8 @@ Page({
     else wx.switchTab({ url: '/pages/home/index' })
   },
   load: function () {
-    if (calibration.blockReport(this.query)) return
+    if (this.disposed || calibration.blockReport(this.query)) return
+    var revision = this.revision = state.sessionRevision()
     var query = this.query || {}
     var name = decode(query.name)
     if (!name) {
@@ -63,14 +76,15 @@ Page({
     else if (query.view === 'expired' || query.view === 'locked') search = api.searchProgram(name, { locked: true })
     else search = api.searchProgram(name)
     var self = this
-    var userId = require('../../api/state').userId()
+    function current() { return !self.disposed && (query.example === '1' || revision === state.sessionRevision()) }
     function apply(result) {
-      if (userId !== require('../../api/state').userId()) return
+      if (!current()) return
       self.applySearch(result, name, query)
     }
     if (search && typeof search.then === 'function') {
       this.setData({ phase: 'loading' })
       search.then(apply).catch(function (error) {
+        if (!current()) return
         self.setData({ phase: 'fail', error: error.message || '加载失败' })
       })
     } else apply(search)
@@ -147,12 +161,14 @@ Page({
     wx.navigateTo({ url: '/pages/evidence/index?name=' + encodeURIComponent(this.data.evidenceName || '') + '&kind=recent' })
   },
   download: function () {
-    if (this.data.example || this.data.downloadLoading) return
+    var revision = state.sessionRevision()
+    if (this.data.example || this.data.downloadLoading || (this.revision !== undefined && this.revision !== revision)) return
     this.setData({ downloadLoading: true })
     var book = api.exportBook(this.data.name, (this.query && this.query.id) || '')
     var self = this
     if (book && typeof book.then === 'function') {
-      book.then(function (result) { self.saveBook(result) }).catch(function (error) {
+      book.then(function (result) { if (!self.disposed && revision === state.sessionRevision()) self.saveBook(result) }).catch(function (error) {
+        if (self.disposed || revision !== state.sessionRevision()) return
         self.setData({ downloadLoading: false })
         if (error && error.message === '网络异常，请重试') {
           wx.showModal({
@@ -182,6 +198,8 @@ Page({
       wx.showToast({ title: book.message, icon: 'none' })
       return
     }
+    var page = this
+    var revision = state.sessionRevision()
     var fs = wx.getFileSystemManager()
     var path = wx.env.USER_DATA_PATH + '/' + book.filename
     fs.writeFile({
@@ -189,6 +207,7 @@ Page({
       data: book.bytes.buffer,
       success: function () {
         stop()
+        if (page.disposed || revision !== state.sessionRevision()) return
         wx.openDocument({ filePath: path, fileType: 'xlsx', showMenu: true })
       },
       fail: function () {

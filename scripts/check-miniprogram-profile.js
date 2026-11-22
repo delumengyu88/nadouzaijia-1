@@ -159,7 +159,7 @@ async function main() {
   assert(profileXml.indexOf('>我的</view>') !== -1)
   assert(profileXml.indexOf('网络异常，请重试') !== -1)
   assert(profileXml.indexOf('>重试</button>') !== -1)
-  assert(profileXml.indexOf('wx:if="{{!guest && !loading}}"') !== -1)
+  assert(!profileXml.includes('<block wx:if="{{!guest && !loading}}">') && profileXml.includes('/pages/records/index'))
   assert(profileXml.indexOf('加载中') !== -1)
   var memberCss = fs.readFileSync(require.resolve('../miniprogram/pages/member/index.wxss'), 'utf8')
   var memberXml = fs.readFileSync(require.resolve('../miniprogram/pages/member/index.wxml'), 'utf8')

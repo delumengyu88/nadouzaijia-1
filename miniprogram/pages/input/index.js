@@ -1,5 +1,6 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
+var state = require('../../api/state')
 var SheetReader = require('../../utils/sheet')
 
 var FAIL = {
@@ -16,6 +17,7 @@ var RESELECT = { xlsx: 1, col: 1, read: 1 }
 Page({
   data: { title: '输入片单', showBack: true, phase: 'edit', raw: '', items: [] },
   onLoad: function (query) {
+    this.owner = api.accountKind()
     var data = nav.layout('input', this.query)
     data.title = '输入片单'
     data.showBack = true
@@ -55,7 +57,19 @@ Page({
       box: ''
     })
   },
+  newRecognition: function () {
+    var owner = api.accountKind()
+    var revision = state.sessionRevision()
+    var page = this
+    var sequence = this.recognition = (this.recognition || 0) + 1
+    return function () {
+      if (sequence !== page.recognition) return false
+      var now = state.sessionRevision()
+      return now === revision || (owner === 'guest' && now === revision + 1 && api.accountKind() !== 'guest')
+    }
+  },
   recognizeText: function () {
+    var current = this.newRecognition()
     var raw = this.data.raw || api.getDraft()
     if (!String(raw).trim()) {
       this.setData({ phase: 'edit', raw: raw })
@@ -64,7 +78,7 @@ Page({
     this.fromFile = false
     this.setData({ phase: 'recognizing', box: '识别中…', hint: '' })
     var self = this
-    nav.later(600, function () { self.showParsed(raw) })
+    nav.later(600, function () { if (current()) self.showParsed(raw) })
   },
   showParsed: function (raw, owners) {
     var self = this
@@ -95,17 +109,19 @@ Page({
     self.setData({ phase: 'preview', fromFile: fromFile, items: parsed.items, summary: summary, raw: raw })
   },
   recognizeFile: function (name, size, path) {
+    var current = this.newRecognition()
     this.fromFile = true
     this.setData({ phase: 'recognizing', box: '识别中…', hint: '' })
     var self = this
     var code = SheetReader.precheck(name, size) || (path ? '' : 'read')
     if (code) {
-      nav.later(600, function () { self.showFail(code) })
+      nav.later(600, function () { if (current()) self.showFail(code) })
       return
     }
     wx.getFileSystemManager().readFile({
       filePath: path,
       success: function (res) {
+        if (!current()) return
         var result = SheetReader.read(res.data)
         if (!result.ok) {
           self.showFail(result.code)
@@ -115,7 +131,7 @@ Page({
         result.items.forEach(function (item) { if (!owners[item.name]) owners[item.name] = item.owner })
         self.showParsed(result.items.map(function (item) { return item.name }).join('\n'), owners)
       },
-      fail: function () { self.showFail('read') }
+      fail: function () { if (current()) self.showFail('read') }
     })
   },
   start: function () {
@@ -131,11 +147,43 @@ Page({
     var items = this.data.items.filter(function (_, i) { return i !== index })
     this.setData({ items: items, summary: '共 ' + items.length + ' 条有效节目名' })
   },
-  confirm: function () {
-    if (api.accountKind() === 'guest') {
-      return require('../../utils/login')(this, function () {})
+  onShow: function () {
+    var current = api.accountKind()
+    if (this.owner && this.owner !== 'guest' && this.owner !== current) {
+      this.visit = (this.visit || 0) + 1
+      this.recognition = (this.recognition || 0) + 1
+      this.creating = false
+      this.setData({ phase: 'edit', items: [], raw: api.getDraft(), loginError: '', loginLoading: false })
     }
+    this.owner = current
+  },
+  onIdentityReady: function () { this.onShow() },
+  onHide: function () {
+    this.visit = (this.visit || 0) + 1
+    this.creating = false
+    this.setData({ loginLoading: false })
+  },
+  onUnload: function () { this.visit = (this.visit || 0) + 1; this.recognition = (this.recognition || 0) + 1 },
+  confirm: function () {
+    if (this.owner && this.owner !== 'guest' && this.owner !== api.accountKind()) { this.onShow(); return }
     if (this.creating) return
+    if (api.accountKind() === 'guest') {
+      var page = this
+      var visit = this.visit
+      this.creating = true
+      this.setData({ loginLoading: true, loginError: '' })
+      return api.ensureEntry().then(function (user) {
+        if (visit !== page.visit) return
+        page.creating = false
+        page.setData({ loginLoading: false })
+        if (user && user.id && user.id !== require('../../api/state').userId()) return
+        if (api.accountKind() !== 'guest') page.confirm()
+      }, function (error) {
+        if (visit !== page.visit) return
+        page.creating = false
+        page.setData({ loginLoading: false, loginError: error.sessionChanged ? '' : '连接失败，请重试' })
+      })
+    }
     var names = (this.data.items || []).map(function (item) { return item.name })
     var created = api.createQuery(names)
     if (!created || typeof created.then !== 'function') {
@@ -145,11 +193,14 @@ Page({
     this.creating = true
     this.setData({ loginLoading: true })
     var self = this
+    var submittedVisit = this.visit
     created.then(function (result) {
+      if (submittedVisit !== self.visit) return
       self.creating = false
       self.setData({ loginLoading: false })
       self.finishCreate(result)
     }, function () {
+      if (submittedVisit !== self.visit) return
       self.creating = false
       self.setData({ loginLoading: false })
       self.finishCreate({ ok: false, message: '网络异常，请重试' })
@@ -159,7 +210,8 @@ Page({
     if (created && created.sessionChanged) return
     if (!created || !created.ok) {
       if (created && (created.statusCode === 401 || created.message === '请先登录')) {
-        return require('../../utils/login')(this, function () {})
+        this.setData({ loginError: '连接已过期，请重新开始查询' })
+        return
       }
       wx.showToast({ title: (created && created.message) || '网络异常，请重试', icon: 'none' })
       return

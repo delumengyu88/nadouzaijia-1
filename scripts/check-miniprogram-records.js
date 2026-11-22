@@ -102,8 +102,7 @@ async function main() {
   assert(recordsWxss.indexOf('text-overflow: ellipsis') !== -1)
   assert(queryWxml.indexOf('记录不存在') !== -1)
   assert(queryWxml.indexOf('返回') !== -1)
-  assert(recordsWxml.indexOf('登录后继续') !== -1)
-  assert(recordsWxml.indexOf('微信登录') !== -1)
+  assert(recordsWxml.includes('暂时无法读取查询记录') && recordsWxml.includes('重试'))
 
   // 1. createQuery：一条用 {name}，多条用 {names}，之后用服务端 id。
   var createdId = ''
