@@ -78,6 +78,24 @@ function recordLimit(value) {
   if (limit > 100) limit = 100
   return limit
 }
+function listRecordPage(limit, offset) {
+  limit = recordLimit(limit)
+  return queryRequest('/api/v1/queries', { limit: limit, offset: offset }, 'GET').then(function (body) {
+    var items = body && body.items ? body.items : []
+    var rows = items.map(function (row) {
+      if (row && row.id) rememberQuery(row.id)
+      return {
+        id: row && row.id,
+        name: row && row.name || '',
+        badge: row && row.badge || '',
+        badgeCls: row && row.badgeCls || '',
+        line: row && row.line || ''
+      }
+    })
+    var hasMore = body && typeof body.total === 'number' ? offset + rows.length < body.total : rows.length === limit
+    return { rows: rows, hasMore: rows.length > 0 && hasMore }
+  })
+}
 function sanitizeDetail(detail) {
   var src = detail || {}
   var items = (src.items || []).map(function (item) {
@@ -276,20 +294,9 @@ module.exports = {
     seenOnce[id] = state.userId()
     queryRequest('/api/v1/queries/' + encodeURIComponent(id) + '/seen', {}, 'POST').then(function () {}, function () {})
   },
+  listRecordPage: listRecordPage,
   listRecords: function (limit) {
-    return queryRequest('/api/v1/queries', { limit: recordLimit(limit), offset: 0 }, 'GET').then(function (body) {
-      var items = body && body.items ? body.items : []
-      return items.map(function (row) {
-        if (row && row.id) rememberQuery(row.id)
-        return {
-          id: row && row.id,
-          name: row && row.name || '',
-          badge: row && row.badge || '',
-          badgeCls: row && row.badgeCls || '',
-          line: row && row.line || ''
-        }
-      })
-    })
+    return listRecordPage(limit, 0).then(function (page) { return page.rows })
   },
   exportBook: function (name, queryId) {
     function build() {

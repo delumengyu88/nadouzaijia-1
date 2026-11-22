@@ -85,6 +85,22 @@ def test_create_accepts_a_list_or_one_name_and_only_the_owner_can_read(session, 
     assert {row.resolution for row in stored} == {"pending"}
 
 
+def test_large_batch_lists_every_uploaded_name_across_pages(session, clock):
+    add_user(session, "owner", clock)
+    add_user(session, "other", clock)
+    session.commit()
+    client = make_client(session, clock)
+    names = [f"节目 {index}" for index in range(27)]
+    query_id = create(client, "owner", {"names": names}).json()["id"]
+    first = listed(client, "owner")
+    next_page = listed(client, "owner", limit=21, offset=19)
+    assert first["items"][-1] == next_page["items"][0]
+    combined = first["items"] + next_page["items"][1:]
+    assert [row["name"] for row in combined] == names
+    assert {row["id"] for row in combined} == {query_id}
+    assert listed(client, "other", limit=21, offset=19)["items"] == []
+
+
 def test_list_is_newest_first_and_paged_by_program(session, clock):
     add_user(session, "owner", clock)
     session.commit()

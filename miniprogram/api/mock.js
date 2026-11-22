@@ -777,6 +777,10 @@ module.exports = {
     save()
     return queryView(query)
   },
+  listRecordPage: function (limit, offset) {
+    var rows = this.listRecords()
+    return { rows: rows.slice(offset, offset + limit), hasMore: offset + limit < rows.length }
+  },
   listRecords: function () {
     var account = acc()
     if (!account) return []

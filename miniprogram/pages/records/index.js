@@ -1,7 +1,14 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
 
-function decorate(rows) {
+var state = require('../../api/state')
+var PAGE_SIZE = 20
+
+function sessionKey() {
+  return api.isLive ? state.token() : state.currentId()
+}
+
+function decorate(rows, offset) {
   return (rows || []).map(function (row, index) {
     return {
       id: row.id,
@@ -9,7 +16,7 @@ function decorate(rows) {
       badge: row.badge || '',
       badgeCls: row.badgeCls || '',
       line: row.line || '',
-      key: (row.id || '') + ':' + index + ':' + (row.name || '')
+      key: (row.id || '') + ':' + (offset + index) + ':' + (row.name || '')
     }
   })
 }
@@ -17,37 +24,56 @@ function decorate(rows) {
 Page({
   data: { title: '查询记录', showBack: true, rows: [], empty: false, loading: false, failed: false, needLogin: false },
   onShow: function () {
-    var data = nav.layout('records', this.query)
-    data.title = '查询记录'
-    data.showBack = true
-    var listed = api.listRecords()
-    if (listed && typeof listed.then === 'function') {
-      data.loading = true
-      data.rows = []
-      data.empty = false
-      data.failed = false
-      data.needLogin = false
-      this.setData(data)
-      var self = this
-      var token = this.loadToken = (this.loadToken || 0) + 1
-      listed.then(function (rows) {
-        if (self.loadToken !== token) return
-        var list = rows || []
-        self.setData({ loading: false, failed: false, needLogin: false, rows: decorate(list), empty: !list.length })
-      }, function (error) {
-        if (self.loadToken !== token) return
-        if (error && error.sessionChanged) self.onShow()
-        else self.showError(error)
-      })
+    if (this.returning && this.session === sessionKey()) {
+      this.returning = false
       return
     }
-    var rows = decorate(listed || [])
-    data.rows = rows
-    data.empty = !rows.length
-    data.loading = false
-    data.failed = false
-    data.needLogin = false
-    this.setData(data)
+    this.returning = false
+    this.session = sessionKey()
+    this.loadToken = (this.loadToken || 0) + 1
+    this.setData(Object.assign(nav.layout('records', this.query), {
+      title: '查询记录', showBack: true, rows: [], loading: true, empty: false,
+      failed: false, needLogin: false, hasMore: false, loadingMore: false, moreError: false
+    }))
+    this.fetchPage(false)
+  },
+  onUnload: function () { this.loadToken += 1 },
+  loadMore: function () {
+    if (this.session !== sessionKey()) { this.onShow(); return }
+    if (!this.data.hasMore || this.data.loadingMore) return
+    this.setData({ loadingMore: true, moreError: false })
+    this.fetchPage(true)
+  },
+  fetchPage: function (append) {
+    var self = this
+    var token = this.loadToken
+    var count = this.data.rows.length
+    // Overlap one row to detect inserts/deletes that shift the server offset between pages.
+    var offset = append ? count - 1 : 0
+    var result = api.listRecordPage(append ? PAGE_SIZE + 1 : PAGE_SIZE, offset)
+    function apply(page) {
+      if (token !== self.loadToken) return
+      if (self.session !== sessionKey()) { self.onShow(); return }
+      var rows = decorate(page.rows, offset)
+      if (append) {
+        var anchor = self.data.rows[count - 1]
+        if (!rows[0] || rows[0].key !== anchor.key) { self.onShow(); return }
+        rows = self.data.rows.concat(rows.slice(1))
+      }
+      self.setData({ rows: rows, empty: !rows.length, loading: false, loadingMore: false, hasMore: page.hasMore })
+    }
+    function failed(error) {
+      if (token !== self.loadToken) return
+      if ((error && error.sessionChanged) || self.session !== sessionKey()) { self.onShow(); return }
+      if (append && error && error.statusCode !== 401 && error.statusCode !== 403) {
+        self.setData({ loadingMore: false, moreError: true })
+      } else {
+        self.setData({ loadingMore: false, hasMore: false, moreError: false })
+        self.showError(error)
+      }
+    }
+    if (result && typeof result.then === 'function') result.then(apply, failed)
+    else apply(result)
   },
   showError: function (error) {
     var code = error && error.statusCode
@@ -67,6 +93,15 @@ Page({
     else wx.switchTab({ url: '/pages/profile/index' })
   },
   open: function (e) {
-    wx.navigateTo({ url: '/pages/query/index?id=' + e.currentTarget.dataset.id })
+    if (this.session !== sessionKey()) { this.onShow(); return }
+    this.returning = true
+    wx.navigateTo({ url: '/pages/query/index?id=' + encodeURIComponent(e.currentTarget.dataset.id) })
+  },
+  requestEvidence: function (e) {
+    if (this.session !== sessionKey()) { this.onShow(); return }
+    var row = this.data.rows[e.currentTarget.dataset.index]
+    if (!row) return
+    this.returning = true
+    wx.navigateTo({ url: '/pages/evidence/index?fromRecord=1&kind=normal&name=' + encodeURIComponent(row.name) })
   }
 })
