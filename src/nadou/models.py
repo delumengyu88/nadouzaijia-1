@@ -287,6 +287,7 @@ class EvidenceRequest(Base):
     platform_label: Mapped[str | None] = mapped_column(String(200))
     record_ref: Mapped[str | None] = mapped_column(String(64))
     contact_name: Mapped[str | None] = mapped_column(String(64))
+    contact_phone: Mapped[str | None] = mapped_column(String(32))
     organization: Mapped[str | None] = mapped_column(String(200))
     requirement: Mapped[str | None] = mapped_column(String(500))
     notes: Mapped[list["EvidenceNote"]] = relationship(back_populates="request")
