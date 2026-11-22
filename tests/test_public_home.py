@@ -46,6 +46,7 @@ def store(
     is_test=False,
     hit_type="consensus",
     network="公网",
+    timestamps=None,
     unverified=False,
     platform_name=None,
     platform_province=None,
@@ -81,7 +82,7 @@ def store(
             program_name_raw=program,
             hit_type=hit_type,
             frame_count=2,
-            timestamps=["00:01:02"],
+            timestamps=timestamps or ["00:01:02"],
             uploaded_at=None,
             generated_uploaded_at=generated_at,
             date_generated=generated_at is not None,
@@ -502,26 +503,24 @@ def test_examples_use_real_dates_and_skip_generated_rows(workbench):
     assert detail["evidence_platforms"] == ["浙江移动", "广东移动"]
     assert detail["evidence_program_name"] == program
     assert [row["record_id"] for row in detail["records"]] == [
-        "hit-young",
         "hit-zj",
         "hit-bad",
         "hit-ott",
         "hit-gd",
     ]
+    assert "hit-young" not in report.text
+    assert "江苏移动" not in report.text
+    assert day_of(young) not in report.text
     assert "hit-generated" not in report.text
     assert "2033-03-03" not in report.text
     assert day_of(shandong) not in report.text
-    young_row = detail["records"][0]
-    assert young_row["platform"] == "江苏移动"
-    assert young_row["age_bucket"] == "lt_30"
-    assert datetime.fromisoformat(young_row["checked_at"]) == young
-    latest = detail["records"][1]
+    latest = detail["records"][0]
     assert latest["platform"] == "浙江移动"
     assert latest["network_type"] == "专网"
     assert latest["age_bucket"] == "d30_89"
     assert datetime.fromisoformat(latest["checked_at"]) == recent
-    assert detail["records"][2]["platform"] == "其他平台"
-    assert detail["records"][2]["platform_operator"] is None
+    assert detail["records"][1]["platform"] == "其他平台"
+    assert detail["records"][1]["platform_operator"] is None
     for row in detail["records"]:
         assert row["thumbnail_url"] is None
         assert row["hd_url"] is None
@@ -563,7 +562,62 @@ def test_example_name_is_folded_and_young_only_has_no_fallback_date(workbench):
     assert body["outcome"] == "recent_only"
     assert body["evidence_platforms"] == []
     assert body["evidence_program_name"] == "AbC节目"
-    assert body["records"][0]["record_id"] == "fold-rec"
-    assert body["records"][0]["checked_at"] is not None
-    assert datetime.fromisoformat(body["records"][0]["checked_at"]) == when
+    assert body["records"] == []
+    assert "fold-rec" not in report.text
+    assert "广东移动" not in report.text
+    assert day_of(when) not in report.text
     assert home["platformTotal"] == 1
+
+
+def test_anonymous_example_omits_records_under_30_days(workbench):
+    clock = workbench.clock.now
+    young = at_age(clock, 29)
+    old_enough = at_age(clock, 30)
+    add_example(workbench.session, example_id="ex-gate", name="分档节目", sort_order=1)
+    store(
+        workbench.session,
+        task_id="under-30",
+        record_id="under-30",
+        program="分档节目",
+        platform="云南移动",
+        when=young,
+        timestamps=["00:09:09"],
+    )
+    store(
+        workbench.session,
+        task_id="day-30",
+        record_id="day-30",
+        program="分档节目",
+        platform="广东移动",
+        when=old_enough,
+    )
+    store(
+        workbench.session,
+        task_id="no-date",
+        record_id="no-date",
+        program="分档节目",
+        platform="广西移动",
+        created_at=False,
+        timestamps=["00:08:08"],
+    )
+    workbench.session.commit()
+
+    with TestClient(workbench.app) as client:
+        report = client.get(example_url("分档节目"))
+    assert report.request.headers.get("authorization") is None
+    assert report.status_code == 200
+    body = report.json()
+    assert [row["record_id"] for row in body["records"]] == ["day-30"]
+    assert body["records"][0]["platform"] == "广东移动"
+    assert body["records"][0]["age_bucket"] == "d30_89"
+    assert datetime.fromisoformat(body["records"][0]["checked_at"]) == old_enough
+    assert body["line"] == "涉及 1 个平台"
+    assert body["sub"] == f"命中 1 条记录 · {day_of(old_enough)}"
+    assert body["outcome"] == "hit"
+    assert "under-30" not in report.text
+    assert "no-date" not in report.text
+    assert "云南移动" not in report.text
+    assert "广西移动" not in report.text
+    assert "00:09:09" not in report.text
+    assert "00:08:08" not in report.text
+    assert day_of(young) not in report.text

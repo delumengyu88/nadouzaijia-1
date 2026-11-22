@@ -107,7 +107,7 @@ Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is loc
 
 `platformTotal` 是全库已收录平台数，不是某一个节目的 `platform_count`。口径：`index_records.hit_type = consensus` 的记录所关联的任务里，能通过 `ProgramSearch.included` 和 `ProgramSearch._unverified` 的，再取 `ProgramSearch._platform_key`（省份可以为空，加上运营商）去重。子类型（OTT、百视通）和公网/专网不另算一个平台。`其他平台` 和 `平台未识别` 是未核实来源的展示名，不计入。这个数不按 30 天过滤，也不因 `date_generated` 把平台拿掉：生成日期只影响示例上能不能把该行的时间当成检测日。没有可计平台时返回 `0`，不写死固定数字。
 
-`GET /api/v1/app/examples/{name}` 用与检索相同的标题折叠找到一条上线示例。找不到、未上线，或标题折叠后为空，返回 404 `example not found`，同样带上面的缓存头。返回的 `name` 是工作台保存的节目名，`program_name` 是折叠后的索引名。`records` 不含 `date_generated` 的行；`checked_at` 只在有真实检测日时给出，否则为 `null`。记录按真实检测日从新到旧，没有检测日的排在后面。
+`GET /api/v1/app/examples/{name}` 用与检索相同的标题折叠找到一条上线示例。找不到、未上线，或标题折叠后为空，返回 404 `example not found`，同样带上面的缓存头。返回的 `name` 是工作台保存的节目名，`program_name` 是折叠后的索引名。`records` 与上面的 `line` / `sub` 是同一批行：有真实检测日，并且 `EntitlementPolicy.age_bucket` 不是 `lt_30`（不满 30 天，任何权益都看不到字段）。`date_generated` 的行、没有真实检测日的行、不满 30 天的行都不出现，也不以打码形式返回平台或精确时间。记录按真实检测日从新到旧。只有这类行时 `records` 为空；`evidence_program_name` 仍是示例节目名，只要去掉 `date_generated` 之后还有索引行。没有任何可报告行时它为 `null`。
 
 下面这些字段没有公开来源（没有登录用户，也不签名），每条记录固定为 `null`：`thumbnail_url`、`hd_url`、`access`、`can_download_report`、`can_download_screenshot`、`locked`。没有可报告记录时 `evidence_program_name` 为 `null`。不返回 `locked_summary`、`locked_window`，也不返回首页会话字段（登录态、草稿、是否已看过公告）。
 

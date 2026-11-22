@@ -73,7 +73,14 @@ class PublicHome:
             return None
         rows = PublicHome._reportable(session, chosen.program_name)
         summary = PublicHome._summary(rows, now)
-        ordered = PublicHome._by_real_date(rows)
+        # Same rows as line/sub. Under 30 days is the forensic bucket: no grant
+        # reveals it, so a public report omits the row instead of listing it.
+        visible = [
+            (record, task)
+            for record, task in rows
+            if PublicHome._hit_time(task, record, now) is not None
+        ]
+        ordered = PublicHome._by_real_date(visible)
         return {
             "name": chosen.program_name,
             "program_name": ProgramNormalizer.canonical(chosen.program_name),
@@ -84,7 +91,7 @@ class PublicHome:
             "line": summary["line"],
             "sub": summary["sub"],
             "evidence_platforms": PublicHome._evidence_platforms(ordered, now),
-            "evidence_program_name": chosen.program_name if ordered else None,
+            "evidence_program_name": chosen.program_name if rows else None,
             "records": [PublicHome._record(record, task, now) for record, task in ordered],
         }
 
@@ -181,11 +188,19 @@ class PublicHome:
         return kept
 
     @staticmethod
-    def _age(task: Task | None, record: IndexRecord, now: datetime) -> int | None:
+    def _hit_time(task: Task | None, record: IndexRecord, now: datetime) -> datetime | None:
+        """Real detection time for a row the public example may list.
+
+        ``EntitlementPolicy.age_bucket`` is the same 30-day cut search uses.
+        ``lt_30`` is forensic for every caller, including one with no grants.
+        A missing real detection time is not a hit either.
+        """
         when = ProgramSearch.record_time(task, record)
         if when is None:
             return None
-        return RecordAge.days(when, now)
+        if EntitlementPolicy.age_bucket(RecordAge.days(when, now)) == "lt_30":
+            return None
+        return when
 
     @staticmethod
     def _summary(rows: list[tuple[IndexRecord, Task | None]], now: datetime) -> dict:
@@ -195,13 +210,13 @@ class PublicHome:
         any_recent = False
         for record, task in rows:
             when = ProgramSearch.record_time(task, record)
-            age = RecordAge.days(when, now) if when is not None else None
-            if age is None or when is None:
+            if when is None:
                 continue
-            if age < 30:
+            hit = PublicHome._hit_time(task, record, now)
+            if hit is None:
                 any_recent = True
                 continue
-            hits.append((record, task, when))
+            hits.append((record, task, hit))
             key = PublicHome.countable_platform(task)
             if key is None:
                 unverified += 1
@@ -246,8 +261,7 @@ class PublicHome:
         for record, task in rows:
             if PublicHome.countable_platform(task) is None or task is None:
                 continue
-            age = PublicHome._age(task, record, now)
-            if age is None or age < 30:
+            if PublicHome._hit_time(task, record, now) is None:
                 continue
             name = task.platform_name
             if name and name not in names:
