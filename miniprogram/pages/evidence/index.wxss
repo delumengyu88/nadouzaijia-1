@@ -1,4 +1,23 @@
+.field, button.btn.evidence-submit {
+  box-sizing: border-box;
+  width: calc(100% - 64rpx);
+  max-width: none;
+}
+input.field, .field.type-field {
+  height: 88rpx;
+  padding: 0 24rpx;
+}
+input.field { line-height: 1.4; }
 .field.type-field { display: flex; align-items: center; justify-content: space-between; padding-right: 32rpx; }
+textarea.field {
+  height: 160rpx;
+  padding: 16rpx 24rpx;
+  line-height: 1.5;
+}
+button.btn.evidence-submit {
+  margin: 24rpx 32rpx 0;
+  padding: 0;
+}
 .field.type-field .chev { margin-left: 0; }
 .req { color: #d64545; margin-left: 6rpx; }
 .field-error { margin: 12rpx 32rpx 0; color: #d64545; font-size: 26rpx; line-height: 1.5; }
