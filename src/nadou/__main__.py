@@ -1,5 +1,6 @@
 import sys
 
+from nadou.admin.create_admin import CreateAdminCommand
 from nadou.admin.indexing import IndexRunCommand
 from nadou.review import ReviewExportCommand
 
@@ -57,9 +58,11 @@ class NadouCommand:
             raise SystemExit(DemoCommand.run())
         if args == ["export-review"]:
             raise SystemExit(ReviewExportCommand.run())
+        if args[:1] == ["create-admin"]:
+            raise SystemExit(CreateAdminCommand.run(args[1:]))
         raise SystemExit(
             "usage: python -m nadou index-run | python -m nadou seed-demo | "
-            "python -m nadou export-review"
+            "python -m nadou export-review | python -m nadou create-admin USERNAME"
         )
 
 
