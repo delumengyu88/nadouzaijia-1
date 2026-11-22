@@ -13,7 +13,8 @@ global.wx = {
   setStorageSync: function (key, value) { storage[key] = JSON.parse(JSON.stringify(value)) },
   getSystemInfoSync: function () { return { statusBarHeight: 20 } },
   request: function (opts) {
-    if (opts.url.endsWith('/pay/tiers')) opts.success({statusCode:200,data:{tiers:[
+    if (opts.url.endsWith('/invite-codes/state')) opts.success({statusCode: 200, data: {guest:false,bound:false,bindText:'兑换邀请码'}})
+    else if (opts.url.endsWith('/pay/tiers')) opts.success({statusCode:200,data:{tiers:[
       {id:'membership_vip',amount_fen:59900,duration_days:30},
       {id:'membership_regular',amount_fen:31301,duration_days:42}
     ]}})
@@ -230,7 +231,7 @@ async function main() {
   assert.strictEqual(loadingProfile.data.heading, 'VIP')
   assert.strictEqual(loadingProfile.data.detail, member.statusLine('vip', VIP_DAY))
   assert.strictEqual(loadingMember.data.selected, 'membership_vip')
-  assert.strictEqual(loadingMember.data.payLabel, member.confirmLabel(599))
+  assert.strictEqual(loadingMember.data.payLabel, '续费 ¥599')
   assert.notStrictEqual(loadingMember.data.selected, 'membership_regular')
   assert.notStrictEqual(loadingProfile.data.heading, MARK)
   assert.deepStrictEqual(loadingProfile.data.lines, [])
@@ -239,6 +240,10 @@ async function main() {
   assert.strictEqual(loadingMember.data.plans[2].priceText, '免费')
   assert.strictEqual(loadingMember.data.plans[0].priceText.indexOf('¥'), 0)
   assert.strictEqual(loadingMember.data.plans[1].priceText, '¥313.01/42天')
+  loadingMember.paint({ tier: 'regular', guest: false, pricedTiers: [{id:'membership_regular',amount_fen:31301,duration_days:42}] })
+  assert.strictEqual(loadingMember.data.payLabel, '续费 ¥313.01')
+  assert.strictEqual(loadingMember.data.plans[0].selectable, false)
+  assert.strictEqual(loadingMember.data.plans[0].priceText, '')
   assert.strictEqual(loadingMember.data.plans[2].perks.length, 3)
   assert.strictEqual(loadingMember.data.plans[0].perks.length, 3)
   noMock(loadingProfile.data)
@@ -252,7 +257,7 @@ async function main() {
   await drain()
   assert.strictEqual(inviteProfile.data.detail, member.statusLine('vip', VIP_DAY))
   assert.strictEqual(inviteMember.data.selected, 'membership_vip')
-  assert.strictEqual(inviteMember.data.payLabel, member.confirmLabel(599))
+  assert.strictEqual(inviteMember.data.payLabel, '续费 ¥599')
   assert.strictEqual(inviteMember.data.heading, 'VIP')
   assert.strictEqual(inviteMember.data.detail, member.statusLine('vip', VIP_DAY))
   assert.deepStrictEqual(inviteProfile.data.lines, [member.statusLine('regular', REGULAR_DAY)])
@@ -274,7 +279,7 @@ async function main() {
   noDate(freeProfile.data.detail)
   assert.strictEqual(freeMember.data.statusLine, member.statusLine('free'))
   assert.strictEqual(freeMember.data.selected, 'membership_vip')
-  assert.strictEqual(freeMember.data.payLabel, member.confirmLabel(599))
+  assert.strictEqual(freeMember.data.payLabel, '确认开通')
   assert.strictEqual(freeMember.data.showPay, true)
   assert.strictEqual(freeMember.data.plans[2].priceText, '当前')
   assert.strictEqual(freeMember.data.plans[2].name, '免费用户')

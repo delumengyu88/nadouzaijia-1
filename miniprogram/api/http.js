@@ -1,6 +1,8 @@
 var shape = require('./shape')
 var state = require('./state')
 var request = require('./request')
+var xpay = require('./xpay')
+var testOffer = require('./live-test-offer')
 var evidence = require('./evidence')
 
 function notReady() {
@@ -21,12 +23,12 @@ class PayClient {
   }
 
   static yuan(fen) {
-    if (typeof fen !== 'number' || fen !== Math.floor(fen) || fen < 0) return ''
-    var whole = Math.floor(fen / 100)
-    var cents = fen % 100
-    if (!cents) return '¥' + whole
-    var text = cents < 10 ? '0' + cents : String(cents)
-    return '¥' + whole + '.' + text
+    if (typeof fen === 'number' && Number.isSafeInteger(fen)) fen = String(fen)
+    if (typeof fen !== 'string' || !/^\d+$/.test(fen)) return ''
+    var digits = '00' + fen
+    var whole = digits.slice(0, -2).replace(/^0+(?=\d)/, '')
+    var cents = digits.slice(-2)
+    return '¥' + whole + (cents === '00' ? '' : '.' + cents)
   }
 
   static phaseOf(body) {
@@ -42,6 +44,7 @@ class PayClient {
   static viewFromServer(body) {
     var phase = PayClient.phaseOf(body)
     var priceText = PayClient.yuan(body.amount_fen)
+    if (body.tier === testOffer.id && priceText === '¥1') priceText = testOffer.price
     var title = body.title || '订单'
     return {
       orderNo: body.order_number,
@@ -66,6 +69,7 @@ class PayClient {
   }
 
   static payParams(body) {
+    if (/^XV/.test(body.order_number)) return xpay.params(body)
     var keys = ['timeStamp', 'nonceStr', 'package', 'signType', 'paySign']
     var pay = {}
     var i
@@ -133,6 +137,7 @@ class PayClient {
               return
             }
             var normalized = PayClient.normalize(res && res.data)
+            if (!normalized.ok) normalized.httpStatus = res && res.statusCode
             if (normalized.code === 'login') tokenState.clearSession(token)
             resolve(normalized)
           },
@@ -145,7 +150,8 @@ class PayClient {
   }
 
   static orderPath(orderNo) {
-    return '/api/v1/pay/orders/' + encodeURIComponent(orderNo || '')
+    var prefix = /^XV/.test(orderNo) ? '/api/v1/xpay/orders/' : '/api/v1/pay/orders/'
+    return prefix + encodeURIComponent(orderNo || '')
   }
 
   static read(orderNo) {
@@ -153,7 +159,12 @@ class PayClient {
   }
 
   static sync(orderNo) {
-    return PayClient.request('POST', PayClient.orderPath(orderNo) + '/sync')
+    return PayClient.request('POST', PayClient.orderPath(orderNo) + '/sync').then(function (result) {
+      if (/^XV/.test(orderNo) && !result.ok && result.httpStatus >= 500 && result.code !== 'unconfigured') {
+        return { ok: false, code: 'query_failed', message: '暂未确认支付结果' }
+      }
+      return result
+    })
   }
 
   static failedView(orderNo, result) {
@@ -305,8 +316,9 @@ function storeProfile(user) {
   return data.auth.user
 }
 
-function refreshMembership() {
+function refreshMembership(sent) {
   return request('/api/v1/auth/me').then(function (user) {
+    if (sent !== state.token()) return null
     return storeProfile(user) || user
   })
 }
@@ -330,6 +342,28 @@ function inviteFailure(code) {
   if (!message) return { ok: false, code: 'unknown', message: '网络异常，请重试' }
   if (code === 'bound') rememberInvite()
   return { ok: false, code: code, message: message }
+}
+
+// GET /api/v1/invite-codes/state. Always hits the network; nothing is stored.
+// 403 account is disabled uses the same client error as other non-401 responses.
+function loadInviteState() {
+  var sent = state.token()
+  return request('/api/v1/invite-codes/state', {}, { exposeStatus: true, optionalAuth: true }).then(function (res) {
+    if (sent !== state.token()) return { ok: false, sessionChanged: true }
+    var detail = inviteErrorCode(res && res.data)
+    if (res && res.statusCode === 403 && detail === 'account is disabled') {
+      return { ok: false, banned: true, message: '服务暂不可用' }
+    }
+    var body = res && res.data
+    if (!res || res.statusCode < 200 || res.statusCode >= 300 || !body || typeof body !== 'object' || Array.isArray(body) ||
+        typeof body.guest !== 'boolean' || typeof body.bound !== 'boolean' || typeof body.bindText !== 'string') {
+      return { ok: false, message: '网络异常，请重试' }
+    }
+    if (body.guest && sent) state.clearSession(sent)
+    return { ok: true, guest: body.guest, bound: body.bound, bindText: body.bindText }
+  }, function () {
+    return { ok: false, message: '网络异常，请重试' }
+  })
 }
 
 module.exports = {
@@ -399,8 +433,13 @@ module.exports = {
   tierOfAccount: function () { return state.userId() ? 'free' : 'guest' },
   checkout: function (product) {
     var tier = typeof product === 'string' ? product : ''
+    if (tier === testOffer.id) return testOffer.checkout(PayClient.normalize)
+    if (testOffer.dedicated()) return Promise.resolve(testOffer.unavailable())
     var token = state.token()
-    return PayClient.request('POST', '/api/v1/pay/orders', { tier: tier }).then(function (result) {
+    var pending = require('../config').virtualPayment
+      ? xpay.checkout(tier, PayClient.request)
+      : PayClient.request('POST', '/api/v1/pay/orders', { tier: tier })
+    return pending.then(function (result) {
       if (result.ok) PayClient.remember(result.order, result.pay, token)
       return result
     })
@@ -416,10 +455,12 @@ module.exports = {
     })
   },
   startPay: function (orderNo) {
+    if (testOffer.dedicated()) return Promise.resolve(testOffer.unavailable())
     var pay = PayClient.saved(orderNo)
     return PayClient.read(orderNo).then(function (result) {
       if (!result.ok) return { ok: false, code: result.code, message: result.message }
       var order = result.order
+      if (order.product === testOffer.id) return testOffer.unavailable()
       if (order.code === 'granted' || order.code === 'granting' || order.code === 'grant_error') {
         return { ok: false, code: order.code, message: '请勿重复支付', order: order }
       }
@@ -448,10 +489,12 @@ module.exports = {
     })
   },
   repay: function (orderNo) {
+    if (testOffer.dedicated()) return Promise.resolve(testOffer.unavailable())
     var pay = PayClient.saved(orderNo)
     return PayClient.sync(orderNo).then(function (result) {
       if (!result.ok) return { ok: false, code: result.code, message: result.message, order: result.code === 'unconfigured' ? null : PayClient.failedView(orderNo, result) }
       var order = result.order
+      if (order.product === testOffer.id) return testOffer.unavailable()
       if (order.code !== 'pending') return { ok: false, code: order.code, message: '订单已支付，不能再次支付', order: order }
       if (!pay) return { ok: false, code: 'no_params', message: '请重新下单', order: order }
       var paying = Object.assign({}, order, { status: 'paying', code: 'paying', showPay: false, allowRepay: false })
@@ -459,14 +502,13 @@ module.exports = {
       return { ok: true, code: 'paying', order: paying, pay: pay }
     })
   },
-  inviteState: function () {
-    var account = state.account()
-    return { guest: !state.userId(), bound: !!(account && account.inviteBound) }
-  },
+  inviteState: function () { return loadInviteState() },
   redeem: function (raw) {
+    var sent = state.token()
     var code = raw == null ? '' : String(raw)
     return request('/api/v1/invite-codes/redeem', { code: code }, { method: 'POST', exposeStatus: true })
       .then(function (res) {
+        if (sent !== state.token()) return { ok: false, sessionChanged: true }
         var failure = inviteFailure(inviteErrorCode(res && res.data))
         if (failure) return failure
         if (!res || res.statusCode < 200 || res.statusCode >= 300) {
@@ -474,11 +516,15 @@ module.exports = {
         }
         var cached = state.load().auth && state.load().auth.user
         var expiresAt = res.data && res.data.expires_at
-        return refreshMembership().then(function (user) {
+        return refreshMembership(sent).then(function (user) {
+          if (sent !== state.token()) return { ok: false, sessionChanged: true }
           rememberInvite(code, expiresAt)
+          loadInviteState()
           return inviteSuccess(res.data, user || cached)
         }, function () {
+          if (sent !== state.token()) return { ok: false, sessionChanged: true }
           rememberInvite(code, expiresAt)
+          loadInviteState()
           return inviteSuccess(res.data, cached)
         })
       }, function () {
@@ -506,7 +552,6 @@ module.exports = {
     })
   },
   withdrawEvidence: function (id) { return evidence.postAction(request, id, 'withdraw') },
-  confirmEvidence: function (id) { return evidence.postAction(request, id, 'confirm') },
   agreements: function () {
     return [
       { id: 'user', title: '用户协议' },

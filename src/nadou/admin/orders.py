@@ -2,7 +2,7 @@ import csv
 import io
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,15 @@ from nadou.models import Entitlement, Order, OrderIssuance, User
 
 
 class OrderLookup:
+    @staticmethod
+    def lock_membership(session: Session, order: Order) -> None:
+        """Serialize membership mutations for one owner, including the first purchase."""
+        if session.get_bind().dialect.name == "sqlite":
+            session.execute(update(User).where(User.id == order.user_id).values(id=User.id))
+        else:
+            session.execute(select(User.id).where(User.id == order.user_id).with_for_update())
+        session.refresh(order)
+
     @staticmethod
     def by_order_number(session: Session, order_number: str) -> Order | None:
         number = order_number.strip()
@@ -165,6 +174,7 @@ class EntitlementIssuer:
         return issuance
 
     def reissue(self, order: Order) -> OrderIssuance:
+        OrderLookup.lock_membership(self.session, order)
         issuance = self._get_or_create(order)
         if issuance.status == "issued" and issuance.reissued:
             return issuance
@@ -229,7 +239,6 @@ class EntitlementIssuer:
                 self.session.add(row)
                 self.session.flush()
         except IntegrityError:
-            self.session.expunge(row)
             found = self.session.scalar(
                 select(OrderIssuance).where(OrderIssuance.order_id == order.id)
             )
@@ -251,6 +260,7 @@ class OrderRefund:
 
     def refund(self, order: Order, reason: str) -> Order:
         text = reason.strip()
+        OrderLookup.lock_membership(self.session, order)
         if order.status not in OrderRefund.REFUNDABLE:
             raise WorkbenchError(409, "order cannot be refunded")
         if not text:
@@ -260,12 +270,21 @@ class OrderRefund:
         issuance = self.session.scalar(
             select(OrderIssuance).where(OrderIssuance.order_id == order.id)
         )
+        adjustments = []
         before = {"status": order.status, "entitlement_id": None}
         if issuance is not None and issuance.entitlement_id is not None:
             entitlement = self.session.get(Entitlement, issuance.entitlement_id)
             before["entitlement_id"] = issuance.entitlement_id
-            if entitlement is not None and entitlement.expires_at > self.now:
-                entitlement.expires_at = self.now
+            if (
+                entitlement is not None
+                and entitlement.user_id == order.user_id
+                and entitlement.kind == issuance.tier == order.tier
+                and entitlement.source == EntitlementBook.ORDER
+                and issuance.status == "issued"
+                and issuance.duration_days > 0
+                and entitlement.expires_at > self.now
+            ):
+                adjustments = self._revoke_remaining(entitlement, issuance)
         order.status = "已退款"
         order.refunded_at = self.now
         order.refund_reason = text
@@ -279,9 +298,63 @@ class OrderRefund:
                 "status": order.status,
                 "refund_reason": text,
                 "entitlement_id": before["entitlement_id"],
+                "expiry_adjustments": adjustments,
             },
         )
         return order
+
+    def _revoke_remaining(self, target: Entitlement, issuance: OrderIssuance) -> list[dict]:
+        # Later renewals contain their predecessor's expiry plus their own purchased days.
+        # Follow only that exact boundary and keep alternate grants as a floor.
+        later_issues = {
+            row.entitlement_id: row
+            for row in self.session.scalars(
+                select(OrderIssuance)
+                .join(Order, Order.id == OrderIssuance.order_id)
+                .where(
+                    Order.user_id == target.user_id,
+                    Order.tier == target.kind,
+                    Order.status == "已发放",
+                    OrderIssuance.status == "issued",
+                    OrderIssuance.tier == target.kind,
+                    OrderIssuance.duration_days > 0,
+                    OrderIssuance.entitlement_id > target.id,
+                )
+            )
+        }
+        grants = self.session.scalars(
+            select(Entitlement)
+            .where(
+                Entitlement.user_id == target.user_id,
+                Entitlement.kind == target.kind,
+                Entitlement.expires_at > self.now,
+            )
+            .order_by(Entitlement.id)
+            .with_for_update()
+        ).all()
+        prior_expiry = self.now
+        changed_boundaries = set()
+        adjustments = []
+        for grant in grants:
+            old_end = grant.expires_at
+            if grant.id == target.id:
+                changed_boundaries.add(old_end)
+                prior_expiry = max(prior_expiry, old_end - timedelta(days=issuance.duration_days))
+                grant.expires_at = self.now
+            elif grant.source == EntitlementBook.ORDER and (later := later_issues.get(grant.id)):
+                duration = timedelta(days=later.duration_days)
+                old_start = old_end - duration
+                if old_start in changed_boundaries and old_start > max(
+                    prior_expiry, later.updated_at
+                ):
+                    grant.expires_at = max(prior_expiry, later.updated_at) + duration
+                    changed_boundaries.add(old_end)
+            if old_end != grant.expires_at:
+                adjustments.append(
+                    {"entitlement_id": grant.id, "before": old_end, "after": grant.expires_at}
+                )
+            prior_expiry = max(prior_expiry, grant.expires_at)
+        return adjustments
 
 
 class OrderDirectory:

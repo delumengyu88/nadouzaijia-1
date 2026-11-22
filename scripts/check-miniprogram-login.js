@@ -53,6 +53,14 @@ function success(id) {
     request.success({ statusCode: 200, data: { token: 'test-token-' + id, token_type: 'bearer',
       expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: id, tier: 'free' } } })
     return drain()
+  }).then(function () {
+    requests.forEach(function (opt) {
+      if (opt.url.indexOf('/api/v1/invite-codes/state') !== -1) {
+        opt.success({ statusCode: 200, data: { guest: false, bound: false, bindText: '兑换邀请码' } })
+      }
+    })
+    requests = requests.filter(function (opt) { return opt.url.indexOf('/api/v1/invite-codes/state') === -1 })
+    return drain()
   })
 }
 async function main() {

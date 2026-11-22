@@ -3,7 +3,25 @@
   padding-top: 16px;
   padding-bottom: 16px;
 }
-.row { padding-top: 24rpx; padding-bottom: 24rpx; }
+.profile-page .row {
+  padding: 24rpx 32rpx;
+}
+.profile-page button.contact-row {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  height: auto;
+  line-height: inherit;
+  text-align: left;
+  border-radius: 0;
+  background: #fff;
+}
+.profile-page button.contact-row::after { border: 0; }
+.invite-row { min-height: 102rpx; box-sizing: border-box; }
+.invite-bound { margin-left: 16rpx; color: #646A73; font-size: 28rpx; line-height: 40rpx; }
 .card .choice-top { min-width: 0; }
 .nick {
   flex: 1;

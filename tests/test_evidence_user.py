@@ -704,7 +704,9 @@ def test_contact_phone_migration_upgrades_and_downgrades(tmp_path, monkeypatch):
     config.set_main_option("script_location", str(root / "alembic"))
     try:
         command.stamp(config, "20261122_0011")
-        command.upgrade(config, "head")
+        # This case only covers 0012. Head is 0013, whose columns are already
+        # present because create_all built the current models.
+        command.upgrade(config, "20261122_0012")
         assert "contact_phone" in _columns(url)
         kept = _read_request(url)
         assert kept["program_name"] == "保留节目"
@@ -712,7 +714,7 @@ def test_contact_phone_migration_upgrades_and_downgrades(tmp_path, monkeypatch):
         command.downgrade(config, "20261122_0011")
         assert "contact_phone" not in _columns(url)
         assert _program_name(url) == "保留节目"
-        command.upgrade(config, "head")
+        command.upgrade(config, "20261122_0012")
         assert _read_request(url)["program_name"] == "保留节目"
         assert _read_request(url)["contact_phone"] is None
     finally:

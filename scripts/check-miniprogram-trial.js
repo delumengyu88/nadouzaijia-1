@@ -22,7 +22,7 @@ Object.keys(pages).forEach(function (name) {
     page.onShow()
     page.pick({ currentTarget: { dataset: { id: 'membership_vip' } } })
     assert.strictEqual(page.data.showPay, true)
-    assert.strictEqual(page.data.payLabel, '确认开通 ¥599')
+    assert.strictEqual(page.data.payLabel, '确认开通')
     assert.strictEqual(page.data.selected, 'membership_vip')
     // Hybrid mode does not switch the demo account, so onShow stays a guest.
     // The payment guard is what a signed-in confirm must hit.

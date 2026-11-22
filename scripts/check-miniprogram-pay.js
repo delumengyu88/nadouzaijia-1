@@ -147,6 +147,136 @@ async function polls(count, body, trailingTimer) {
   assert.strictEqual(clock.length, trailingTimer ? 1 : 0, trailingTimer ? 'poll keeps waiting' : 'polling stops after the limit')
 }
 
+async function checkOneYuan() {
+  var testOffer = require('../miniprogram/api/live-test-offer')
+  var id = testOffer.id
+  var tier = { id: id, membership: 'regular', duration_days: 1, amount_fen: 100, amount_yuan: '1.00', product_id: 'demo-product' }
+  var catalog = { tiers: [tier] }
+  var orderNo = 'XV-test-local'
+  var sign = { env: 0, currencyType: 'CNY', goodsPrice: 100, buyQuantity: 1, outTradeNo: orderNo, productId: tier.product_id, attach: id }
+  var valid = orderBody('待支付', { order_number: orderNo, tier: id, membership: 'regular', isTest: true, duration_days: 1,
+    title: '现网支付测试', amount_fen: '100', virtual_payment: { mode: 'short_series_goods', signData: JSON.stringify(sign), paySig: 'fake', signature: 'fake' } })
+  var virtualCalls = []
+  var regularCashier = payment
+  wx.requestVirtualPayment = function (options) { virtualCalls.push(options) }
+
+  async function confirmPrice() {
+    var page = createPage()
+    page.onLoad({ product: id })
+    assert.strictEqual(page.data.showPay, false)
+    page.pay()
+    assert.strictEqual(pending.length, 1)
+    assert.strictEqual(pending[0].url, '/test-api/api/v1/pay/tiers?channel=virtual')
+    respond(200, catalog)
+    await drain()
+    assert.strictEqual(page.data.priceText, '¥1.00')
+    assert.strictEqual(page.data.payText, '立即支付 ¥1.00')
+    assert.strictEqual(pending.length, 0, 'displaying the confirmation does not place an order')
+    return page
+  }
+  function denyCatalog() { respond(200, { tiers: [Object.assign({}, tier, { id: 'membership_regular', amount_fen: 29900 })] }) }
+
+  config.liveOneYuanTest = false
+  assert.strictEqual((await api.checkout(id)).code, 'test_unavailable')
+  config.liveOneYuanTest = true
+  for (var wrongTier of ['membership_regular', 'membership_vip', 'membership_test']) {
+    assert.strictEqual((await api.checkout(wrongTier)).code, 'test_unavailable')
+    var ordinary = createPage()
+    ordinary.onLoad({ product: wrongTier })
+    ordinary.pay()
+  }
+  assert.strictEqual(pending.length, 0)
+  var payDef = pageDef
+  require('../miniprogram/pages/member/index')
+  var center = createPage()
+  pageDef = payDef
+  center.onShow()
+  assert.deepStrictEqual(pending.map(req => req.url.replace('/test-api','')), ['/api/v1/pay/tiers?channel=virtual','/api/v1/auth/me'])
+  respond(200,catalog)
+  respond(200,{id:'test-customer',tier:'regular'})
+  await drain()
+  assert.strictEqual(pending.length,0,'dedicated build never requests regular tiers')
+  assert(center.data.showTestOffer && !center.data.showPay && center.data.plans.length === 0)
+  center.onHide()
+  var opened = []
+  wx.navigateTo = function (opt) { opened.push(opt.url) }
+  center.refreshTestOffer()
+  denyCatalog()
+  await drain()
+  center.openTestOffer()
+  assert.strictEqual(opened.length,0)
+  center.refreshTestOffer()
+  center.onHide()
+  respond(200,catalog)
+  await drain()
+  assert(!center.data.showTestOffer,'a late discovery cannot restore a hidden offer')
+  center.refreshTestOffer()
+  respond(200,catalog)
+  await drain()
+  assert.strictEqual(center.data.showTestOffer,true)
+  center.openTestOffer()
+  assert.deepStrictEqual(opened,['/pages/pay/index?product=membership_test_live'])
+  assert.strictEqual(pending.length,0,'opening the offer never places an order')
+  state.clearSession()
+  center.openTestOffer()
+  assert(!center.data.showTestOffer)
+  assert.strictEqual(opened.length,1)
+  state.setSession({ token:'allowed-local', expires_at:new Date(Date.now()+60000).toISOString(), user:{id:'allowed',tier:'free'} })
+  var blocked = createPage()
+  blocked.onLoad({ product: id })
+  denyCatalog()
+  await drain()
+  blocked.pay()
+  assert.strictEqual(blocked.data.phase, 'unavailable')
+  assert.strictEqual(pending.length, 0)
+
+  for (var invalid of [{ amount_fen: 1 }, { amount_fen: 29900 }, { amount_fen: 59900 }, { product_id: '' }, { duration_days: 30 }]) {
+    var discovery = testOffer.discover()
+    respond(200, { tiers: [Object.assign({}, tier, invalid)] })
+    assert.strictEqual(await discovery, null)
+  }
+  var revoked = await confirmPrice()
+  revoked.pay()
+  denyCatalog()
+  await drain()
+  assert.strictEqual(revoked.data.phase, 'unavailable')
+  assert.strictEqual(pending.length, 0)
+
+  for (var altered of [{ goodsPrice: 1 }, { goodsPrice: 29900 }, { goodsPrice: 59900 }, { buyQuantity: 2 },
+    { env: 1 }, { productId: 'wrong' }, { attach: 'membership_regular' }, { outTradeNo: 'XV-other' }]) {
+    var attempt = api.checkout(id)
+    respond(200, catalog)
+    await drain()
+    assert.deepStrictEqual(pending[0].data, {tier:id, code:'fresh-fixture-code'})
+    var badPay = Object.assign({},valid.virtual_payment,{signData:JSON.stringify(Object.assign({},sign,altered))})
+    respond(200,Object.assign({},valid,{virtual_payment:badPay}))
+    assert.strictEqual((await attempt).ok, false)
+  }
+  var stale = await confirmPrice()
+  stale.pay()
+  state.setSession({ token:'next-local', expires_at:new Date(Date.now()+60000).toISOString(), user:{id:'new',tier:'free'} })
+  respond(200,catalog)
+  await drain()
+  assert.strictEqual(pending.length,0,'a stale catalog must not create an order after account change')
+  assert.strictEqual(virtualCalls.length,0)
+
+  var page = await confirmPrice()
+  page.pay()
+  respond(200,catalog)
+  await drain()
+  assert.strictEqual(pending[0].url,'/test-api/api/v1/xpay/orders')
+  respond(200,valid)
+  await drain()
+  assert.strictEqual(virtualCalls.length,1)
+  assert.strictEqual(virtualCalls[0].signData,valid.virtual_payment.signData)
+  assert.strictEqual(payment,regularCashier,'no classic payment fallback')
+  assert.strictEqual((await api.startPay(orderNo)).code,'test_unavailable')
+  assert.strictEqual((await api.repay(orderNo)).code,'test_unavailable')
+  assert.strictEqual(pending.length,0)
+  config.liveOneYuanTest = false
+  console.log('allowlisted live one-yuan flow, strict signed goods and stale-account checks ok')
+}
+
 async function main() {
   var payDir = path.join(__dirname, '../miniprogram/pages/pay')
   var paySource = ['index.js', 'index.wxml', 'index.wxss', 'index.json'].map(function (name) {
@@ -375,6 +505,11 @@ async function main() {
   await drain()
   assert.strictEqual(page.data.phase, 'grant_error')
   assert.strictEqual(page.data.title, '发放异常')
+  for (var pair of [['1', '¥0.01'], ['000100', '¥1'], ['9007199254740993123', '¥90071992547409931.23'], [null, ''], ['1.5', '']]) {
+    var detail = api.getOrder(ORDER_NO)
+    respond(200, orderBody('待支付', { amount_fen: pair[0] }))
+    assert.strictEqual((await detail).priceText, pair[1])
+  }
   console.log('异常: 发放异常')
 
   resetTransport()
@@ -448,6 +583,96 @@ async function main() {
   assert.strictEqual((await switched).code, 'no_params')
 
   resetTransport()
+  config.virtualPayment = true
+  wx.getDeviceInfo = function () { return { platform: 'android', system: 'Android 14' } }
+  var virtualCall = null
+  var virtualRequests = 0
+  wx.requestVirtualPayment = function (options) { virtualRequests++; virtualCall = options }
+  wx.login = function (options) { options.success({code: 'fresh-fixture-code'}) }
+  page = createPage()
+  page.onLoad({product:'membership_regular'})
+  page.pay()
+  await drain()
+  assert.strictEqual(pending[0].url, '/test-api/api/v1/xpay/orders')
+  assert.deepStrictEqual(pending[0].data,{tier:'membership_regular',code:'fresh-fixture-code'})
+  var virtualOrder = orderBody('待支付', {order_number:'XV-fixture', virtual_payment:{
+    mode:'short_series_goods',signData:'{"env":1,"goodsPrice":1,"buyQuantity":1}',paySig:'fixture-signature',signature:'fixture-user-signature'
+  }})
+  respond(200,virtualOrder)
+  await drain()
+  assert.strictEqual(payment,null)
+  assert.strictEqual(virtualCall.signData,virtualOrder.virtual_payment.signData)
+  assert.strictEqual(virtualCall.signature,virtualOrder.virtual_payment.signature)
+  virtualCall.success({})
+  assert.strictEqual(page.data.phase,'confirming')
+  assert.strictEqual(pending[0].url,'/test-api/api/v1/xpay/orders/XV-fixture/sync')
+  respond(502, { detail: '微信虚拟支付服务暂不可用' })
+  await drain()
+  assert.strictEqual(page.data.phase, 'confirming')
+  assert.strictEqual(clock.length, 1)
+  assert.strictEqual(clock[0].ms, 2000)
+  clock.shift().fn()
+  assert.strictEqual(pending.length, 1)
+  assert.strictEqual(pending[0].url, '/test-api/api/v1/xpay/orders/XV-fixture/sync')
+  assert.strictEqual(virtualRequests, 1)
+  respond(200,orderBody('已发放',{order_number:'XV-fixture'}))
+  await drain()
+  assert.strictEqual(page.data.phase,'granted')
+  resetTransport()
+  wx.getDeviceInfo = function () { return { platform: 'ios', system: 'iOS 15.0' } }
+  wx.getAppBaseInfo = function () { return { version: '8.0.67' } }
+  var checkingClient = api.checkout('membership_regular')
+  await drain()
+  assert.strictEqual(pending.length, 0, 'unsupported iOS must not create an order')
+  var oldClient = await checkingClient
+  assert.strictEqual(oldClient.code, 'unsupported')
+  assert.ok(oldClient.message.indexOf('8.0.68') >= 0)
+  wx.getAppBaseInfo = function () { return { version: '8.0.100' } }
+  wx.getDeviceInfo = function () { return { platform: 'ios', system: 'iOS 14.8' } }
+  var oldSystem = api.checkout('membership_regular')
+  await drain()
+  assert.strictEqual(pending.length, 0, 'iOS 14 must not create an order')
+  assert.ok((await oldSystem).message.indexOf('iOS 15') >= 0)
+  wx.getDeviceInfo = function () { return { platform: 'ios', system: 'iPadOS 15.0' } }
+  for (var fixture of [
+    {env:1, price:100, hint:'沙箱'},
+    {env:0, price:99, hint:'1 元'}
+  ]) {
+    page = createPage()
+    page.onLoad({product:'membership_regular'})
+    page.pay()
+    await drain()
+    var blocked = Object.assign({}, virtualOrder, {virtual_payment:Object.assign({},virtualOrder.virtual_payment,{
+      signData:JSON.stringify({env:fixture.env,goodsPrice:fixture.price,buyQuantity:1})
+    })})
+    respond(200,blocked)
+    await drain()
+    assert.strictEqual(page.data.phase, 'unavailable')
+    assert.ok(page.data.resultSub.indexOf(fixture.hint) >= 0)
+    assert.strictEqual(virtualRequests, 1, 'cashier must not open')
+  }
+  virtualOrder.virtual_payment.signData = JSON.stringify({env:0,goodsPrice:100,buyQuantity:1})
+  page = createPage()
+  page.onLoad({product:'membership_regular'})
+  assert.ok(page.data.paymentNote.indexOf('中国大陆') >= 0)
+  page.pay()
+  await drain()
+  respond(200,virtualOrder)
+  await drain()
+  virtualCall.fail({ errCode: -15010 })
+  assert.strictEqual(page.data.phase, 'unavailable')
+  assert.ok(page.data.resultSub.indexOf('未上架') >= 0)
+  assert.strictEqual(pending.length, 0, 'unpublished goods cannot be paid')
+  wx.requestVirtualPayment = undefined
+  var unsupported = await api.checkout('membership_regular')
+  assert.strictEqual(unsupported.code,'unsupported')
+  assert.strictEqual(pending.length,0)
+  assert.strictEqual(payment,null)
+  await checkOneYuan()
+  console.log('virtual goods SDK, signed payload and server confirmation checks ok')
+
+  resetTransport()
+  config.virtualPayment = false
   page = createPage()
   page.onLoad({product:'membership_regular'})
   page.orderNo = ORDER_NO

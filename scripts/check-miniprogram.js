@@ -90,6 +90,93 @@ app.tabBar.list.forEach(function (item) {
   })
 })
 if (app.tabBar.custom) quad('custom-tab-bar/index')
+
+function ruleBody(css, selector) {
+  var text = css.replace(/\/\*[\s\S]*?\*\//g, '')
+  var i = 0
+  while (i < text.length) {
+    var open = text.indexOf('{', i)
+    if (open < 0) return ''
+    var sel = text.slice(i, open).replace(/\s+/g, ' ').trim()
+    var close = text.indexOf('}', open)
+    if (close < 0) return ''
+    var matched = sel.split(',').some(function (part) { return part.trim() === selector })
+    if (matched) return text.slice(open + 1, close)
+    i = close + 1
+  }
+  return ''
+}
+function declMap(body) {
+  var map = {}
+  body.split(';').forEach(function (part) {
+    var idx = part.indexOf(':')
+    if (idx < 0) return
+    var key = part.slice(0, idx).trim()
+    var val = part.slice(idx + 1).trim().replace(/\s+/g, ' ')
+    if (key) map[key] = val
+  })
+  return map
+}
+function pngSize(file) {
+  var buf = fs.readFileSync(file)
+  var sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+  if (buf.length < 24 || !buf.slice(0, 8).equals(sig)) return null
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) }
+}
+var tabCss = fs.readFileSync(path.join(root, 'custom-tab-bar/index.wxss'), 'utf8')
+var barRule = declMap(ruleBody(tabCss, '.bar'))
+var itemRule = declMap(ruleBody(tabCss, '.item'))
+var iconRule = declMap(ruleBody(tabCss, '.icon'))
+var labelRule = declMap(ruleBody(tabCss, '.label'))
+var labelOnRule = declMap(ruleBody(tabCss, '.label.on'))
+if (barRule['box-sizing'] !== 'border-box') fail('tab bar must set box-sizing:border-box')
+if (barRule.height !== 'calc(50px + env(safe-area-inset-bottom))') {
+  fail('tab bar height must be calc(50px + env(safe-area-inset-bottom)), got ' + barRule.height)
+}
+if (barRule['padding-bottom'] !== 'env(safe-area-inset-bottom)') {
+  fail('tab bar padding-bottom must be the safe area, got ' + barRule['padding-bottom'])
+}
+if (barRule.border || barRule['border-top'] || barRule['border-width'] || barRule['border-bottom']) {
+  fail('tab bar border would shrink the 50px content box under border-box')
+}
+if (itemRule['flex-direction'] !== 'column') fail('tab icon must sit above the label')
+if (itemRule['justify-content'] !== 'center' || itemRule['align-items'] !== 'center') {
+  fail('tab icon and label must be centered in the 50px content area')
+}
+if (itemRule.height !== '50px') fail('tab item content height must be 50px, got ' + itemRule.height)
+if (iconRule.width !== '24px' || iconRule.height !== '24px') fail('tab icon box must be 24px')
+if (iconRule['flex-shrink'] !== '0' || labelRule['flex-shrink'] !== '0') fail('tab icon and label must not shrink')
+if (labelRule['font-size'] !== '10px') fail('tab label must stay 10px')
+if ((labelRule.color || '').toLowerCase() !== '#8a93a3') fail('tab label color changed')
+if ((labelOnRule.color || '').toLowerCase() !== '#1d4e9e') fail('tab selected color changed')
+var tabWxml = fs.readFileSync(path.join(root, 'custom-tab-bar/index.wxml'), 'utf8')
+var imageAt = tabWxml.indexOf('<image')
+var textAt = tabWxml.indexOf('<text')
+if (imageAt < 0 || textAt < 0 || imageAt > textAt) fail('tab icon must be above the label in wxml')
+if (tabWxml.indexOf('mode="aspectFit"') < 0) fail('tab icon must use aspectFit so the asset is not cropped')
+var tabJs = fs.readFileSync(path.join(root, 'custom-tab-bar/index.js'), 'utf8')
+var iconSpecs = []
+var iconSpecRe = /icon(?:On)?:\s*'([^']+)'/g
+var iconSpec
+while ((iconSpec = iconSpecRe.exec(tabJs))) iconSpecs.push(iconSpec[1])
+if (iconSpecs.length !== 6) fail('custom tab bar must reference 6 icon files, got ' + iconSpecs.length)
+iconSpecs.forEach(function (spec) {
+  var file = path.join(root, spec.replace(/^\//, ''))
+  if (!fs.existsSync(file)) {
+    fail('missing custom tab icon ' + spec)
+    return
+  }
+  var size = pngSize(file)
+  if (!size || size.width < 24 || size.height < 24 || size.width !== size.height) {
+    fail('custom tab icon must be a square png at least 24px: ' + spec)
+  }
+})
+var appCss = fs.readFileSync(path.join(root, 'app.wxss'), 'utf8')
+var tabPageRule = declMap(ruleBody(appCss, '.tab-page'))
+if (tabPageRule['box-sizing'] !== 'border-box') fail('tab page must keep border-box')
+if (tabPageRule['padding-bottom'] !== 'calc(50px + env(safe-area-inset-bottom))') {
+  fail('tab page bottom space must be calc(50px + env(safe-area-inset-bottom)), got ' + tabPageRule['padding-bottom'])
+}
 if (app.sitemapLocation && !fs.existsSync(path.join(root, app.sitemapLocation))) fail('missing sitemap')
 
 function resolveComponent(fromFile, spec) {
@@ -299,6 +386,28 @@ app.pages.forEach(function (rel) {
 require(path.join(root, 'app.js'))
 require(path.join(root, 'custom-tab-bar/index.js'))
 
+var renderedTabs = global.__component.data.list
+app.tabBar.list.forEach(function (item, index) {
+  var tab = renderedTabs[index]
+  if (!tab || tab.pagePath !== '/' + item.pagePath || tab.text !== item.text ||
+      tab.icon !== '/' + item.iconPath || tab.iconOn !== '/' + item.selectedIconPath) {
+    fail('rendered tab label, route and icons must match app.json for ' + item.text)
+  }
+})
+var profileMenu = fs.readFileSync(path.join(root, 'pages/profile/index.wxml'), 'utf8')
+if (!/<button[^>]*class="row contact-row"[^>]*open-type="contact"[^>]*>[\s\S]*?联系客服[\s\S]*?class="chev"[\s\S]*?<\/button>/.test(profileMenu)) {
+  fail('profile contact action must be a full menu row with a native contact button and chevron')
+}
+var profileCss = fs.readFileSync(path.join(root, 'pages/profile/index.wxss'), 'utf8')
+var contactRow = declMap(ruleBody(profileCss, '.profile-page button.contact-row'))
+if (contactRow.width !== '100%' || contactRow['max-width'] !== 'none' || contactRow.margin !== '0' ||
+    contactRow['line-height'] !== 'inherit' || contactRow.display !== 'flex' || contactRow['text-align'] !== 'left') {
+  fail('the native contact button must align with the surrounding full-width profile rows')
+}
+if (declMap(ruleBody(profileCss, '.profile-page .row')).padding !== '24rpx 32rpx') {
+  fail('profile menu rows including the contact button must share padding')
+}
+
 function instantiate(rel) {
   var def = defs[rel]
   if (!def) throw new Error('page not registered ' + rel)
@@ -358,8 +467,8 @@ function checkMemberRules() {
   })
   var blocked = plans[1].perks[0]
   expect(!blocked.ok && blocked.text.indexOf('\u2013') !== -1 && blocked.text.indexOf('\u00b7') !== -1, 'unavailable perk is gray copy with a reason')
-  expect(member.confirmLabel(plans[0].price) === '确认开通 ¥599', 'vip confirm label')
-  expect(member.confirmLabel(plans[1].price) === '确认开通 ¥299', 'regular confirm label')
+  expect(member.confirmLabel(plans[0]) === '确认开通', 'vip confirm label')
+  expect(member.confirmLabel(plans[1]) === '确认开通', 'regular confirm label')
   expect(member.statusLine('guest') === '未登录', 'guest status')
   expect(member.statusLine('free') === '免费 · 可看 180 天以上低清记录', 'free status names the low-res window')
   expect(member.statusLine('vip', '2026-12-18') === 'VIP 至 2026-12-18', 'vip status')
@@ -643,14 +752,14 @@ try {
   var memberPage = open('pages/member/index', {}, 'show')
   expect(memberPage.data.statusLine === '免费 · 可看 180 天以上低清记录', 'free member center')
   expect(memberPage.data.plans[2].priceText === '当前' && !memberPage.data.plans[2].selectable, 'free tier shows 当前')
-  expect(memberPage.data.selected === 'membership_vip' && memberPage.data.showPay && memberPage.data.payLabel === '确认开通 ¥' + memberPage.data.plans[0].price, 'free defaults to vip')
+  expect(memberPage.data.selected === 'membership_vip' && memberPage.data.showPay && memberPage.data.payLabel === '确认开通', 'free defaults to vip')
   memberPage.pick({ currentTarget: { dataset: { id: 'free' } } })
   expect(memberPage.data.selected === 'membership_vip' && memberPage.data.showPay, 'free card ignores taps')
   memberPage.pick({ currentTarget: { dataset: { id: 'membership_regular' } } })
   expect(memberPage.data.selected === 'membership_regular' && memberPage.data.showPay, 'tier pick shows confirm')
-  expect(memberPage.data.payLabel === '确认开通 ¥' + memberPage.data.plans[1].price, 'regular confirm amount')
+  expect(memberPage.data.payLabel === '确认开通', 'regular confirm amount')
   memberPage.pick({ currentTarget: { dataset: { id: 'membership_vip' } } })
-  expect(memberPage.data.showPay && memberPage.data.payLabel === '确认开通 ¥' + memberPage.data.plans[0].price, 'vip confirm amount')
+  expect(memberPage.data.showPay && memberPage.data.payLabel === '确认开通', 'vip confirm amount')
   memberPage.pick({ currentTarget: { dataset: { id: 'free' } } })
   expect(memberPage.data.selected === 'membership_vip' && memberPage.data.showPay, 'free card does not clear a selection')
 
@@ -864,9 +973,9 @@ try {
   memberPage = open('pages/member/index', {}, 'show')
   expect(memberPage.data.statusLine.indexOf('VIP 至 ') === 0, 'vip member center')
   expect(memberPage.data.plans[2].priceText === '免费', 'vip viewer still sees 免费 on the free card')
-  expect(memberPage.data.selected === 'membership_vip' && memberPage.data.showPay && memberPage.data.payLabel === '确认开通 ¥' + memberPage.data.plans[0].price, 'vip defaults to the current tier')
+  expect(memberPage.data.selected === 'membership_vip' && memberPage.data.showPay && memberPage.data.payLabel === '续费 ¥' + memberPage.data.plans[0].price, 'vip defaults to the current tier')
   memberPage.pick({ currentTarget: { dataset: { id: 'membership_vip' } } })
-  expect(memberPage.data.payLabel === '确认开通 ¥' + memberPage.data.plans[0].price, 'vip confirm amount')
+  expect(memberPage.data.payLabel === '续费 ¥' + memberPage.data.plans[0].price, 'vip confirm amount')
   cover('P18')
   var profile = open('pages/profile/index', {}, 'show')
   expect(profile.data.tier === 'vip' && !profile.data.guest, 'member profile')
@@ -897,10 +1006,18 @@ try {
   Object.keys(evidenceIds).forEach(function (id) {
     var detail = open('pages/evidence-detail/index', { id: id }, 'load')
     expect(detail.data.name, 'evidence ' + id)
+    if (id === '5' || id === '6') {
+      expect(detail.data.badge === (id === '5' ? '已交付' : '已完成'), 'mock staff status ' + id)
+      expect(!/确认|查收/.test(detail.data.message) && !detail.confirm, 'no customer receipt action ' + id)
+    }
     if (evidenceIds[id] === 'P12-failed-refunded') expect(detail.data.hasRefund && detail.data.refundAmount === 680, 'refund line')
     if (evidenceIds[id] === 'P12-failed') expect(!detail.data.hasRefund && detail.data.badge === '取证失败', 'failed without refund')
     cover(evidenceIds[id])
   })
+  var emptyRecord = open('pages/evidence/index', { kind: 'normal', fromRecord: '1', name: '' }, 'load')
+  expect(emptyRecord.data.name === '' && emptyRecord.data.platform === '', 'old nameless record never prefills a sample or a platform')
+  var recordsPage = api.listRecordPage(2, 1)
+  expect(JSON.stringify(recordsPage.rows) === JSON.stringify(api.listRecords().slice(1, 3)), 'mock paginates individual program rows')
   var blankEvidence = open('pages/evidence/index', {}, 'load')
   expect(blankEvidence.data.phone === '' && blankEvidence.data.name === '雾港来信', 'mock sample title only, phone stays empty')
   var form = open('pages/evidence/index', { name: encodeURIComponent('星河旧梦'), kind: 'normal' }, 'load')
@@ -941,7 +1058,7 @@ try {
   expect(memberPage.data.guest && memberPage.data.statusLine === '未登录' && !memberPage.data.showPay, 'guest member center')
   expect(memberPage.data.plans[2].priceText === '免费', 'guest sees 免费, not 当前')
   memberPage.pick({ currentTarget: { dataset: { id: 'membership_regular' } } })
-  expect(memberPage.data.payLabel === '确认开通 ¥' + memberPage.data.plans[1].price, 'guest confirm uses catalog price')
+  expect(memberPage.data.payLabel === '确认开通', 'guest confirm uses catalog price')
   cover('P18-guest')
 
   boot('free')
@@ -1118,6 +1235,9 @@ if (requestOptionCheck.status !== 0) fail(requestOptionCheck.stderr || requestOp
 var redeemCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-redeem.js')], { encoding: 'utf8' })
 console.log(redeemCheck.stdout || '')
 if (redeemCheck.status !== 0) fail(redeemCheck.stderr || redeemCheck.stdout || 'redeem check failed')
+var inviteStateCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-invite-state.js')], { encoding: 'utf8' })
+console.log(inviteStateCheck.stdout || '')
+if (inviteStateCheck.status !== 0) fail(inviteStateCheck.stderr || inviteStateCheck.stdout || 'invite state check failed')
 var uploadCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-upload.js')], { encoding: 'utf8' })
 console.log(uploadCheck.stdout || '')
 if (uploadCheck.status !== 0) fail(uploadCheck.stderr || uploadCheck.stdout || 'upload check failed')

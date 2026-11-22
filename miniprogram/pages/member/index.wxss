@@ -170,3 +170,5 @@
   font-size: 14px;
   background: transparent;
 }
+
+.current-tier { margin-left: 12rpx; font-size: 24rpx; color: #1D4E9E; }

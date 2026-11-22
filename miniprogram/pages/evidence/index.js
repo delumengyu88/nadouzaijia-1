@@ -31,7 +31,7 @@ Page({
     var layout = nav.layout('evidence', query)
     var kind = query.kind === 'recent' ? 'recent' : 'normal'
     var sample = ''
-    if (!api.isLive && typeof api.evidenceSampleName === 'function') sample = api.evidenceSampleName()
+    if (!query.fromRecord && !api.isLive && typeof api.evidenceSampleName === 'function') sample = api.evidenceSampleName()
     this.setData({
       statusBarHeight: layout.statusBarHeight,
       navHeight: layout.navHeight,

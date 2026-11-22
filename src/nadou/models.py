@@ -4,6 +4,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -324,7 +325,8 @@ class Order(Base):
         ),
         CheckConstraint(
             "product IS NULL OR product IN "
-            "('membership_regular', 'membership_vip', 'membership_test', 'membership_dev')",
+            "('membership_regular', 'membership_vip', 'membership_test', 'membership_dev', "
+            "'membership_test_live')",
             name="ck_orders_product",
         ),
         UniqueConstraint("wechat_transaction_id", name="uq_orders_wechat_transaction_id"),
@@ -348,6 +350,18 @@ class Order(Base):
     amount_fen: Mapped[int | None] = mapped_column(Integer)
     prepay_id: Mapped[str | None] = mapped_column(String(64))
     wechat_transaction_id: Mapped[str | None] = mapped_column(String(64))
+
+
+class VirtualOrder(Base):
+    """Immutable catalog/environment snapshot for the WeChat virtual channel."""
+
+    __tablename__ = "virtual_orders"
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), primary_key=True)
+    env: Mapped[int] = mapped_column(Integer, nullable=False)
+    product_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    delivery_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    refund_no: Mapped[str | None] = mapped_column(String(64), unique=True)
+    wx_refund_no: Mapped[str | None] = mapped_column(String(64), unique=True)
 
 
 class OrderIssuance(Base):
@@ -376,12 +390,25 @@ class OrderIssuance(Base):
 
 
 class MemberQuery(Base):
-    """One member lookup. The id is the 查询编号 on the exported workbook."""
+    """One member lookup. The id is the 查询编号 on the exported workbook.
+
+    ``user_id`` stays nullable so rows written before this column existed
+    still load. A row with no owner cannot be listed, opened, or exported.
+    ``seen_at`` is when that user opened a finished query.
+    ``ix_member_queries_user_id_created_at`` supports the scheduled retention job.
+    """
 
     __tablename__ = "member_queries"
+    __table_args__ = (Index("ix_member_queries_user_id_created_at", "user_id", "created_at"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("users.id", name="fk_member_queries_user_id"),
+    )
+    seen_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+    user: Mapped[User | None] = relationship()
     programs: Mapped[list["QueryProgram"]] = relationship(
         back_populates="query",
         order_by="QueryProgram.position",

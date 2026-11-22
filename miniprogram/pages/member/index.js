@@ -1,6 +1,8 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
 var member = require('../../utils/member')
+var testOffer = require('../../api/live-test-offer')
+var state = require('../../api/state')
 
 function defaultPlanId(tier) {
   if (tier === 'regular') return 'membership_regular'
@@ -40,6 +42,8 @@ Page({
     loadError: false
   },
   onShow: function () {
+    this.setData({ testBuild: testOffer.dedicated() })
+    this.refreshTestOffer()
     var info = this.readCenter()
     var self = this
     this._seq = (this._seq || 0) + 1
@@ -73,7 +77,7 @@ Page({
   readCenter: function () {
     if (require('../../config').mode === 'mock') return api.memberCenter()
     var identity = require('../../api/http').memberCenter()
-    if (require('../../config').mode !== 'live' || !identity || typeof identity.then !== 'function') return identity
+    if (testOffer.dedicated() || require('../../config').mode !== 'live' || !identity || typeof identity.then !== 'function') return identity
     return identity.then(function (info) {
       if (info.guest) return info
       var state = require('../../api/state')
@@ -88,7 +92,7 @@ Page({
   paint: function (info) {
     info = presentCenter(info)
     var data = nav.layout('member', this.query)
-    var catalog = api.membershipPlans()
+    var catalog = testOffer.dedicated() ? [] : api.membershipPlans()
     if (require('../../config').mode === 'live') {
       var tiers = info.pricedTiers || []
       catalog = catalog.map(function (plan) {
@@ -109,11 +113,37 @@ Page({
     data.plans = plans
     data.selected = plan ? plan.id : ''
     data.showPay = !!plan
-    data.payLabel = plan ? (info.guest && plan.price == null ? '登录后查看价格' : member.confirmLabel(plan.price)) : ''
+    data.payLabel = plan ? member.confirmLabel(plan) : ''
     data.loading = false
     data.loadError = false
     Object.keys(info).forEach(function (key) { data[key] = info[key] })
     this.setData(data)
+  },
+  onHide: function () { this.clearTestOffer() },
+  onUnload: function () { this.clearTestOffer() },
+  clearTestOffer: function () {
+    this._offerSeq = (this._offerSeq || 0) + 1
+    this._offerSession = ''
+    if (this.data.showTestOffer) this.setData({ showTestOffer: false })
+  },
+  refreshTestOffer: function () {
+    this.clearTestOffer()
+    if (!testOffer.enabled() || !state.token()) return
+    var token = state.token()
+    var seq = this._offerSeq
+    var self = this
+    testOffer.discover().then(function (productId) {
+      if (!productId || seq !== self._offerSeq || state.token() !== token) return
+      self._offerSession = token
+      self.setData({ showTestOffer: true })
+    })
+  },
+  openTestOffer: function () {
+    if (!this.data.showTestOffer || !testOffer.enabled() || !this._offerSession || this._offerSession !== state.token()) {
+      this.clearTestOffer()
+      return
+    }
+    wx.navigateTo({ url: '/pages/pay/index?product=' + testOffer.id })
   },
   retryLoad: function () { this.onShow() },
   pick: function (e) {
@@ -122,11 +152,11 @@ Page({
     this.setData({
       selected: plan.id,
       showPay: true,
-      payLabel: this.data.guest && plan.price == null ? '登录后查看价格' : member.confirmLabel(plan.price)
+      payLabel: member.confirmLabel(plan)
     })
   },
   go: function () {
-    if (!this.data.showPay || !this.data.selected) return
+    if (testOffer.dedicated() || !this.data.showPay || !this.data.selected) return
     if (this.data.guest) return require('../../utils/login')(this, this.onShow)
     if (require('../../utils/trial').blockPayment()) return
     wx.navigateTo({ url: '/pages/pay/index?product=' + this.data.selected })
