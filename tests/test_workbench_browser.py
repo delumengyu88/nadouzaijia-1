@@ -464,7 +464,7 @@ def test_round3_tier_dates_profile_failure_and_refund():
             page.fill("input[name=password]", DemoAccounts.ADMIN_PASSWORD)
             page.locator("button[type=submit]").click()
             page.locator("h1", has_text="取证申请").wait_for()
-            page.locator("button.page-note", has_text="说明").wait_for()
+            assert page.locator("button.page-note").count() == 0
             page.locator("tr", has_text="雾港来信").locator("button", has_text="查看").click()
             page.locator("aside.drawer").wait_for()
             assert page.locator("aside.drawer").get_by_text("普通会员", exact=True).count() == 1

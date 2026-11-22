@@ -8,7 +8,7 @@ var FAIL = {
   col: '未找到「节目名」列，请检查表头后重试。',
   rows: '超过 500 行，请删减后再上传。',
   read: '文件读取失败，请稍后重试。',
-  limit: '已超过 500 个节目名，超出部分已截断。'
+  limit: '已超过 500 个节目名，仅保留前 500 个。'
 }
 
 Page({
@@ -42,7 +42,7 @@ Page({
     this.setData({
       phase: 'fail',
       failText: FAIL[code] || FAIL.read,
-      box: '请修改后重新上传或粘贴。'
+      box: ''
     })
   },
   recognizeText: function () {
@@ -51,7 +51,7 @@ Page({
       this.setData({ phase: 'edit', raw: raw })
       return
     }
-    this.setData({ phase: 'recognizing', box: '正在识别节目名…', hint: '识别中，请稍候' })
+    this.setData({ phase: 'recognizing', box: '识别中…', hint: '' })
     var self = this
     nav.later(600, function () {
       var parsed = api.parseTitles(raw)
@@ -63,7 +63,7 @@ Page({
         self.setData({
           phase: 'fail',
           failText: FAIL.limit,
-          box: '请修改后重新上传或粘贴。',
+          box: '',
           items: parsed.items
         })
         return
@@ -76,7 +76,7 @@ Page({
     })
   },
   recognizeFile: function (name, size) {
-    this.setData({ phase: 'recognizing', box: '正在识别上传的文件…', hint: '识别中，请稍候' })
+    this.setData({ phase: 'recognizing', box: '识别中…', hint: '' })
     var self = this
     nav.later(600, function () {
       var result = api.parseFile(name, size)

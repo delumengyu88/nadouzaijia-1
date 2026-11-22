@@ -6,7 +6,7 @@
 </view>
 <view style="height: {{navHeight}}px;"></view>
 <view class="body" wx:if="{{phase == 'form'}}">
-  <view class="note">取证由客服线下交付，提交后客服会在 1 个工作日内联系您。</view>
+  <view class="note">客服线下交付，1 个工作日内联系您。</view>
   <view class="field-label">类型</view>
   <view class="field">{{kindText}}</view>
   <view class="field-label">节目名</view>
@@ -20,14 +20,14 @@
 <view class="body" wx:elif="{{phase == 'submitted'}}">
   <view class="center-box">
     <view class="tag ok">已提交</view>
-    <view class="center-sub">申请编号 {{no}}。客服受理后会与你联系，交付为线下。</view>
+    <view class="center-sub">申请编号 {{no}}</view>
     <view class="btn slim" bindtap="open">查看申请</view>
   </view>
 </view>
 <view class="body" wx:else>
   <view class="center-box">
     <view class="tag warn">已有申请在处理中</view>
-    <view class="center-sub">同一记录 24 小时内不可重复提交。可查看已有申请或联系客服。</view>
+    <view class="center-sub">同一记录 24 小时内不可重复提交。</view>
     <view class="btn slim" bindtap="open">查看申请</view>
   </view>
 </view>

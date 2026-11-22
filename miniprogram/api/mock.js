@@ -6,11 +6,11 @@ var date = require('../utils/date')
 var xlsx = require('../utils/xlsx')
 
 var PRODUCTS = {
-  membership_vip: { title: 'VIP 会员 30 天', card: 'VIP 会员', price: 599, days: 30, blurb: '有效期 30 天。支付成功后发放权益。' },
-  membership_regular: { title: '普通会员 30 天', card: '普通会员', price: 299, days: 30, blurb: '有效期 30 天。支付成功后发放权益。' },
-  single_program_30d: { title: '单节目解锁', card: '本节目 · 含 30 天以上记录', price: 199, days: 7, blurb: '在线查看 7 天。支付成功后发放权益。' },
-  single_program_90d: { title: '单节目解锁', card: '本节目 · 含 90 天以上记录', price: 99, days: 7, blurb: '在线查看 7 天。支付成功后发放权益。' },
-  screenshot: { title: '单张截图', card: '单张截图', price: 29, days: 7, blurb: '可查看并保存这一张，有效 7 天。' }
+  membership_vip: { title: 'VIP 会员 30 天', card: 'VIP 会员', price: 599, days: 30, blurb: '有效期 30 天' },
+  membership_regular: { title: '普通会员 30 天', card: '普通会员', price: 299, days: 30, blurb: '有效期 30 天' },
+  single_program_30d: { title: '单节目解锁', card: '本节目 · 含 30 天以上记录', price: 199, days: 7, blurb: '在线查看 7 天' },
+  single_program_90d: { title: '单节目解锁', card: '本节目 · 含 90 天以上记录', price: 99, days: 7, blurb: '在线查看 7 天' },
+  screenshot: { title: '单张截图', card: '单张截图', price: 29, days: 7, blurb: '有效期 7 天' }
 }
 
 var STATUS_TEXT = {
@@ -31,15 +31,15 @@ var CODES = {
 }
 
 var EVIDENCE_TEXT = {
-  submitted: '申请已收到，等待客服受理。',
-  accepted: '客服已受理，将与你确认取证范围。',
-  pay: '请按客服指引完成线下付款。付款不在小程序内完成。',
-  working: '正在取证，完成后会线下交付。',
+  submitted: '',
+  accepted: '',
+  pay: '请按客服指引完成线下付款，付款不在小程序内完成。',
+  working: '',
   delivered: '材料已线下交付，请确认查收。',
-  done: '本单已完成。',
-  failed: '本次取证未能完成，原因见说明。',
-  closed: '本单已关闭。',
-  cancelled: '本单已取消。'
+  done: '',
+  failed: '',
+  closed: '',
+  cancelled: ''
 }
 
 var EVIDENCE_BADGE = {
@@ -63,11 +63,6 @@ function grantsOf(account, programName) {
   if (date.active(account.paidVipExpiry)) g.vip = true
   if (date.active(account.inviteExpiry)) g.regular = true
   if (date.active(account.paidRegularExpiry)) g.regular = true
-  ;(account.programs || []).forEach(function (item) {
-    if (item.name !== programName || !date.active(item.expiry)) return
-    if (item.tier === 'program_30') g.program30 = true
-    if (item.tier === 'program_90') g.program90 = true
-  })
   return g
 }
 
@@ -287,10 +282,10 @@ function homeState() {
     bannerText = '1 个查询进行中，点击查看'
   } else if (!account) {
     banner = 'guest'
-    bannerText = '登录后可保存查询记录，并可开通会员。'
+    bannerText = '未登录'
   } else if (tier === 'free') {
     banner = 'free'
-    bannerText = '尚未开通会员，免费可看不少于 180 天前的低清记录'
+    bannerText = '尚未开通会员'
   }
   return {
     loggedIn: !!account,
@@ -320,34 +315,22 @@ function maskCode(code) {
 function profile() {
   var account = acc()
   if (!account) {
-    return { guest: true, tier: 'guest', title: '', badge: '', lines: [], bound: false, bindText: '兑换邀请码', bindSub: '每个账号限绑定一次' }
+    return { guest: true, tier: 'guest', title: '', badge: '', lines: [], bound: false, bindText: '兑换邀请码', bindSub: '' }
   }
   var tier = tierOf(account)
   var title = '免费用户 · 未开通会员'
   var badge = ''
   var lines = []
+  var regularExpiry = [account.paidRegularExpiry, account.inviteExpiry].filter(function (until) {
+    return date.active(until)
+  }).sort().pop()
   if (tier === 'vip') {
     title = 'VIP 至 ' + account.paidVipExpiry
     badge = 'VIP'
-    lines.push('当前按 VIP 查看（仍有效周期中的最高档）')
-  } else if (tier === 'regular' && date.active(account.paidRegularExpiry)) {
-    title = '普通会员至 ' + account.paidRegularExpiry
-    badge = '普通'
-    lines.push('当前按普通会员查看')
+    if (regularExpiry) lines.push('普通会员 至 ' + regularExpiry)
   } else if (tier === 'regular') {
-    title = '普通会员 至 ' + account.inviteExpiry
-    badge = '普通'
-    lines.push('当前按普通会员查看')
-  } else {
-    lines.push('免费可看不少于 180 天前的低清记录。开通或续费请到会员中心。')
+    title = '普通会员 至 ' + regularExpiry
   }
-  if (date.active(account.inviteExpiry) && tier === 'vip') {
-    lines.push('普通会员 至 ' + account.inviteExpiry + '（与 VIP 同时计时）')
-  }
-  ;(account.programs || []).forEach(function (item) {
-    if (!date.active(item.expiry)) return
-    lines.push('单项解锁：' + item.name + ' · 7 天内可在线查看')
-  })
   return {
     guest: false,
     tier: tier,
@@ -355,8 +338,8 @@ function profile() {
     badge: badge,
     lines: lines,
     bound: !!account.inviteBound,
-    bindText: account.inviteBound ? ('已绑定 · ' + maskCode(account.inviteCode)) : '兑换邀请码',
-    bindSub: '每个账号限绑定一次'
+    bindText: account.inviteBound ? ('邀请码 ' + maskCode(account.inviteCode)) : '兑换邀请码',
+    bindSub: ''
   }
 }
 
@@ -384,7 +367,7 @@ function queryView(query) {
       queued: true,
       running: false,
       done: false,
-      head: '查询已提交，正在等待检索。可先返回，完成后会通知你。',
+      head: '',
       percent: 0,
       items: [],
       failCount: 0,
@@ -400,7 +383,7 @@ function queryView(query) {
       queued: false,
       running: true,
       done: false,
-      head: '已完成 ' + query.progress + ' / ' + query.total + '。可先返回，完成后会通知你。',
+      head: '已完成 ' + query.progress + ' / ' + query.total + '',
       percent: percent,
       items: [],
       failCount: 0,
@@ -433,7 +416,7 @@ function queryView(query) {
     showRetryAll: fail > 1,
     showFailBanner: fail > 0,
     allFail: allFail,
-    failBanner: allFail ? '全部查询失败，可重试。失败不扣次数。' : '部分查询失败，可对失败条目重试。失败不扣次数。',
+    failBanner: allFail ? '全部查询失败，失败不扣次数。' : '部分查询失败，失败不扣次数。',
     itemRetry: !allFail
   }
 }
@@ -634,10 +617,10 @@ function viewEvidence(item) {
     day: item.day,
     sub: '申请编号 ' + item.no + ' · ' + item.day + ' 提交',
     steps: evidenceSteps(item.status),
-    message: item.refundAmount > 0 ? '本次取证未能完成，费用已全额退回。' : (EVIDENCE_TEXT[item.status] || ''),
+    message: EVIDENCE_TEXT[item.status] || '',
     reason: item.reason || '',
     showPayBanner: item.status === 'pay',
-    payBanner: '请按客服指引完成线下付款。付款完成后，状态更新为「取证中」。',
+    payBanner: '请按客服指引完成线下付款，付款不在小程序内完成。',
     hasRefund: item.refundAmount > 0,
     refundAmount: item.refundAmount || 0,
     refundMethod: item.refundMethod || '',
@@ -947,7 +930,7 @@ module.exports = {
       expiry: account.inviteExpiry,
       hasVip: hasVip,
       headline: hasVip ? ('已发放普通会员 30 天，有效至 ' + account.inviteExpiry) : '已发放普通会员 30 天',
-      sub: hasVip ? '与 VIP 同时计时，VIP 到期后若仍在有效期内继续生效' : ('有效至 ' + account.inviteExpiry),
+      sub: hasVip ? '' : ('有效至 ' + account.inviteExpiry),
       vipUnchanged: account.paidVipExpiry === vipBefore
     }
   },

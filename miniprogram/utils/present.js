@@ -66,9 +66,7 @@ function present(search, meta) {
   }
   var memberText = info.expired ? '续费会员 · ¥299/30天起' : '开通会员 · ¥299/30天起'
   var note = ''
-  if (showOpen && search.unverified_source_count > 0) {
-    note = '无法解析或不在对照表中的少见记录显示「平台未识别」，计为命中但不计入平台数。'
-  }
+
   return {
     name: name,
     example: !!search.example,

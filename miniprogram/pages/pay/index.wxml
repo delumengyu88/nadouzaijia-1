@@ -35,20 +35,19 @@
 <view class="body" wx:elif="{{phase == 'confirming'}}">
   <view class="center-box">
     <view class="center-title">支付确认中</view>
-    <view class="center-sub">已发起支付，正在等待支付结果回调。请稍候，不要重复支付。</view>
+    <view class="center-sub">正在等待支付结果，不要重复支付。</view>
   </view>
 </view>
 <view class="body" wx:elif="{{phase == 'granting'}}">
   <view class="center-box">
     <view class="center-title">权益发放中</view>
-    <view class="center-sub">付款已到账，正在发放会员权益。完成后可在个人中心查看有效期。</view>
+    <view class="center-sub">付款已到账，正在发放。</view>
   </view>
 </view>
 <view class="body" wx:elif="{{phase == 'granted'}}">
   <view class="center-box">
     <view class="tag ok">开通成功</view>
     <view class="center-title" style="margin-top:24rpx;">{{successLine}}</view>
-    <view class="center-sub">可立即查看权限范围内的完整报告。</view>
     <view class="btn slim" bindtap="finish">返回报告</view>
   </view>
 </view>
@@ -57,7 +56,7 @@
     <view class="tag bad" wx:if="{{!allowRepay}}">支付未完成</view>
     <view class="tag bad" wx:else>订单尚未支付</view>
     <view class="center-sub" wx:if="{{!allowRepay}}">如已扣款，请稍后在「我的订单」查看，或联系客服。</view>
-    <view class="center-sub" wx:else>已向微信确认该笔订单未支付。重新支付将沿用原订单号，不新开订单。</view>
+    <view class="center-sub" wx:else>该笔订单未支付。重新支付将沿用原订单号。</view>
     <view class="note">订单号 {{orderNo}}</view>
     <view class="btn slim" wx:if="{{!allowRepay}}" bindtap="check">查看订单状态</view>
     <view class="btn slim" wx:else bindtap="repay">重新支付</view>
@@ -67,7 +66,6 @@
 <view class="body" wx:elif="{{phase == 'cancelled'}}">
   <view class="center-box">
     <view class="center-title">订单已取消</view>
-    <view class="center-sub">本单已取消，如需开通请重新选择档位。</view>
     <view class="btn slim" bindtap="finish">返回会员中心</view>
   </view>
 </view>

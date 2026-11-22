@@ -23,6 +23,5 @@
   <view class="perk">能看 90 天前的记录</view>
   <view class="perk ok">✓ 高清截图与下载</view>
 </view>
-<view class="note">单节目解锁在报告页按条购买。含 30 天以上 ¥199，含 90 天以上 ¥99，在线看 7 天。单张截图 ¥29，仅适用于不少于 90 天记录。</view>
 <view class="btn block" bindtap="go">{{payLabel}}</view>
 </view>

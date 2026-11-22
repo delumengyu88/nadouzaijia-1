@@ -147,16 +147,7 @@ function icon(name) {
   return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none">${paths[name] || ""}</svg>`;
 }
 
-function noteBanner(text) {
-  const open = Boolean(state.noteOpen);
-  return `<button class="banner info page-note${open ? "" : " collapsed"}" type="button" data-act="toggle-note">
-    <span class="chev">${open ? "⌄" : "›"}</span><strong>说明</strong>
-    <span class="fold-hint">${open ? "收起" : "展开"}</span>
-    <span class="banner-body">${escapeHtml(text)}</span>
-  </button>`;
-}
-
-function shell(title, body, screen, note) {
+function shell(title, body, screen) {
   document.body.classList.toggle("screen", Boolean(screen));
   const admin = state.me && state.me.role === "admin";
   const items = [
@@ -205,7 +196,6 @@ function shell(title, body, screen, note) {
         </div>
       </header>
       <div class="content${screen ? " workspace" : ""}">
-        ${note ? noteBanner(note) : ""}
         ${state.message ? `<div class="banner warn">${escapeHtml(state.message)}</div>` : ""}
         ${body}
       </div>
@@ -220,26 +210,14 @@ function renderLogin(message) {
     <div class="login-page">
       <div class="login-left">
         <div class="brand">那豆在架 工作台</div>
-        <div class="desc">客服与管理员内部系统。用于接单取证、发放邀请码、处理会员和订单，以及维护内容和索引。</div>
-        <ul class="login-mods">
-          <li>取证申请 · 接单、报价、记录线下交付</li>
-          <li>邀请码 · 按渠道生成、作废、查看兑换</li>
-          <li>用户与会员 · 查询权益、手动开通或延长</li>
-          <li>订单 · 虚拟支付订单、发放异常、退款回收</li>
-          <li>内容配置 · 开屏、公告、首页示例</li>
-          <li>操作日志 · 全部写操作留痕，不可删除</li>
-          <li>数据与索引 · 更新时间、运行日志、断更告警</li>
-        </ul>
       </div>
       <div class="login-right">
         <form class="login-card" data-act="login">
           <h2>账号登录</h2>
-          <div class="lead">角色由账号决定，分为「客服」和「管理员」。登录页不选择角色。</div>
           <div class="err${message ? " show" : ""}">${escapeHtml(message || "")}</div>
           <div class="field"><label>账号</label><input class="input" name="username" autocomplete="username"></div>
           <div class="field"><label>密码</label><input class="input" name="password" type="password" autocomplete="current-password"></div>
           <button class="btn btn-primary" type="submit">登录</button>
-          <p class="help">连续登录失败 5 次后锁定 30 分钟。也可由管理员在「用户与会员」中解锁。</p>
         </form>
       </div>
     </div>`;
@@ -367,7 +345,7 @@ async function renderEvidence() {
         <div class="stat"><div class="k">今日已交付</div><div class="v">${delivered}</div></div>
         <div class="stat"><div class="k">VIP 待处理</div><div class="v">${vip}</div></div>
       </div>
-      <div class="card grow"><div class="card-hd">申请列表<span class="sub">共 ${visible.length} 条 · 超时未受理置顶</span></div>
+      <div class="card grow"><div class="card-hd">申请列表<span class="sub">共 ${visible.length} 条</span></div>
         <div class="filter-bar dense">
           <input class="input query" id="evidence-query" value="${escapeHtml(evidenceQuery)}" placeholder="申请号或节目">
           <select class="select status" id="evidence-status">
@@ -386,7 +364,6 @@ async function renderEvidence() {
         </tr></thead><tbody>${rows || '<tr><td colspan="7">暂无申请</td></tr>'}</tbody></table></div></div>
     </div>${drawer}</div>`,
     true,
-    "超时未受理的申请置顶。日期按北京时间的自然日筛选，含当天 0 点，不含次日 0 点。标记失败会记下原因；取证中还要记下退款方式和金额，并同时关闭申请。",
   );
 }
 
@@ -517,28 +494,21 @@ async function renderInvites() {
     `<div class="card"><div class="card-hd">渠道转化统计</div><div class="card-bd flush"><table class="data"><thead><tr>
       <th>渠道</th><th>生成数</th><th>已兑换</th><th>未使用</th><th>已过期</th><th>已作废</th><th>兑换率</th><th>兑换后 30 天内付费转化</th>
     </tr></thead><tbody>${statRows || '<tr><td colspan="8">暂无渠道</td></tr>'}</tbody></table></div></div>
-    <div class="grid-2"><div class="card" style="margin:0"><div class="card-hd">批量生成</div><div class="card-bd">
+    <div><div class="card" style="margin:0"><div class="card-hd">批量生成</div><div class="card-bd">
       <div class="filters">
-        <div class="field"><label>数量</label><input class="input w-xs" id="invite-count" value="10"></div>
-        <div class="field"><label>渠道标签</label><input class="input w-md" id="invite-channel" value="临江示例律所"></div>
-        <div class="field"><label>码有效期</label><input class="input w-md w-date" id="invite-until" inputmode="numeric" placeholder="YYYY-MM-DD"></div>
+        <div class="field"><label>数量<span class="req">*</span></label><input class="input w-xs" id="invite-count" value="10"></div>
+        <div class="field"><label>渠道标签<span class="req">*</span></label><input class="input w-md" id="invite-channel" value="临江示例律所"></div>
+        <div class="field"><label>码有效期<span class="req">*</span></label><input class="input w-md w-date" id="invite-until" inputmode="numeric" placeholder="YYYY-MM-DD"></div>
       </div>
-      <p class="help">邀请码为 8 位大写字母数字，已去掉易混字符。普通会员 30 天，与已有会员同时计时。付费转化只统计小程序订单。</p>
       <button class="btn btn-primary" type="button" data-act="invite-create" style="margin-top:12px">生成邀请码</button>
     </div></div>
-    <div class="card" style="margin:0"><div class="card-hd">生成规则</div><div class="card-bd"><div class="kv">
-      <div class="k">兑换权益</div><div class="v">普通会员 30 天，与已有会员同时计时</div>
-      <div class="k">使用限制</div><div class="v">一码一次</div>
-      <div class="k">状态</div><div class="v">未使用 / 已兑换 / 已过期 / 已作废</div>
-      <div class="k">作废</div><div class="v">仅未使用的码可作废</div>
-    </div></div></div></div>
+    </div>
     <div class="card" style="margin-top:16px"><div class="card-hd">邀请码列表
       <button class="btn btn-default btn-sm" type="button" data-act="invite-export">导出</button>
     </div><div class="card-bd flush"><table class="data"><thead><tr>
       <th>邀请码</th><th>渠道</th><th>生成人</th><th>状态</th><th>生成时间</th><th>有效期至</th><th>兑换人</th><th>兑换时间</th><th>操作</th>
     </tr></thead><tbody>${list || '<tr><td colspan="9">暂无邀请码</td></tr>'}</tbody></table></div></div>`,
     false,
-    "邀请码 8 位，一码一次。兑换后发放普通会员 30 天，与已有会员同时计时。有效期按北京时间填写，格式 YYYY-MM-DD。",
   );
   const until = document.querySelector("#invite-until");
   if (until && !until.value) {
@@ -558,7 +528,7 @@ async function renderUsers() {
   const inviteGrant = activeGrants.find((row) => row.kind === "regular" && row.source === "invite");
   let tierLine = "无会员";
   if (user && vipGrant && inviteGrant) {
-    tierLine = `普通会员 至 ${ymd(inviteGrant.expires_at)}（与 VIP 同时计时）`;
+    tierLine = `普通会员 至 ${ymd(inviteGrant.expires_at)}`;
   } else if (user && vipGrant) {
     tierLine = `VIP 至 ${ymd(vipGrant.expires_at)}`;
   } else if (user && inviteGrant) {
@@ -594,12 +564,12 @@ async function renderUsers() {
     ? `<div class="card" style="margin:0 0 16px"><div class="card-hd">手动开通 / 延长会员</div><div class="card-bd">
         <div class="field"><label>档位</label><select class="select" id="grant-tier" style="width:100%"><option value="vip">VIP</option><option value="regular">普通会员</option></select></div>
         <div class="field" style="margin-top:10px"><label>天数</label><input class="input" id="grant-days" value="30"></div>
-        <div class="field" style="margin-top:10px"><label>原因</label><textarea class="textarea" id="grant-reason" rows="3" placeholder="必填，写入操作日志"></textarea></div>
-        <p class="help">手动发放不计入邀请码转化，也不计入订单收入。</p>
+        <div class="field" style="margin-top:10px"><label>原因</label><textarea class="textarea" id="grant-reason" rows="3" placeholder="必填"></textarea></div>
+        <p class="help">必须填写原因。</p>
         <button class="btn btn-primary" type="button" data-act="grant">确认开通 / 延长</button>
       </div></div>
       <div class="card" style="margin:0 0 16px"><div class="card-hd">封禁小程序账号</div><div class="card-bd">
-        <p class="help" style="margin-top:0">临时封禁须填结束时间。封禁与解禁都写入操作日志。</p>
+        <p class="help" style="margin-top:0">结束时间仅临时封禁时填写。</p>
         <button class="btn btn-danger" type="button" data-act="ban-open">封禁此账号</button>
       </div></div>`
     : "";
@@ -621,14 +591,13 @@ async function renderUsers() {
     : "";
   shell(
     "用户与会员",
-    `${admin ? "" : '<p class="help">当前为客服视角：只读，手机号仅显示后 4 位，不提供手动开通或封禁。</p>'}
+    `${admin ? "" : '<p class="help">当前为客服视角：只读。</p>'}
     <div class="card"><div class="card-hd">查找用户</div><div class="card-bd"><div class="filters">
       <div class="field"><label>手机号</label><input class="input w-xl" id="user-query" value="${escapeHtml(admin ? state.userQuery || "" : state.userQuery ? maskPhone(state.userQuery) : "")}" placeholder="输入手机号"></div>
       <button class="btn btn-primary" type="button" data-act="user-search">查询</button>
-    </div><p class="help">客服看到的手机号只保留后 4 位。</p></div></div>
+    </div></div></div>
     <div class="grid-2-1">${profile}<div>${grantCard}${locks}</div></div>`,
     false,
-    "先查询用户再开通或封禁。开通、封禁和解禁后仍停留在该用户。客服只能看到手机号后四位。",
   );
 }
 
@@ -688,10 +657,10 @@ async function renderOrders() {
     "订单",
     `<div class="workspace-row"><div class="workspace-col">
       <div class="stats cols-4 compact">
-        <div class="stat"><div class="k">发放异常</div><div class="v danger">${broken}</div><div class="hint">可手动补发</div></div>
+        <div class="stat"><div class="k">发放异常</div><div class="v danger">${broken}</div></div>
         <div class="stat"><div class="k">订单总数</div><div class="v">${state.orders.length}</div></div>
         <div class="stat"><div class="k">待支付</div><div class="v">${waiting}</div></div>
-        <div class="stat"><div class="k">已退款</div><div class="v">${refunded}</div><div class="hint">权益已回收</div></div>
+        <div class="stat"><div class="k">已退款</div><div class="v">${refunded}</div></div>
       </div>
       <div class="card grow"><div class="card-hd">订单
         <div style="display:flex;gap:8px;font-weight:400">
@@ -707,7 +676,6 @@ async function renderOrders() {
       </tr></thead><tbody>${rows || '<tr><td colspan="9">暂无订单</td></tr>'}</tbody></table></div></div>
     </div>${drawer}</div>`,
     true,
-    "发放异常只提供补发，档位和天数取自订单。退款并回收权益仅管理员对已发放的订单可用。",
   );
 }
 
@@ -788,7 +756,7 @@ async function renderContent() {
           <div class="field"><label>图片名称</label><input class="input" id="splash-image" value="${escapeHtml(poster.image_name || "")}"></div>
           <div class="field" style="margin-top:8px"><label>跳转说明</label><input class="input" id="splash-jump" value="${escapeHtml(poster.jump_label || "")}"></div>
           <div class="field" style="margin-top:8px"><label>口号</label><input class="input" id="splash-slogan" value="${escapeHtml(poster.slogan || "")}"></div>
-          <p class="help">停留 5 秒，不可改。口号不能写「永久免费」或「全平台」。</p>
+          <p class="help">口号不得出现「永久免费」「全平台」。</p>
           <div style="margin-top:12px;display:flex;gap:8px">
             <button class="btn btn-primary" type="button" data-act="splash-save" data-enabled="1">保存并开启</button>
             <button class="btn btn-default" type="button" data-act="splash-save" data-enabled="0">关闭开屏</button>
@@ -808,7 +776,7 @@ async function renderContent() {
       </div></div>
     </div>
     <div class="card"><div class="card-hd">首页示例记录<span class="sub">${state.examples.length} / 5</span></div><div class="card-bd">
-      <p class="help" style="margin-top:0">固定 3 到 5 条。卡片标注「示例」。平台未能识别的记录不计入平台数。</p>
+      <p class="help" style="margin-top:0">每张卡片须醒目标注「示例」。最多 5 条。满 5 条后需先下线或移除一条再添加。</p>
       <div style="display:flex;flex-direction:column;gap:10px">${exampleCards || "暂无示例"}</div>
       <div style="margin-top:12px;display:flex;gap:8px">
         <select class="select w-md" id="example-program">${options}</select>
@@ -816,7 +784,6 @@ async function renderContent() {
       </div>
     </div></div>`,
     false,
-    "开屏停留 5 秒。口号不能写「永久免费」或「全平台」。首页示例固定 3 到 5 条。",
   );
 }
 
@@ -969,14 +936,13 @@ async function renderLogs() {
       <div class="field"><label for="log-query">关键词</label><input class="input w-md" id="log-query" value="${escapeHtml(state.logQuery || "")}"></div>
       <button class="btn btn-primary" type="button" data-act="log-search">查询</button>
     </div></div></div>
-    <div class="card"><div class="card-hd">操作记录<span class="sub">共 ${state.logTotal} 条 · 只读，不可删除</span></div>
+    <div class="card"><div class="card-hd">操作记录<span class="sub">共 ${state.logTotal} 条</span></div>
       <div class="card-bd flush"><table class="data"><thead><tr>
         <th>时间</th><th>操作人</th><th>操作</th><th>对象</th><th>前值</th><th>后值</th>
       </tr></thead><tbody>${rows || '<tr><td colspan="6">暂无记录</td></tr>'}</tbody></table></div>
       <div class="card-bd pager">${pages.join("") || '<span class="help" style="margin:0">1</span>'}</div>
     </div>`,
     false,
-    "全部写操作留痕，不可删除。对象显示申请号、订单号或用户姓名加手机号后四位。日期按北京时间的自然日。",
   );
 }
 
@@ -1013,8 +979,7 @@ async function renderIndex() {
     .join("");
   const alert = data.stale
     ? `<div class="alert-block"><h2>索引断更告警：已超过 2 天没有成功更新</h2>
-        <p>最近一次成功运行是 <span class="time-hl">${escapeHtml(fmt(data.last_successful_index_at))}</span>。此期间的运行没有成功写入。</p>
-        <div class="meta">连续失败 ${data.consecutive_failures} 次</div></div>`
+        <p>已通知管理员</p></div>`
     : "";
   shell(
     "数据与索引",
@@ -1023,14 +988,13 @@ async function renderIndex() {
       <div class="stat"><div class="k">索引最后更新时间</div><div class="v${data.stale ? " danger" : ""}" style="font-size:18px">${escapeHtml(fmt(data.last_successful_index_at))}</div></div>
       <div class="stat"><div class="k">最近一次运行</div><div class="v" style="font-size:18px">${escapeHtml(data.last_run ? fmt(data.last_run.started_at) : "—")}</div></div>
       <div class="stat"><div class="k">上次成功新增行数</div><div class="v">${data.last_success_new_rows ?? "—"}</div></div>
-      <div class="stat"><div class="k">平台未识别</div><div class="v">${(data.unrecognized || []).length}</div><div class="hint">只读，不计入「涉及 N 个平台」</div></div>
+      <div class="stat"><div class="k">平台未识别</div><div class="v">${(data.unrecognized || []).length}</div></div>
     </div>
     <div class="grid-2">
       <div class="card" style="margin:0"><div class="card-hd">数据导入</div><div class="card-bd">
         <label class="btn btn-default" for="import-file">选择任务导出表</label>
         <input id="import-file" type="file" accept=".csv,text/csv" style="display:none">
         <span class="muted" id="import-name">未选择文件</span>
-        <p class="help">使用与定时任务相同的任务导出表。导入结果写入运行日志和操作日志。</p>
         <button class="btn btn-primary" type="button" data-act="import-index" style="margin-top:10px">开始导入</button>
       </div></div>
       <div class="card" style="margin:0"><div class="card-hd">平台未识别 · 只读告警</div><div class="card-bd flush">
@@ -1044,7 +1008,6 @@ async function renderIndex() {
       <tbody>${runs || '<tr><td colspan="4">暂无运行</td></tr>'}</tbody></table>
     </div></div>`,
     false,
-    "索引超过 2 天没有成功运行时，顶栏会出现告警。导入使用与定时任务相同的任务导出表。",
   );
 }
 
@@ -1341,7 +1304,7 @@ async function onClick(event) {
     await showModal(`<div class="modal"><div class="modal-hd">封禁账号</div><div class="modal-bd">
       <div class="field"><label>封禁类型</label><select class="select" id="ban-type" style="width:100%"><option value="temporary">临时封禁</option><option value="permanent">永久封禁</option></select></div>
       <div class="field" style="margin-top:12px"><label>结束时间</label><input class="input" id="ban-until" placeholder="YYYY-MM-DD HH:mm"></div>
-      <div class="field" style="margin-top:12px"><label>封禁原因</label><textarea class="textarea" id="ban-reason" rows="3"></textarea></div>
+      <div class="field" style="margin-top:12px"><label>封禁原因<span class="req">*</span></label><textarea class="textarea" id="ban-reason" rows="3" placeholder="请填写封禁原因，此项必填"></textarea></div>
     </div><div class="modal-ft">
       <button class="btn btn-default" type="button" data-act="modal-close">取消</button>
       <button class="btn btn-danger-solid" type="button" data-act="ban" data-id="${escapeHtml(state.user.id)}">确认封禁</button>
@@ -1491,11 +1454,6 @@ async function onClick(event) {
       json: { online: node.dataset.online === "1" },
     });
     await afterChange(result.ok, result.status, result.data);
-    return;
-  }
-  if (act === "toggle-note") {
-    state.noteOpen = !state.noteOpen;
-    await draw();
     return;
   }
   if (act === "log-search" || act === "log-page") {
