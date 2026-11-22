@@ -123,6 +123,12 @@ var VOID_TAGS = { input: 1, image: 1, import: 1, include: 1, progress: 1, checkb
 
 function checkWxml(file, text) {
   var rel = path.relative(root, file)
+  var known = Object.assign({}, WXML_TAGS)
+  var jsonFile = file.replace(/\.wxml$/, '.json')
+  if (fs.existsSync(jsonFile)) {
+    var conf = JSON.parse(fs.readFileSync(jsonFile, 'utf8'))
+    Object.keys(conf.usingComponents || {}).forEach(function (name) { known[name] = 1 })
+  }
   var i = 0
   var stack = [{ name: '#root', ifChain: false }]
   function tagEnd(from) {
@@ -165,7 +171,7 @@ function checkWxml(file, text) {
     var raw = text.slice(i + 1, endPos).replace(/\/\s*$/, '')
     var self = /\/\s*>$/.test(text.slice(i, endPos + 1))
     var name = raw.trim().split(/\s/)[0]
-    if (!WXML_TAGS[name]) fail(rel + ': unknown tag <' + name + '>')
+    if (!known[name]) fail(rel + ': unknown tag <' + name + '>')
     var attrs = attrsOf(raw.slice(name.length))
     ;['wx:if', 'wx:elif', 'wx:for'].forEach(function (key) {
       if (attrs[key] !== undefined && attrs[key].indexOf('{{') === -1) fail(rel + ': ' + key + ' needs {{ }}')
@@ -831,6 +837,9 @@ if (inviteStateCheck.status !== 0) fail(inviteStateCheck.stderr || inviteStateCh
 var uploadCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-upload.js')], { encoding: 'utf8' })
 console.log(uploadCheck.stdout || '')
 if (uploadCheck.status !== 0) fail(uploadCheck.stderr || uploadCheck.stdout || 'upload check failed')
+var privacyCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-privacy.js')], { encoding: 'utf8' })
+console.log(privacyCheck.stdout || '')
+if (privacyCheck.status !== 0) fail(privacyCheck.stderr || privacyCheck.stdout || 'privacy check failed')
 if (failed) process.exit(1)
 console.log('miniprogram check ok')
 
