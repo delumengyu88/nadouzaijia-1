@@ -269,3 +269,45 @@ def test_virtual_purchase_signs_exact_request_payload():
         == hmac.new(session_key.encode(), data.encode(), hashlib.sha256).hexdigest()
     )
     assert session_key not in repr(pay) and app_key not in repr(pay)
+
+
+def test_provider_confirmation_accepts_documented_empty_success_and_signs_raw_bytes(monkeypatch):
+    import hashlib
+    import hmac
+    import json
+
+    import httpx
+    from pydantic import SecretStr
+
+    from nadou.payments import xpay
+
+    cfg = get_settings()
+    monkeypatch.setattr(cfg, "wx_appid", "test")
+    monkeypatch.setattr(cfg, "wx_appsecret", SecretStr(secrets.token_hex(12)))
+    gateway = xpay.Xpay("offer", secrets.token_hex(24), 0)
+    token = secrets.token_hex(8)
+    real_client = httpx.Client
+
+    def handle(request):
+        if request.url.path == "/cgi-bin/stable_token":
+            return httpx.Response(200, json={"access_token": token})
+        assert request.url.path == "/xpay/notify_provide_goods"
+        assert request.url.params["access_token"] == token
+        assert json.loads(request.content) == {"order_id": "example", "env": 0}
+        signed = hmac.new(
+            gateway.app_key.encode(),
+            request.url.path.encode() + b"&" + request.content,
+            hashlib.sha256,
+        )
+        assert request.url.params["pay_sig"] == signed.hexdigest()
+        return httpx.Response(200)
+
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kwargs: real_client(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    assert (
+        xpay.provider_call(gateway, "/xpay/notify_provide_goods", {"order_id": "example", "env": 0})
+        == {}
+    )

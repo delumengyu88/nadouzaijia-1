@@ -101,7 +101,11 @@ def provider_call(gateway: Xpay, path: str, body: dict) -> dict:
                 headers={"Content-Type": "application/json"},
             )
             response.raise_for_status()
+            if path == "/xpay/notify_provide_goods" and not response.content.strip():
+                return {}
             data = response.json()
+            if path == "/xpay/notify_provide_goods" and data == {}:
+                return {}
             if not isinstance(data, dict) or data.get("errcode") != 0:
                 raise ValueError
             return data
