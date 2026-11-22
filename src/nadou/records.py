@@ -71,5 +71,8 @@ class IndexRecordStore:
             existing.timestamps = list(timestamps)
             existing.category = category
             if uploaded_at is not None:
+                # A real time replaces any generated placeholder.
                 existing.uploaded_at = uploaded_at
+                existing.generated_uploaded_at = None
+                existing.date_generated = False
         return existing

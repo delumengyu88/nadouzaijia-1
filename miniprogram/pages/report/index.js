@@ -86,8 +86,8 @@ Page({
   retry: function () { this.load() },
   ask: function () {
     wx.showModal({
-      title: '平台未识别',
-      content: '无法解析或不在对照表中。该记录仍计为命中，但不计入涉及的平台数。',
+      title: '其他平台',
+      content: '平台名称无法解析或不在对照表中。该记录仍计为命中，但不计入涉及的平台数。',
       showCancel: false,
       confirmText: '知道了'
     })
@@ -110,11 +110,11 @@ Page({
       wx.navigateTo({ url: '/pages/evidence-detail/index?id=' + encodeURIComponent(this.data.appliedId) })
       return
     }
-    var platforms = (this.data.groups || []).filter(function (group) { return !group.unknown }).map(function (group) { return group.platform })
-    wx.navigateTo({ url: '/pages/evidence/index?kind=normal&name=' + encodeURIComponent(this.data.name) + '&platform=' + encodeURIComponent(platforms.join('、')) })
+    var platforms = this.data.evidencePlatforms || []
+    wx.navigateTo({ url: '/pages/evidence/index?kind=normal&name=' + encodeURIComponent(this.data.evidenceName || '') + '&platform=' + encodeURIComponent(platforms.join('、')) })
   },
   evidence: function () {
-    wx.navigateTo({ url: '/pages/evidence/index?name=' + encodeURIComponent(this.data.name) + '&kind=recent' })
+    wx.navigateTo({ url: '/pages/evidence/index?name=' + encodeURIComponent(this.data.evidenceName || '') + '&kind=recent' })
   },
   download: function () {
     var book = api.exportBook(this.data.name)

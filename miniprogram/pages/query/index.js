@@ -103,7 +103,8 @@ Page({
   },
   evidence: function (e) {
     if (config.calibrating) return
-    wx.navigateTo({ url: '/pages/evidence/index?name=' + encodeURIComponent(e.currentTarget.dataset.name) + '&kind=normal&platform=' + encodeURIComponent(e.currentTarget.dataset.platform || '') })
+    var name = api.isLive ? (e.currentTarget.dataset.evidenceName || '') : e.currentTarget.dataset.name
+    wx.navigateTo({ url: '/pages/evidence/index?name=' + encodeURIComponent(name) + '&kind=normal&platform=' + encodeURIComponent(e.currentTarget.dataset.platform || '') })
   },
   retry: function (e) {
     api.retryItem(this.id, e.currentTarget.dataset.name)

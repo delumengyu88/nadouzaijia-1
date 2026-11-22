@@ -19,7 +19,7 @@ Page({
       phase: query.view === 'duplicate' ? 'duplicate' : 'form',
       kind: kind,
       kindText: kind === 'recent' ? '近期取证' : '常规取证',
-      name: decode(query.name) || '雾港来信',
+      name: decode(query.name) || (api.isLive ? '' : '雾港来信'),
       platform: kind === 'recent' ? '' : decode(query.platform),
       note: kind === 'recent' ? '请尽量取近期播出记录。' : '',
       dupId: ''

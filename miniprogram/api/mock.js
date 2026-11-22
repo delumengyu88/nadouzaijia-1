@@ -1079,7 +1079,7 @@ module.exports = {
     found.records.forEach(function (rec) {
       if (rec.locked || !rec.can_download_report) return
       rows.push({
-        platform: rec.platform || '平台未识别',
+        platform: rec.platform || '其他平台',
         subtype: rec.platform_subtype || '',
         category: rec.category || '',
         type: '',
@@ -1091,7 +1091,8 @@ module.exports = {
     if (!rows.length) return { ok: false, message: '没有可导出的记录' }
     return {
       ok: true,
-      filename: '汇总.xlsx',
+      count: rows.length,
+      filename: xlsx.filename(rows.length),
       bytes: xlsx.build({
         title: '那豆在架 命中结果',
         scope: '节目 ' + meta.name + ' · 已收录平台',

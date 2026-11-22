@@ -34,7 +34,7 @@
       <text class="tag {{item.badgeCls}}">{{item.badge}}</text>
     </view>
     <view class="ex-line">{{item.line}}</view>
-    <view wx:if="{{item.hit}}" class="evidence-link" data-name="{{item.name}}" data-platform="{{item.evidencePlatform}}" catchtap="evidence">委托取证 ›</view>
+    <view wx:if="{{item.hit}}" class="evidence-link" data-name="{{item.name}}" data-platform="{{item.evidencePlatform}}" data-evidence-name="{{item.evidenceName}}" catchtap="evidence">委托取证 ›</view>
     <view class="choice-top" wx:if="{{item.missed}}" style="margin-top:16rpx;">
       <view class="btn ghost" style="width:48%;margin-top:0;" data-name="{{item.name}}" bindtap="requery">修改后重查</view>
       <view class="btn plain" style="width:48%;margin-top:0;" data-name="{{item.name}}" bindtap="evidence">委托取证</view>

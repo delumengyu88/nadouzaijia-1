@@ -98,6 +98,10 @@ function sanitizeSearch(body) {
       unlocks_by_product: summary.unlocks_by_product || {}
     },
     records: records,
+    evidence_program_name: typeof src.evidence_program_name === 'string' ? src.evidence_program_name : undefined,
+    evidence_platforms: Array.isArray(src.evidence_platforms)
+      ? src.evidence_platforms.filter(function (name) { return typeof name === 'string' && name && name !== '其他平台' && name !== '平台未识别' })
+      : undefined,
     locked_window: lockedWindow,
     example: !!src.example
   }
