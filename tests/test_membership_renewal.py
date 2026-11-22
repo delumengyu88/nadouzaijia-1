@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 
+import pytest
 from sqlalchemy import func, select
 
 from nadou.admin.notify import FakeNotifier
@@ -159,3 +160,57 @@ def test_buying_vip_does_not_use_or_change_regular(session, clock):
     extended = issue(session, clock, follow)
     assert granted(session, extended).expires_at == clock + timedelta(days=50)
     assert granted(session, issued).expires_at == clock + timedelta(days=30)
+
+
+def test_refunding_partly_consumed_early_order_preserves_later_paid_duration(session, clock):
+    from nadou.admin.audit import AuditWriter
+    from nadou.admin.errors import WorkbenchError
+    from nadou.admin.orders import OrderRefund
+
+    user = add_user(session, clock, "refund-chain")
+    original = add_order(session, user, clock, "CHAIN-1", "regular", 30)
+    first = granted(session, issue(session, clock, original))
+    fallback = add_grant(session, user, clock + timedelta(days=20), "regular", source="invite")
+    later = add_order(session, user, clock, "CHAIN-2", "regular", 30)
+    second = granted(session, issue(session, clock, later))
+    third = granted(
+        session, issue(session, clock, add_order(session, user, clock, "CHAIN-3", "regular", 10))
+    )
+    vip = add_grant(session, user, clock + timedelta(days=70), "vip", source="manual")
+    refund_at = clock + timedelta(days=11)
+    refund = OrderRefund(session, AuditWriter(session, refund_at, None, None), refund_at)
+    refund.refund(original, "整单退款")
+    assert first.expires_at == refund_at
+    assert fallback.expires_at == clock + timedelta(days=20)
+    assert second.expires_at == clock + timedelta(days=50)
+    assert third.expires_at == clock + timedelta(days=60)
+    assert vip.expires_at == clock + timedelta(days=70)
+    with pytest.raises(WorkbenchError):
+        refund.refund(original, "重复请求")
+    assert third.expires_at == clock + timedelta(days=60)
+
+
+@pytest.mark.parametrize("legacy", ["no_issuance", "manual_override", "expired"])
+def test_refund_leaves_unrelated_or_unproven_access_alone(session, clock, legacy):
+    from nadou.admin.audit import AuditWriter
+    from nadou.admin.orders import OrderRefund
+
+    user = add_user(session, clock, "refund-legacy")
+    first = add_order(session, user, clock, "LEGACY", "regular", 30)
+    if legacy == "no_issuance":
+        first.status = "已发放"
+    else:
+        old = granted(session, issue(session, clock, first))
+        if legacy == "manual_override":
+            old.source = "manual"
+            old.expires_at += timedelta(days=10)
+        else:
+            old.expires_at = clock
+    other = granted(
+        session, issue(session, clock, add_order(session, user, clock, "OTHER", "regular", 10))
+    )
+    expiry = other.expires_at
+    OrderRefund(session, AuditWriter(session, clock, None, None), clock).refund(first, "整单退款")
+    assert other.expires_at == expiry
+    if legacy == "manual_override":
+        assert old.expires_at == clock + timedelta(days=40)
