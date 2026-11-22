@@ -99,6 +99,17 @@
   visibility: hidden;
 }
 
+.member-page .member-status.clip {
+  overflow:hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.member-page .member-status.fail {
+  height: auto;
+  color: #dc2626;
+}
+
 .member-page .invite-link {
   margin-top: 10px;
   height: 22px;

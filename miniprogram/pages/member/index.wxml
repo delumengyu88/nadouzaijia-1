@@ -3,7 +3,11 @@
   <view class="nav-bar"><view class="nav-title">{{title}}</view></view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
-<view class="member-status">{{statusLine}}</view>
+<view class="member-status fail" wx:if="{{loadError}}" bindtap="retryLoad">加载失败，点击重试</view>
+<view class="member-status" wx:elif="{{loading}}">加载中</view>
+<view class="member-status clip" wx:else>{{statusLine}}</view>
+<view class="member-status clip" wx:if="{{!loading && !loadError && extraLine}}">{{extraLine}}</view>
+<block wx:if="{{!loading && !loadError}}">
 <view class="choice {{plan.selectable ? '' : 'static'}} {{plan.selectable && selected == plan.id ? 'on' : ''}}" wx:for="{{plans}}" wx:for-item="plan" wx:key="id" data-id="{{plan.id}}" bindtap="pick">
   <view class="choice-top">
     <text class="choice-name">{{plan.name}}</text>
@@ -17,6 +21,7 @@
     <text>{{perk.text}}</text>
   </view>
 </view>
+</block>
 <view class="pay-slot">
   <button class="btn pay-btn {{showPay ? '' : 'is-held'}}" bindtap="go" loading="{{loginLoading}}" disabled="{{loginLoading}}">{{payLabel}}</button>
 </view>
