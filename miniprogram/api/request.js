@@ -6,6 +6,7 @@ module.exports = function (path, data, options) {
   var base = String(config.apiBase || '').replace(/\/$/, '')
   if (!base) return Promise.reject(new Error('未配置服务地址'))
   var token = options.public ? '' : state.token()
+  // optionalAuth sends a session when one exists, and still runs when it does not.
   // Invite state is 200 for a missing token. Other calls still require a session.
   if (!options.public && !options.optionalAuth && !token) return Promise.reject(new Error('请先登录'))
   return new Promise(function (resolve, reject) {
