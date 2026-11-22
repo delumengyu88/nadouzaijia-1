@@ -149,7 +149,7 @@ Page({
   download: function () {
     if (this.data.example || this.data.downloadLoading) return
     this.setData({ downloadLoading: true })
-    var book = api.exportBook(this.data.name)
+    var book = api.exportBook(this.data.name, (this.query && this.query.id) || '')
     var self = this
     if (book && typeof book.then === 'function') {
       book.then(function (result) { self.saveBook(result) }).catch(function (error) {

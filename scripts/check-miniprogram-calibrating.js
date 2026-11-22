@@ -19,7 +19,19 @@ global.wx = {
   getStorageSync: function (key) { return storage[key] },
   setStorageSync: function (key, value) { storage[key] = value },
   getSystemInfoSync: function () { return { statusBarHeight: 20 } },
-  request: function (opts) { calls.push(opts); pending.push(opts) },
+  request: function (opts) {
+    var url = opts.url || ''
+    if (url.indexOf('/api/v1/queries') !== -1) {
+      var creating = (opts.method || 'GET') === 'POST' && /\/api\/v1\/queries$/.test(url)
+      opts.success({ statusCode: creating ? 201 : 200, data: {
+        id: 'cal-query', queued: true, running: false, done: false, head: '', percent: 0, items: [],
+        networkError: null, showNetworkRetry: null, failBanner: null, seen_at: null
+      } })
+      return
+    }
+    calls.push(opts)
+    pending.push(opts)
+  },
   redirectTo: function (opts) { redirects.push(opts.url) },
   switchTab: function (opts) { tabs.push(opts.url) },
   navigateTo: function () { throw new Error('calibrating must not open report or checkout') },
@@ -68,6 +80,7 @@ async function main() {
   var input = page('input')
   input.data.items = ['真实测试片', '无结果测试片', '失败测试片'].map(function (name) { return { name: name } })
   input.confirm()
+  if (api.isLive) await drain()
   var id = redirects.pop().split('id=')[1]
   assert(id, 'input still creates a query')
   var result = page('query')

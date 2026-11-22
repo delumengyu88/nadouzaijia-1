@@ -2,8 +2,117 @@
 var http = require('./http')
 var state = require('./state')
 var text = require('../utils/text')
+var config = require('../config')
 var jobs = {}
-var sequence = 0
+var knownQueries = {}
+var seenOnce = {}
+
+function rememberQuery(id) {
+  if (id) knownQueries[id] = state.userId()
+}
+function queryError(message, statusCode) {
+  var error = new Error(message)
+  error.statusCode = statusCode
+  return error
+}
+function queryRequest(path, data, method, raw) {
+  var base = String(config.apiBase || '').replace(/\/$/, '')
+  if (!base) return Promise.reject(queryError('未配置服务地址', 0))
+  var token = state.token()
+  if (!token) return Promise.reject(queryError('请先登录', 401))
+  return new Promise(function (resolve, reject) {
+    function sessionChanged() {
+      if (state.token() === token) return false
+      var error = queryError('登录状态已变化', 0)
+      error.sessionChanged = true
+      reject(error)
+      return true
+    }
+    try {
+      wx.request({
+        url: base + path,
+        method: method || 'GET',
+        timeout: 15000,
+        data: data || {},
+        dataType: raw ? 'text' : 'json',
+        header: { Authorization: 'Bearer ' + token },
+        success: function (res) {
+          if (sessionChanged()) return
+          var code = res.statusCode
+          if (code >= 200 && code < 300) {
+            resolve(res.data || {})
+            return
+          }
+          if (code === 401) state.clearSession(token)
+          var message = '服务暂不可用'
+          if (code === 401) message = '请先登录'
+          else if (code === 404) message = '记录不存在'
+          else if (code >= 500) message = '网络异常，请重试'
+          reject(queryError(message, code))
+        },
+        fail: function () { if (!sessionChanged()) reject(queryError('网络异常，请重试', 0)) }
+      })
+    } catch (err) {
+      reject(queryError('网络异常，请重试', 0))
+    }
+  })
+}
+function postResult(id, name, failed) {
+  if (!id || knownQueries[id] !== state.userId()) return
+  var body = { name: name }
+  if (failed) body.failed = true
+  queryRequest('/api/v1/queries/' + encodeURIComponent(id) + '/results', body, 'POST').then(function () {}, function () {})
+}
+function syncReports(job) {
+  if (!job || !job.items) return
+  job.items.forEach(function (item) {
+    if (item.reported) return
+    if (!item.body && !item.error) return
+    item.reported = true
+    postResult(job.id, item.name, !item.body)
+  })
+}
+function recordLimit(value) {
+  var limit = parseInt(value, 10)
+  if (!limit || limit < 1) limit = 20
+  if (limit > 100) limit = 100
+  return limit
+}
+function sanitizeDetail(detail) {
+  var src = detail || {}
+  var items = (src.items || []).map(function (item) {
+    var row = {
+      name: item && item.name || '',
+      badge: item && item.badge || '',
+      badgeCls: item && item.badgeCls || '',
+      line: item && item.line || '',
+      hit: !!(item && item.hit),
+      missed: !!(item && item.missed),
+      failed: !!(item && item.failed)
+    }
+    if (item && item.evidenceName) row.evidenceName = item.evidenceName
+    if (item && item.evidencePlatform) row.evidencePlatform = item.evidencePlatform
+    return row
+  })
+  var failBanner = src.failBanner || ''
+  return {
+    id: src.id,
+    queued: !!src.queued,
+    running: !!src.running && !src.done,
+    done: !!src.done,
+    head: src.head || '',
+    percent: typeof src.percent === 'number' ? src.percent : 0,
+    items: items,
+    failCount: src.failCount || 0,
+    showRetryAll: !!src.showRetryAll,
+    showFailBanner: !!src.showFailBanner && !!failBanner,
+    allFail: !!src.allFail,
+    failBanner: failBanner,
+    itemRetry: !!src.itemRetry,
+    networkError: false,
+    showNetworkRetry: false
+  }
+}
 
 // A search that never settles (request never sent, callback lost, sync throw) must not
 // leave the page polling forever: after timeoutMs the item fails and can be retried.
@@ -46,16 +155,19 @@ function describe(item) {
   var hit = body.outcome !== 'miss'
   // The server lists only platforms that may prefill 委托取证 (never generated-date rows).
   var platforms = (body.evidence_platforms || []).slice()
-  return { name: item.name, hit: hit, missed: !hit, failed: false,
+  var row = { name: item.name, hit: hit, missed: !hit, failed: false,
     badge: hit ? '已命中' : '未命中', badgeCls: hit ? 'ok' : 'muted',
-    evidenceName: body.evidence_program_name || '',
-    evidencePlatform: platforms.filter(function (p, i) { return platforms.indexOf(p) === i }).join('、'),
     line: !hit ? '当前索引未收录该节目名。' : body.outcome === 'recent_only' ? '有最新记录，可委托取证' :
       '命中 ' + body.records.length + ' 条 · 涉及 ' + body.platform_count + ' 个平台' }
+  if (body.evidence_program_name) row.evidenceName = body.evidence_program_name
+  var platform = platforms.filter(function (p, i) { return platforms.indexOf(p) === i }).join('、')
+  if (platform) row.evidencePlatform = platform
+  return row
 }
 function view(job) {
   if (!job) return null
   QueryGuard.expire(job)
+  syncReports(job)
   var finished = job.items.filter(function (item) { return item.body || item.error }).length
   var rows = job.items.map(describe)
   var hits = rows.filter(function (r) { return r.hit }).length
@@ -107,7 +219,10 @@ function advance(id) {
     } else applyFailure(item, new Error('查询失败，请重试'))
   }, function (error) {
     if (job.pending === pending) applyFailure(item, error)
-  }).then(function () { if (job.pending === pending) job.pending = null })
+  }).then(function () {
+    if (job.pending === pending) job.pending = null
+    if (currentJobs()[id] === job) syncReports(job)
+  })
   return view(job)
 }
 function retry(id, name) {
@@ -118,6 +233,7 @@ function retry(id, name) {
       item.error = ''
       item.timedOut = false
       item.network = false
+      item.reported = false
     }
   })
   return advance(id)
@@ -128,29 +244,74 @@ module.exports = {
   searchProgram: http.searchProgram,
   programMeta: function (name) { return { name: name } },
   createQuery: function (names) {
-    var parsed = text.parseTitles(names.join('\n')).items
-    if (!parsed.length) return { ok: false, message: '请先输入节目名' }
-    var id = 'live-' + Date.now() + '-' + (++sequence)
-    currentJobs()[id] = { id: id, items: parsed.map(function (item) { return { name: item.name } }) }
-    return { ok: true, id: id }
+    var parsed = text.parseTitles((names || []).join('\n')).items
+    if (!parsed.length) return Promise.resolve({ ok: false, message: '请先输入节目名' })
+    var titles = parsed.map(function (item) { return item.name })
+    var payload = titles.length === 1 ? { name: titles[0] } : { names: titles }
+    return queryRequest('/api/v1/queries', payload, 'POST').then(function (detail) {
+      var id = detail && detail.id
+      if (!id) return { ok: false, message: '服务暂不可用' }
+      rememberQuery(id)
+      currentJobs()[id] = { id: id, items: titles.map(function (name) { return { name: name } }) }
+      return { ok: true, id: id }
+    }, function (error) {
+      if (error && error.sessionChanged) return { ok: false, sessionChanged: true }
+      return { ok: false, message: (error && error.message) || '网络异常，请重试', statusCode: error && error.statusCode }
+    })
   },
-  getQuery: function (id) { return view(currentJobs()[id]) },
+  getQuery: function (id) {
+    if (!id) return null
+    var job = currentJobs()[id]
+    if (job) return view(job)
+    return queryRequest('/api/v1/queries/' + encodeURIComponent(id), {}, 'GET').then(function (detail) {
+      rememberQuery(id)
+      return sanitizeDetail(detail)
+    })
+  },
   advanceQuery: advance,
   retryItem: retry,
   retryAll: function (id) { return retry(id) },
-  markQuerySeen: function () {},
-  exportBook: function (name) {
-    // Refresh permissions at export time instead of trusting a mock profile or stale report.
-    return http.searchProgram(name).then(function (body) {
-      if (require('../config').calibrating) return require('../utils/calibration').blockedResult()
-      var rows = body.records.filter(function (r) { return !r.locked && r.can_download_report }).map(function (r) {
-        return { platform: r.platform || '其他平台', subtype: r.platform_subtype || '', category: r.category || '',
-          type: '', uploaded: name, matched: body.program_name, date: (r.checked_at || '').slice(0, 10) }
+  markQuerySeen: function (id) {
+    if (!id || knownQueries[id] !== state.userId() || seenOnce[id] === state.userId()) return
+    seenOnce[id] = state.userId()
+    queryRequest('/api/v1/queries/' + encodeURIComponent(id) + '/seen', {}, 'POST').then(function () {}, function () {})
+  },
+  listRecords: function (limit) {
+    return queryRequest('/api/v1/queries', { limit: recordLimit(limit), offset: 0 }, 'GET').then(function (body) {
+      var items = body && body.items ? body.items : []
+      return items.map(function (row) {
+        if (row && row.id) rememberQuery(row.id)
+        return {
+          id: row && row.id,
+          name: row && row.name || '',
+          badge: row && row.badge || '',
+          badgeCls: row && row.badgeCls || '',
+          line: row && row.line || ''
+        }
       })
-      if (!rows.length) return { ok: false, message: '没有可导出的记录' }
-      var book = require('../utils/xlsx')
-      return { ok: true, count: rows.length, filename: book.filename(rows.length), bytes: book.build({ title: '那豆在架 命中结果',
-        scope: '节目 ' + name, day: new Date().toISOString().slice(0, 10), rows: rows }) }
+    })
+  },
+  exportBook: function (name, queryId) {
+    function build() {
+      // Refresh permissions at export time instead of trusting a mock profile or stale report.
+      return http.searchProgram(name).then(function (body) {
+        if (config.calibrating) return require('../utils/calibration').blockedResult()
+        var rows = body.records.filter(function (r) { return !r.locked && r.can_download_report }).map(function (r) {
+          return { platform: r.platform || '其他平台', subtype: r.platform_subtype || '', category: r.category || '',
+            type: '', uploaded: name, matched: body.program_name, date: (r.checked_at || '').slice(0, 10) }
+        })
+        if (!rows.length) return { ok: false, message: '没有可导出的记录' }
+        var book = require('../utils/xlsx')
+        return { ok: true, count: rows.length, filename: book.filename(rows.length), bytes: book.build({ title: '那豆在架 命中结果',
+          scope: '节目 ' + name, day: new Date().toISOString().slice(0, 10), rows: rows }) }
+      })
+    }
+    if (!queryId) return build()
+    return queryRequest('/api/v1/queries/' + encodeURIComponent(queryId) + '/export', {}, 'GET', true).then(function () {
+      return build()
+    }, function (error) {
+      if (error && error.statusCode === 404) return { ok: false, message: '记录不存在' }
+      return Promise.reject(error)
     })
   }
 }

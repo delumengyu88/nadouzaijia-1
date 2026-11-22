@@ -19,7 +19,8 @@ module.exports = function (path, data, options) {
         data: data || {},
         header: token ? { Authorization: 'Bearer ' + token } : {},
         success: function (res) {
-          // Evidence uses readBody. Redeem uses exposeStatus. Invite state uses optionalAuth.
+          // Evidence uses readBody and judges `code`. Redeem uses exposeStatus and judges `detail`.
+          // Invite state uses optionalAuth. Keep one of each.
           if (options.readBody || options.exposeStatus) {
             if (res.statusCode === 401 && token) state.clearSession(token)
             if (options.exposeStatus) resolve({ statusCode: res.statusCode, data: res.data })

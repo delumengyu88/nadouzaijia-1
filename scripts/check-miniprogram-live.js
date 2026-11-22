@@ -6,12 +6,26 @@ assert.strictEqual(config.apiBase, '')
 config.apiBase = '/test-api'
 var calls = []
 var nextError = false
+var querySeq = 0
 var withGenerated = false
 var store = {}
 global.wx = {
   getStorageSync: function (k) { return store[k] }, setStorageSync: function (k, v) { store[k] = v },
   getSystemInfoSync: function () { return { statusBarHeight: 20 } },
   request: function (opt) {
+    var url = opt.url || ''
+    if (url.indexOf('/api/v1/queries') !== -1) {
+      var creating = (opt.method || 'GET') === 'POST' && /\/api\/v1\/queries$/.test(url)
+      querySeq += creating ? 1 : 0
+      var id = creating ? 'live-query-' + querySeq : 'live-query'
+      var found = url.match(/\/api\/v1\/queries\/([^/?]+)/)
+      if (found) id = decodeURIComponent(found[1])
+      opt.success({ statusCode: creating ? 201 : 200, data: {
+        id: id, queued: true, running: false, done: false, head: '', percent: 0, items: [],
+        networkError: null, showNetworkRetry: null, failBanner: null, seen_at: null
+      } })
+      return
+    }
     calls.push(opt)
     if (nextError) { nextError = false; opt.fail(); return }
     if (withGenerated) {
@@ -46,7 +60,8 @@ async function main() {
   api.reset(); state.setSession({ token: 'test-free-token', expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: 'free', tier: 'free' } })
   assert.strictEqual(api.isLive, true)
   assert.strictEqual(api.listEvidence().length, 0)
-  var query = api.createQuery(['真实测试片', '失败测试片'])
+  var query = await api.createQuery(['真实测试片', '失败测试片'])
+  assert(query.ok)
   api.advanceQuery(query.id); await drain()
   assert.strictEqual(calls[0].url, '/test-api/api/v1/programs/search')
   assert.strictEqual(calls[0].header.Authorization, 'Bearer test-free-token')
@@ -62,7 +77,8 @@ async function main() {
   api.retryItem(query.id, '失败测试片'); await drain()
   assert(api.getQuery(query.id).items[1].hit)
   state.setSession({ token: 'test-member-token', expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: 'member', tier: 'vip' } })
-  assert.strictEqual(api.getQuery(query.id), null)
+  var crossed = api.getQuery(query.id)
+  assert(crossed && typeof crossed.then === 'function', 'another account must not read the in-memory job')
   var body = await api.searchProgram('真实测试片')
   assert.strictEqual(calls[calls.length - 1].header.Authorization, 'Bearer test-member-token')
   assert.strictEqual(body.records[1].platform, undefined)
@@ -199,7 +215,8 @@ async function main() {
   assert.strictEqual(mixedBook.filename, '汇总-共导出2条.xlsx')
   assert(mixedText.includes('那豆在架 命中结果（共导出 2 条）'))
   assert(!mixedText.includes('2026-07-01'), 'generated-date row is not exported')
-  var listed = api.createQuery(['真实测试片'])
+  var listed = await api.createQuery(['真实测试片'])
+  assert(listed.ok)
   api.advanceQuery(listed.id); await drain()
   assert.strictEqual(api.getQuery(listed.id).items[0].evidencePlatform, '真实测试平台')
   withGenerated = false
