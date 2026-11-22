@@ -121,21 +121,27 @@ def payment(number, *, status=2, price=59900):
     }
 
 
-def buy(client):
-    result = client.post("/api/v1/xpay/orders", json={"tier": "membership_vip", "code": "fresh"})
+def buy(client, tier="membership_vip"):
+    result = client.post("/api/v1/xpay/orders", json={"tier": tier, "code": "fresh"})
     assert result.status_code == 200, result.text
     return result.json()["order_number"]
 
 
+@pytest.mark.parametrize(
+    ("tier", "price", "days"),
+    [("membership_vip", 59900, 30), ("membership_test_live", 100, 1)],
+)
 def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
-    virtual_setup, session, monkeypatch
+    virtual_setup, session, monkeypatch, tier, price, days
 ):
     from nadou.models import Entitlement, OrderIssuance
     from nadou.payments import xpay
 
     client = virtual_setup
-    number = buy(client)
-    remote = payment(number)
+    if tier == "membership_test_live":
+        authorize_live_test(monkeypatch)
+    number = buy(client, tier)
+    remote = payment(number, price=price)
     refund_id = "refund-" + number
     wxrefund = "wx-" + refund_id
     refund = {
@@ -143,7 +149,7 @@ def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
         "wx_order_id": wxrefund,
         "order_type": 1,
         "env_type": 1,
-        "refund_fee": 59900,
+        "refund_fee": price,
         "paid_time": 100,
         "status": 8,
     }
@@ -153,7 +159,7 @@ def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
     def query(env, openid, merchant):
         assert env == 0 and openid == "virtual-owner"
         if merchant == renewal_no:
-            return payment(renewal_no)
+            return payment(renewal_no, price=price)
         return remote if merchant == number else refund
 
     monkeypatch.setattr(xpay, "query_order", query)
@@ -165,9 +171,9 @@ def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
         "GoodsInfo": {
             "ProductId": "official-product",
             "Quantity": 1,
-            "ActualPrice": 59900,
-            "OrigPrice": 59900,
-            "Attach": "membership_vip",
+            "ActualPrice": price,
+            "OrigPrice": price,
+            "Attach": tier,
         },
     }
     assert signed_event(client, {**delivered, "Env": 1}, monkeypatch).status_code == 409
@@ -181,12 +187,16 @@ def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
 
     original = session.query(Entitlement).one()
     original_expiry = original.expires_at
-    renewal_no = buy(client)
+    if tier == "membership_test_live":
+        from nadou.admin.members import EntitlementBook
+
+        assert not EntitlementBook.revenue_entitlements(session)
+    renewal_no = buy(client, tier)
     assert (
         signed_event(client, {**delivered, "OutTradeNo": renewal_no}, monkeypatch).text == "success"
     )
     renewal = session.query(Entitlement).filter(Entitlement.id != original.id).one()
-    assert renewal.expires_at == original_expiry + timedelta(days=30)
+    assert renewal.expires_at == original_expiry + timedelta(days=days)
     refund_event = {
         "Event": "xpay_refund_notify",
         "RetCode": 0,
@@ -195,11 +205,11 @@ def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
         "WxOrderId": remote["wx_order_id"],
         "WxRefundId": wxrefund,
         "MchRefundId": refund_id,
-        "RefundFee": 59900,
+        "RefundFee": price,
     }
     assert signed_event(client, refund_event, monkeypatch).status_code == 409
     assert client.get("/api/v1/xpay/orders/" + number).json()["status"] == "已发放"
-    remote.update(payment(number, status=5))
+    remote.update(payment(number, status=5, price=price))
     assert signed_event(client, {**refund_event, "RetCode": 1}, monkeypatch).text == "success"
     for status in (None, 1, 5, 7):
         if status is None:
@@ -349,3 +359,84 @@ def test_provider_confirmation_accepts_documented_empty_success_and_signs_raw_by
         xpay.provider_call(gateway, "/xpay/notify_provide_goods", {"order_id": "example", "env": 0})
         == {}
     )
+
+
+def authorize_live_test(monkeypatch):
+    from pydantic import SecretStr
+
+    cfg = get_settings()
+    monkeypatch.setattr(cfg, "wx_appid", "test-app")
+    monkeypatch.setattr(cfg, "wx_appsecret", SecretStr(secrets.token_hex(12)))
+    monkeypatch.setattr(cfg, "wechat_pay_test_tier", True)
+    monkeypatch.setattr(cfg, "wechat_pay_test_users", "test-default-free")
+    monkeypatch.setattr(cfg, "xpay_products", {"membership_test_live": "official-product"})
+    return cfg
+
+
+@pytest.mark.parametrize(
+    "disabled",
+    ["switch", "empty", "other", "sandbox", "mapping", "duplicate", "login", "push", "key"],
+)
+def test_live_one_yuan_fail_closed(virtual_setup, session, monkeypatch, disabled):
+    from pydantic import SecretStr
+
+    cfg = authorize_live_test(monkeypatch)
+    tier = "membership_test_live"
+    if disabled == "switch":
+        monkeypatch.setattr(cfg, "wechat_pay_test_tier", False)
+    elif disabled in {"empty", "other"}:
+        monkeypatch.setattr(cfg, "wechat_pay_test_users", "" if disabled == "empty" else "another")
+    elif disabled == "sandbox":
+        monkeypatch.setattr(cfg, "xpay_env", 1)
+        monkeypatch.setattr(cfg, "xpay_sandbox_key", SecretStr(secrets.token_hex(16)))
+    elif disabled == "login":
+        monkeypatch.setattr(cfg, "wx_appsecret", SecretStr(""))
+    elif disabled == "push":
+        monkeypatch.setattr(cfg, "xpay_push_token", SecretStr(""))
+    elif disabled == "key":
+        monkeypatch.setattr(cfg, "xpay_live_key", SecretStr(""))
+    elif disabled == "mapping":
+        monkeypatch.setattr(cfg, "xpay_products", {})
+    else:
+        monkeypatch.setattr(cfg, "xpay_products", {tier: "shared", "membership_vip": "shared"})
+    tiers = virtual_setup.get("/api/v1/pay/tiers", params={"channel": "virtual"})
+    assert tiers.status_code == 200 and "no-store" in tiers.headers["cache-control"]
+    assert tier not in [item["id"] for item in tiers.json()["tiers"]]
+    result = virtual_setup.post("/api/v1/xpay/orders", json={"tier": tier, "code": "fresh"})
+    assert result.status_code == (503 if disabled in {"push", "key"} else 400)
+    assert session.query(Order).count() == 0
+
+
+def test_live_one_yuan_discovery_and_authoritative_price(virtual_setup, session, monkeypatch):
+    import json
+
+    authorize_live_test(monkeypatch)
+    tier = "membership_test_live"
+    tiers = "/api/v1/pay/tiers"
+    assert virtual_setup.get(tiers, headers={"Authorization": ""}).status_code == 401
+    classic = virtual_setup.get(tiers).json()["tiers"]
+    assert [t["id"] for t in classic] == ["membership_regular", "membership_vip", "membership_test"]
+    assert classic[-1]["amount_fen"] == 1
+    visible = virtual_setup.get(tiers, params={"channel": "virtual"}).json()["tiers"]
+    assert visible == classic + [
+        {
+            "id": tier,
+            "title": "现网支付测试",
+            "membership": "regular",
+            "duration_days": 1,
+            "amount_fen": 100,
+            "amount_yuan": "1.00",
+            "product_id": "official-product",
+        }
+    ]
+    assert virtual_setup.post("/api/v1/pay/orders", json={"tier": tier}).status_code == 400
+    request = {"tier": tier, "code": "fresh", "amount": 1, "amount_fen": 1}
+    response = virtual_setup.post("/api/v1/xpay/orders", json=request)
+    assert response.status_code == 200
+    order = response.json()
+    assert order["isTest"] and order["amount_fen"] == 100 and order["duration_days"] == 1
+    sign_data = json.loads(order["virtual_payment"]["signData"])
+    assert sign_data["goodsPrice"] == 100 and sign_data["env"] == 0
+    assert sign_data["attach"] == tier and sign_data["productId"] == "official-product"
+    stored = session.query(Order).one()
+    assert stored.amount == 1 and stored.tier == "regular" and stored.amount_fen == 100
