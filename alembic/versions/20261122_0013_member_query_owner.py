@@ -1,18 +1,14 @@
 """Add the query owner and a user/time index for later retention deletes.
 
 Revision ID: 20261122_0013
-Revises: 20261122_0011
+Revises: 20261122_0012
 Create Date: 2026-11-22
 
 Adds nullable member_queries.user_id (foreign key users.id) and nullable
 seen_at. Index ix_member_queries_user_id_created_at is (user_id, created_at)
 so a later job can delete one user's rows older than a cutoff. This revision
-does not delete anything.
-
-down_revision is temporarily 20261122_0011 so this branch upgrades on
-acceptance before 20261122_0012 is merged. After that revision is on
-acceptance, change down_revision to 20261122_0012. Do not add another 0012
-in this branch.
+does not delete anything. It follows 20261122_0012, which only adds
+evidence_requests.contact_phone.
 """
 
 from collections.abc import Sequence
@@ -21,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261122_0013"
-down_revision: str | None = "20261122_0011"
+down_revision: str | None = "20261122_0012"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
