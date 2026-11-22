@@ -30,7 +30,7 @@ def load_backfill():
     spec = importlib.util.spec_from_file_location("backfill_generated_dates", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module
+    return module.GeneratedDates
 
 
 def at_age(clock, days, hour=11):
@@ -351,3 +351,70 @@ def test_backfill_is_deterministic_bounded_and_reversible(session, clock):
     session.commit()
     again = {r.id: r.generated_uploaded_at for r in session.query(IndexRecord).all()}
     assert again == first
+
+
+@pytest.mark.parametrize("import_without_date_first", [False, True])
+def test_backfill_then_task_import_restores_export_and_evidence(
+    session, client, clock, import_without_date_first
+):
+    from nadou.importer import TaskExportImporter
+
+    add_user(session, "user-vip", clock, "vip")
+    add_record(
+        session,
+        task_id="recovered-task",
+        record_id="recovered-record",
+        program="恢复日期节目",
+        when=None,
+        with_task=False,
+    )
+    add_query(
+        session,
+        clock,
+        "q-recovered",
+        [
+            {"uploaded": "恢复日期节目", "matched": "恢复日期节目", "resolution": "exact"},
+        ],
+    )
+    session.commit()
+    generated = load_backfill()
+    assert generated.backfill(session, dry_run=False) == 1
+    session.commit()
+    record = session.get(IndexRecord, "recovered-record")
+    assert record.date_generated and record.generated_uploaded_at is not None
+    original_generated = record.generated_uploaded_at
+    assert search(client, "恢复日期节目", "user-vip")["evidence_platforms"] == []
+    before = export(make_client(session, clock), "q-recovered", "user-vip")
+    assert hit_table(load_workbook(BytesIO(before.content))["命中结果"])[1] == []
+
+    header = "task_id,状态,提交时间,filename,公网/专网,平台名\n"
+    importer = TaskExportImporter(session)
+    if import_without_date_first:
+        importer.import_csv(header + "recovered-task,done,,恢复.mp4,公网,山东移动\n")
+        session.commit()
+        session.refresh(record)
+        assert record.date_generated and record.generated_uploaded_at == original_generated
+
+    real_time = at_age(clock, 100)
+    imported = importer.import_csv(
+        header + f"recovered-task,done,{real_time.strftime('%Y-%m-%d %H:%M:%S')},"
+        "恢复.mp4,公网,山东移动\n"
+    )
+    assert imported.updated == int(import_without_date_first)
+    session.commit()
+    session.refresh(record)
+    assert not record.date_generated
+    assert record.generated_uploaded_at is None
+    assert record.uploaded_at is None  # Real time belongs to the recovered task.
+
+    body = search(client, "恢复日期节目", "user-vip")
+    assert body["evidence_platforms"] == ["山东移动"]
+    assert body["evidence_program_name"] == "恢复日期节目"
+    row = open_rows(body)["recovered-record"]
+    assert row["can_download_report"] is True
+    assert row["checked_at"].startswith(real_time.strftime("%Y-%m-%d"))
+    after = export(make_client(session, clock), "q-recovered", "user-vip")
+    rows = hit_table(load_workbook(BytesIO(after.content))["命中结果"])[1]
+    assert len(rows) == 1
+    assert rows[0][0] == "山东移动"
+    assert rows[0][6] == real_time.strftime("%Y-%m-%d")

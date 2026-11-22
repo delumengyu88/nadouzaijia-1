@@ -2,10 +2,11 @@ import csv
 import io
 from dataclasses import dataclass
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from nadou.filename_parser import FilenameParser
-from nadou.models import Task
+from nadou.models import IndexRecord, Task
 from nadou.platform_names import PlatformNames
 from nadou.text import RecordAge, TextNormalizer
 
@@ -113,6 +114,16 @@ class TaskExportImporter:
         existing.platform_subtype = normalized.subtype
         existing.source_unverified = normalized.unrecognized
         existing.is_test = is_test
+        # A re-imported task can supply the real time for previously orphaned
+        # records. Clear placeholders atomically in this import transaction so
+        # those records can enter exports and evidence prefill again. A task
+        # with no real time must not erase the only date we have.
+        if existing.created_at is not None or existing.file_uploaded_at is not None:
+            self.session.execute(
+                update(IndexRecord)
+                .where(IndexRecord.task_id == task_id, IndexRecord.date_generated.is_(True))
+                .values(generated_uploaded_at=None, date_generated=False)
+            )
         return created, is_test
 
     @staticmethod
