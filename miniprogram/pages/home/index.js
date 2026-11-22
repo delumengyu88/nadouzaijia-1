@@ -11,7 +11,8 @@ function skipMetrics() {
   } catch (err) {}
   var width = sys.windowWidth || 375
   return {
-    splashSkipTop: menu && menu.top ? menu.top : (sys.statusBarHeight || 20) + 8,
+    splashSkipTop: menu && menu.top ? menu.top : (sys.statusBarHeight || 20) + 4,
+    splashSkipHeight: menu && menu.height ? menu.height : 32,
     splashSkipRight: menu && menu.left ? width - menu.left + 8 : 102
   }
 }
@@ -55,6 +56,7 @@ Page({
     if (data.showSplash) {
       var metrics = skipMetrics()
       data.splashSkipTop = metrics.splashSkipTop
+      data.splashSkipHeight = metrics.splashSkipHeight
       data.splashSkipRight = metrics.splashSkipRight
     }
     this.setData(data)
@@ -81,7 +83,8 @@ Page({
     var metrics = skipMetrics()
     this.setData({
       showSplash: true, seconds: 5,
-      splashSkipTop: metrics.splashSkipTop, splashSkipRight: metrics.splashSkipRight
+      splashSkipTop: metrics.splashSkipTop, splashSkipHeight: metrics.splashSkipHeight,
+      splashSkipRight: metrics.splashSkipRight
     })
     this.splashTimer = setInterval(function () { self.splashTick() }, 1000)
   },
@@ -107,7 +110,7 @@ Page({
     if (this._splashDone || !this.data.showSplash) return
     this.setData({ splashFailed: false })
   },
-  // 图片失败只换成同底色文字版，倒计时继续，不记为看过。
+  // 图片失败只露出同色调深色底，倒计时继续，不写存储。
   splashFailed: function () {
     if (this._splashDone || !this.data.showSplash) return
     this.setData({ splashFailed: true })

@@ -44,14 +44,14 @@
   <view class="foot-gap"></view>
 </view>
 </view>
-<view class="splash-cover{{splashFailed ? ' is-text' : ''}}" wx:if="{{showSplash}}">
+<view class="splash-cover" wx:if="{{showSplash}}">
   <image wx:if="{{!splashFailed}}" class="splash-bg" src="/assets/p01-splash-bg.webp" mode="aspectFill" bindload="splashLoaded" binderror="splashFailed" />
   <view class="splash-copy">
     <view class="splash-title">那豆在架</view>
     <view class="splash-tagline"><text>全平台片单检索，</text><text class="splash-highlight">永久免费</text></view>
   </view>
-  <view class="splash-logo"><view></view></view>
-  <view class="splash-skip" style="top: {{splashSkipTop}}px; right: {{splashSkipRight}}px;" bindtap="finishSplash">跳过 {{seconds}}</view>
+  <view class="splash-logo"><view class="splash-logo-glass"></view><view class="splash-logo-handle"></view></view>
+  <view class="splash-skip" style="top: {{splashSkipTop}}px; height: {{splashSkipHeight}}px; right: {{splashSkipRight}}px;" bindtap="finishSplash">跳过 {{seconds}}</view>
 </view>
 <view class="mask" wx:if="{{showAnnounce && !showSplash}}">
   <view class="dialog">
