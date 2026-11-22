@@ -52,6 +52,10 @@ class NadouCommand:
     @staticmethod
     def main(argv: list[str] | None = None) -> None:
         args = list(sys.argv[1:] if argv is None else argv)
+        if args[:1] == ["query-retention"]:
+            from nadou.query_retention import run
+
+            raise SystemExit(run(args[1:]))
         if args == ["index-run"]:
             raise SystemExit(IndexRunCommand.run())
         if args == ["seed-demo"]:
@@ -62,7 +66,8 @@ class NadouCommand:
             raise SystemExit(CreateAdminCommand.run(args[1:]))
         raise SystemExit(
             "usage: python -m nadou index-run | python -m nadou seed-demo | "
-            "python -m nadou export-review | python -m nadou create-admin USERNAME"
+            "python -m nadou export-review | python -m nadou query-retention [--apply] [--daily] | "
+            "python -m nadou create-admin USERNAME"
         )
 
 

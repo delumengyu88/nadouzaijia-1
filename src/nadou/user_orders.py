@@ -1,9 +1,11 @@
 """Signed-in mini-program order list. Reads ``orders`` and does not take payment."""
 
 from datetime import UTC
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -104,6 +106,25 @@ class UserOrders:
         return [UserOrders.list_row(order) for order in rows]
 
     @staticmethod
+    def private_response(content: list[dict] | dict) -> JSONResponse:
+        # Only monetary integers are strings on the wire. Counts and flags keep their types.
+        def wire_row(row: dict) -> dict:
+            return {
+                key: str(value)
+                if key in {"amount", "amount_yuan", "amount_fen"} and type(value) is int
+                else value
+                for key, value in row.items()
+            }
+
+        rows = (
+            [wire_row(row) for row in content] if isinstance(content, list) else wire_row(content)
+        )
+        return JSONResponse(
+            jsonable_encoder(rows, custom_encoder={Decimal: lambda value: format(value, "f")}),
+            headers={"Cache-Control": UserOrders.CACHE_CONTROL},
+        )
+
+    @staticmethod
     def register(app: FastAPI, get_session, clock) -> None:
         def current_user(
             authorization: str | None = Header(default=None),
@@ -121,7 +142,4 @@ class UserOrders:
             user: User = Depends(current_user),
             session: Session = Depends(get_session, scope="function"),
         ):
-            return JSONResponse(
-                UserOrders.list_for(session, user),
-                headers={"Cache-Control": UserOrders.CACHE_CONTROL},
-            )
+            return UserOrders.private_response(UserOrders.list_for(session, user))
