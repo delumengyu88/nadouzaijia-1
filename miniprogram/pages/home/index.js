@@ -1,20 +1,16 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
 var splash = require('../../api/splash')
+var layoutSplash = require('./splash-layout').layoutSplash
 
-function skipMetrics() {
+function splashFrame() {
   var sys = {}
   var menu = null
   try { sys = wx.getSystemInfoSync() || {} } catch (err) {}
   try {
     if (wx.getMenuButtonBoundingClientRect) menu = wx.getMenuButtonBoundingClientRect()
   } catch (err) {}
-  var width = sys.windowWidth || 375
-  return {
-    splashSkipTop: menu && menu.top ? menu.top : (sys.statusBarHeight || 20) + 4,
-    splashSkipHeight: menu && menu.height ? menu.height : 32,
-    splashSkipRight: menu && menu.left ? width - menu.left + 8 : 102
-  }
+  return layoutSplash(sys, menu)
 }
 
 Page({
@@ -54,10 +50,8 @@ Page({
     data.seconds = this.data.seconds || 5
     data.splashFailed = !!this.data.splashFailed
     if (data.showSplash) {
-      var metrics = skipMetrics()
-      data.splashSkipTop = metrics.splashSkipTop
-      data.splashSkipHeight = metrics.splashSkipHeight
-      data.splashSkipRight = metrics.splashSkipRight
+      var frame = splashFrame()
+      Object.keys(frame).forEach(function (key) { data[key] = frame[key] })
     }
     this.setData(data)
     nav.selectTab(this, 0)
@@ -80,12 +74,10 @@ Page({
     if (this._splashArmed || this._splashDone) return
     this._splashArmed = true
     var self = this
-    var metrics = skipMetrics()
-    this.setData({
-      showSplash: true, seconds: 5,
-      splashSkipTop: metrics.splashSkipTop, splashSkipHeight: metrics.splashSkipHeight,
-      splashSkipRight: metrics.splashSkipRight
-    })
+    var frame = splashFrame()
+    frame.showSplash = true
+    frame.seconds = 5
+    this.setData(frame)
     this.splashTimer = setInterval(function () { self.splashTick() }, 1000)
   },
   splashTick: function () {

@@ -379,6 +379,8 @@ try {
   expect(home.data.showSplash, 'splash did not cover home')
   expect(home.data.splashSkipTop === 48 && home.data.splashSkipHeight === 32 && home.data.splashSkipRight === 102,
     'skip matches the capsule height and sits 8px to its left')
+  expect(home.data.splashSkipHitHeight >= 44 && home.data.splashSkipHitTop <= home.data.splashSkipTop,
+    'skip hit area is at least 44pt without moving the pill')
   expect(wx._tabBarLog[wx._tabBarLog.length - 1] === 'hide', 'splash hides the custom tab bar')
   var homeWxml = fs.readFileSync(path.join(root, 'pages/home/index.wxml'), 'utf8')
   expect(homeWxml.indexOf('showAnnounce && !showSplash') !== -1, 'announcement stays down during splash')
@@ -390,6 +392,27 @@ try {
   splashCss = splashCss.slice(splashAt, splashEnd)
   expect(splashCss.indexOf('#1D4E9E') === -1 && splashCss.indexOf('#163E80') === -1, 'splash has no bright blue fallback')
   expect(splashCss.indexOf('#0a1630') !== -1 && splashCss.indexOf('#050b1a') !== -1, 'image failure uses the dark fallback')
+  expect(homeWxml.indexOf('splash-mark.png') !== -1, 'splash logo is the P01 mark')
+  expect(homeWxml.indexOf('splash-skip-hit') !== -1, 'skip hit target wraps the visible pill')
+  var layoutSplash = require(path.join(root, 'pages/home/splash-layout')).layoutSplash
+  function gapOf(frame) { return frame.splashGlassTop - frame.splashTextBottom }
+  var iphone8 = layoutSplash({ windowWidth: 375, windowHeight: 667, statusBarHeight: 20 },
+    { top: 24, height: 32, left: 281 })
+  expect(gapOf(iphone8) >= 16 && iphone8.splashGlassTop >= 0 && iphone8.splashGlassBottom <= 667,
+    'iPhone 8 keeps 16px above the glass and the glass fully visible')
+  var tiny = layoutSplash({ windowWidth: 360, windowHeight: 640, statusBarHeight: 20 },
+    { top: 24, height: 32, left: 266 })
+  expect(gapOf(tiny) >= 16 && tiny.splashGlassTop >= 0 && tiny.splashGlassBottom <= 640,
+    '360x640 keeps 16px above the glass and the glass fully visible')
+  var iphone14 = layoutSplash({ windowWidth: 390, windowHeight: 844, statusBarHeight: 47 },
+    { top: 51, height: 32, left: 296 })
+  expect(Math.abs(iphone14.splashTitleSize - 96 * 390 / 750) < 1, 'iPhone 14 keeps the P01 title size')
+  var poster = fs.readFileSync(path.join(root, 'assets/p01-splash-bg.webp'))
+  expect(poster.length < 200 * 1024, 'splash artwork stays under 200KB')
+  var vp8 = poster.indexOf('VP8 ')
+  var dim = poster.readUInt16LE(vp8 + 14)
+  var dimH = poster.readUInt16LE(vp8 + 16)
+  expect((dim & 0x3fff) === 750 && (dimH & 0x3fff) === 1624, 'splash artwork is 750x1624')
   flush()
   expect(home.data.showSplash && !api.splashSeen(), 'image timeout must not write splashSeen')
   home.splashFailed()

@@ -45,13 +45,15 @@
 </view>
 </view>
 <view class="splash-cover" wx:if="{{showSplash}}">
-  <image wx:if="{{!splashFailed}}" class="splash-bg" src="/assets/p01-splash-bg.webp" mode="aspectFill" bindload="splashLoaded" binderror="splashFailed" />
-  <view class="splash-copy">
-    <view class="splash-title">那豆在架</view>
-    <view class="splash-tagline"><text>全平台片单检索，</text><text class="splash-highlight">永久免费</text></view>
+  <image wx:if="{{!splashFailed}}" class="splash-bg" src="/assets/p01-splash-bg.webp" mode="scaleToFill" bindload="splashLoaded" binderror="splashFailed" style="top: {{splashImgTop}}px; width: {{splashImgW}}px; height: {{splashImgH}}px;" />
+  <view class="splash-copy" style="top: {{splashCopyTop}}px;">
+    <view class="splash-title" style="font-size: {{splashTitleSize}}px;">那豆在架</view>
+    <view class="splash-tagline" style="margin-top: {{splashTagGap}}px; font-size: {{splashTagSize}}px;"><text>全平台片单检索，</text><text class="splash-highlight">永久免费</text></view>
   </view>
-  <view class="splash-logo"><view class="splash-logo-glass"></view><view class="splash-logo-handle"></view></view>
-  <view class="splash-skip" style="top: {{splashSkipTop}}px; height: {{splashSkipHeight}}px; right: {{splashSkipRight}}px;" bindtap="finishSplash">跳过 {{seconds}}</view>
+  <image class="splash-logo" src="/assets/splash-mark.png" mode="aspectFit" />
+  <view class="splash-skip-hit" style="top: {{splashSkipHitTop}}px; height: {{splashSkipHitHeight}}px; right: {{splashSkipRight}}px;" bindtap="finishSplash">
+    <view class="splash-skip" style="height: {{splashSkipHeight}}px;">跳过 {{seconds}}</view>
+  </view>
 </view>
 <view class="mask" wx:if="{{showAnnounce && !showSplash}}">
   <view class="dialog">
