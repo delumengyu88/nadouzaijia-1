@@ -5,6 +5,7 @@ var calibration = require('../../utils/calibration')
 var present = require('../../utils/present').present
 var config = require('../../config')
 var httpApi = require('../../api/http')
+var reportFiles = require('../../utils/report-file')
 
 function mockMode() {
   return (config.mode || 'mock') === 'mock'
@@ -33,13 +34,19 @@ Page({
   },
   onShow: function () {
     if (this.query && this.query.example !== '1' && this.revision !== state.sessionRevision()) {
-      this.setData({ phase: 'loading', appliedId: '', showDownload: false, downloadLoading: false, groups: [], records: [] })
+      this.releaseExport()
+      this.setData({ phase: 'loading', reportParts: [], appliedId: '', showDownload: false, downloadLoading: false, groups: [], records: [] })
       this.load()
     }
     this.refreshApplication()
   },
   onIdentityReady: function () { this.onShow() },
-  onUnload: function () { this.disposed = true },
+  onUnload: function () { this.disposed = true; this.releaseExport() },
+  releaseExport: function () {
+    reportFiles.release(this.exportFolder)
+    this.exportFolder = ''
+    this.partsFolder = ''
+  },
   refreshApplication: function () {
     var name = this.data.name
     var normalize = require('../../utils/text').foldKey
@@ -92,6 +99,11 @@ Page({
   applySearch: function (search, name, query) {
     if (calibration.blockReport(query)) return
     if (!search) { this.setData({ phase: 'fail', title: name }); return }
+    if (search.outcome === 'unverified') {
+      this.setData({ phase: 'unverified', name: name, title: name, groups: [], showOpen: false,
+        showDownload: false, showLocked: false, showEvidenceLink: false, showEvidence: false, appliedId: '' })
+      return
+    }
     var publicExample = !!search.publicExample
     if (!publicExample && (query.view === 'empty' || search.outcome === 'miss')) {
       this.setData({ phase: 'empty', title: name, name: name })
@@ -101,7 +113,7 @@ Page({
     var prof = require('../../config').mode === 'live' ? require('../../api/identity').syncAccess() : api.profile()
     var view = present(search, {
       name: meta.name,
-      queried: publicExample ? '' : '2026-11-20',
+      queried: mockMode() && !publicExample ? '2026-11-20' : '',
       canExport: api.isLive && !search.example ? search.records.some(function (r) { return !r.locked && r.can_download_report }) : prof.tier === 'vip' || prof.tier === 'regular',
       expired: query.view === 'expired'
     })
@@ -126,6 +138,38 @@ Page({
     view.navHeight = layout.navHeight
     this.setData(view)
     this.refreshApplication()
+    if (config.mode === 'live' && view.showLocked && !require('../../api/live-test-offer').dedicated()) this.loadOffers(name)
+  },
+  loadOffers: function (name) {
+    var page = this
+    var revision = state.sessionRevision()
+    require('../../api/request')('/api/v1/pay/tiers').then(function (response) {
+      if (page.disposed || revision !== state.sessionRevision() || page.data.name !== name || !page.data.showLocked || page.data.phase !== 'ready') return
+      var tiers = response && response.tiers
+      if (!Array.isArray(tiers)) return
+      var member = require('../../utils/member')
+      var regular = member.pricedTier(tiers, 'membership_regular')
+      var single = member.pricedTier(tiers, 'single_program_30d')
+      page.setData({
+        showMemberOffer: !!regular, showSingleOffer: !!single,
+        memberText: regular ? '开通会员 · ' + member.priceText(regular) : '',
+        singleText: single ? '单节目解锁 · ' + member.priceText(single) : ''
+      })
+    }, function () { /* A missing catalog cannot authorize a purchase. */ })
+  },
+  imageFailed: function (event) {
+    var data = event.currentTarget.dataset
+    var groups = this.data.groups || []
+    var changed = false
+    groups.forEach(function (group) {
+      group.rows.forEach(function (row) {
+        if (row.id !== data.id || row.image !== data.src) return
+        row.image = ''
+        row.plainThumb = true
+        changed = true
+      })
+    })
+    if (changed) this.setData({ groups: groups })
   },
   retry: function () { this.load() },
   ask: function () {
@@ -142,14 +186,17 @@ Page({
     wx.navigateTo({ url: '/pages/viewer/index?id=' + id + '&name=' + encodeURIComponent(this.data.name) + '&example=' + example })
   },
   buyMember: function () {
+    if ((config.mode === 'live' && !this.data.showMemberOffer) || this.data.phase === 'unverified') return
     if (require('../../utils/trial').blockPayment()) return
     wx.navigateTo({ url: '/pages/pay/index?product=membership_regular&name=' + encodeURIComponent(this.data.name) })
   },
   buySingle: function () {
+    if ((config.mode === 'live' && !this.data.showSingleOffer) || this.data.phase === 'unverified') return
     if (require('../../utils/trial').blockPayment()) return
     wx.navigateTo({ url: '/pages/pay/index?product=single_program_30d&name=' + encodeURIComponent(this.data.name) })
   },
   applyEvidence: function () {
+    if (this.data.phase === 'unverified') return
     if (this.data.appliedId) {
       wx.navigateTo({ url: '/pages/evidence-detail/index?id=' + encodeURIComponent(this.data.appliedId) })
       return
@@ -158,12 +205,14 @@ Page({
     wx.navigateTo({ url: '/pages/evidence/index?kind=normal&name=' + encodeURIComponent(this.data.evidenceName || '') + '&platform=' + encodeURIComponent(platforms.join('、')) })
   },
   evidence: function () {
+    if (this.data.phase === 'unverified') return
     wx.navigateTo({ url: '/pages/evidence/index?name=' + encodeURIComponent(this.data.evidenceName || '') + '&kind=recent' })
   },
   download: function () {
     var revision = state.sessionRevision()
-    if (this.data.example || this.data.downloadLoading || (this.revision !== undefined && this.revision !== revision)) return
-    this.setData({ downloadLoading: true })
+    if (this.data.phase === 'unverified' || this.data.example || this.data.downloadLoading || (this.revision !== undefined && this.revision !== revision)) return
+    this.partsFolder = ''
+    this.setData({ downloadLoading: true, reportParts: [] })
     var book = api.exportBook(this.data.name, (this.query && this.query.id) || '')
     var self = this
     if (book && typeof book.then === 'function') {
@@ -201,19 +250,39 @@ Page({
     var page = this
     var revision = state.sessionRevision()
     var fs = wx.getFileSystemManager()
-    var path = wx.env.USER_DATA_PATH + '/' + book.filename
-    fs.writeFile({
-      filePath: path,
-      data: book.bytes.buffer,
-      success: function () {
+    var dir = wx.env.USER_DATA_PATH
+    var folder = ''
+    function current() { return !page.disposed && revision === state.sessionRevision() }
+    function failed() {
+      if (!current()) return
+      stop()
+      wx.showToast({ title: '报告保存失败，请重试', icon: 'none' })
+    }
+    function written(path) {
+      if (!current()) return
+      if (!book.parts || !book.parts.length) {
         stop()
-        if (page.disposed || revision !== state.sessionRevision()) return
-        wx.openDocument({ filePath: path, fileType: 'xlsx', showMenu: true })
-      },
-      fail: function () {
-        stop()
-        wx.showToast({ title: '已生成汇总', icon: 'none' })
+        wx.openDocument({ filePath: path, fileType: 'xlsx', showMenu: true, fail: failed })
+        return
       }
-    })
+      fs.unzip({ zipFilePath: path, targetPath: folder, fail: failed, success: function () {
+        fs.unlink({ filePath: path, fail: function () {} })
+        if (!current()) return
+        page.partsFolder = folder
+        page.setData({ downloadLoading: false, reportParts: book.parts })
+      } })
+    }
+    function write(path) {
+      if (!current()) return
+      fs.writeFile({ filePath: path, data: book.bytes.buffer, fail: failed, success: function () { written(path) } })
+    }
+    if (config.mode === 'mock') { write(dir + '/' + book.filename); return }
+    reportFiles.prepareDirectory(fs, page, function (path) { folder = path; write(folder + '/' + book.filename) }, failed)
+  },
+  openPart: function (event) {
+    var name = event.currentTarget.dataset.name
+    if (!this.partsFolder || this.disposed || this.revision !== state.sessionRevision() ||
+        (this.data.reportParts || []).indexOf(name) === -1) return
+    wx.openDocument({ filePath: this.partsFolder + '/' + name, fileType: 'xlsx', showMenu: true })
   }
 })

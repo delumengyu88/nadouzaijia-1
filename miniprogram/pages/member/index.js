@@ -99,12 +99,11 @@ Page({
       var tiers = info.pricedTiers || []
       catalog = catalog.map(function (plan) {
         if (!plan.selectable) return plan
-        var row = tiers.find(function (tier) { return tier.id === plan.id })
-        if (!row || !Number.isSafeInteger(row.amount_fen) || row.amount_fen <= 0 || !Number.isSafeInteger(row.duration_days) || row.duration_days <= 0) {
+        var priced = member.pricedTier(tiers, plan.id)
+        if (!priced) {
           return Object.assign({}, plan, { selectable: !!info.guest, price: null, priceText: '' })
         }
-        var price = row.amount_fen / 100
-        return Object.assign({}, plan, { price: price, days: row.duration_days, priceText: '¥' + price + '/' + row.duration_days + '天' })
+        return Object.assign({}, plan, priced, { priceText: member.priceText(priced) })
       })
     }
     var plans = member.decoratePlans(catalog, info.tier)

@@ -79,7 +79,7 @@ Page({
       data.announcement = home.showAnnounce ? MOCK_ANNOUNCE : null
     } else {
       var pub = this._public
-      data.examplesError = false
+      data.examplesError = !!(pub && pub.examplesError)
       data.announcement = null
       data.showAnnounce = false
       if (!pub) {
@@ -112,24 +112,34 @@ Page({
         self.paint()
         return
       }
+      var failed = false
       var factsOf = require('../../utils/present').exampleFacts
       Promise.all(cards.map(function (card) {
         return httpApi.exampleReport(card.name).then(function (report) {
           var facts = factsOf(report && report.records)
           if (!facts.hit) return null
           return { name: card.name, line: facts.line, sub: facts.sub, image: facts.image, illustrated: false }
-        }, function () { return null })
+        }, function () { failed = true; return null })
       })).then(function (ready) {
         if (self._homeSeq !== seq) return
+        content.examplesError = failed
         content.examples = ready.filter(Boolean)
         self._public = content
         self.paint()
       })
     }, function () {
       if (self._homeSeq !== seq) return
-      self._public = { examples: [], announcements: [], showPlatformTotal: false, platformTotal: null }
+      self._public = { examplesError: true, examples: [], announcements: [], showPlatformTotal: false, platformTotal: null }
       self.paint()
     })
+  },
+  exampleImageFailed: function (event) {
+    var data = event.currentTarget.dataset
+    var cards = this._public && this._public.examples
+    var card = cards && cards.find(function (item) { return item.name === data.name && item.image === data.src })
+    if (!card) return
+    card.image = ''
+    this.setData({ examples: cards })
   },
   // 自定义 tabBar 画在页面之上，页内遮罩盖不住，开屏期间先藏起。
   holdTabBar: function () {
@@ -258,6 +268,7 @@ Page({
     wx.navigateTo({ url: '/pages/report/index?example=1&name=' + encodeURIComponent(name) })
   },
   tapExamples: function () {
+    if (!mockMode()) return
     var n = (this.data.taps || 0) + 1
     if (n >= 5) {
       api.toggleExamples()

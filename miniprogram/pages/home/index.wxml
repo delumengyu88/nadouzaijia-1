@@ -22,10 +22,10 @@
   <view class="sec-head">
     <text class="sec-title" bindtap="tapExamples">示例报告</text>
   </view>
-  <view class="note" wx:if="{{examplesError}}">示例报告暂时无法加载。</view>
+  <view class="note" wx:if="{{examplesError}}" bindtap="loadHome">示例报告暂时无法加载，点击重试。</view>
   <view class="ex" wx:for="{{examples}}" wx:key="name" data-name="{{item.name}}" bindtap="openExample">
     <view class="thumb {{item.image || item.illustrated ? '' : 'thumb-plain'}}">
-      <image wx:if="{{item.image}}" src="{{item.image}}" mode="aspectFill" style="width:100%;height:100%;" />
+      <image wx:if="{{item.image}}" src="{{item.image}}" data-name="{{item.name}}" data-src="{{item.image}}" binderror="exampleImageFailed" mode="aspectFill" style="width:100%;height:100%;" />
       <block wx:elif="{{item.illustrated}}"><view class="moon"></view><view class="hill"></view></block>
     </view>
     <view class="ex-main">

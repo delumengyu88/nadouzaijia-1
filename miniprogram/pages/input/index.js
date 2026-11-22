@@ -30,7 +30,7 @@ Page({
     this.fromFile = false
     this.setData(data)
     var self = this
-    if (query.fail && FAIL[query.fail]) {
+    if (require('../../config').mode === 'mock' && query.fail && FAIL[query.fail]) {
       this.showFail(query.fail)
       return
     }

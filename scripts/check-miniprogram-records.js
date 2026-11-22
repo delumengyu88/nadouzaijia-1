@@ -269,7 +269,7 @@ async function main() {
   var openedForms = []
   wx.navigateTo = function (opt) { openedForms.push(opt.url) }
   var batchRows = Array.from({ length: 26 }, function (_, i) {
-    return { id: 'batch', name: '节目&' + i, badge: ['已命中', '未命中', '失败'][i % 3], line: '' }
+    return { id: 'batch', name: '节目&' + i, badge: ['已命中', '未命中', '失败', '待核验'][i % 4], line: '' }
   })
   batchRows[24].name = ''
   function listPage(opt) {
@@ -282,7 +282,7 @@ async function main() {
   assert.strictEqual(records.data.rows.length, 20)
   assert(records.data.hasMore)
   var firstCalls = calls.length
-  for (var i of [0, 1, 2]) {
+  for (var i of [0, 1, 2, 3]) {
     records.requestEvidence({ currentTarget: { dataset: { index: i } } })
     var formUrl = openedForms[openedForms.length - 1]
     assert.strictEqual(formUrl, '/pages/evidence/index?fromRecord=1&kind=normal&name=' + encodeURIComponent(batchRows[i].name))
@@ -477,7 +477,7 @@ async function main() {
   resetTraffic()
   session()
   route = function (opt) {
-    if ((opt.url || '').indexOf('/export') !== -1) {
+    if ((opt.url || '').indexOf('/program-export') !== -1) {
       opt.success({ statusCode: 404, data: '' })
       return
     }
@@ -497,6 +497,67 @@ async function main() {
   await drain()
   assert.strictEqual(toasts[toasts.length - 1].title, '记录不存在')
   assert.strictEqual(toasts[toasts.length - 1].icon, 'none')
+
+  report.setData({ phase: 'ready', name: '本节目', showLocked: true })
+  route = function (opt) {
+    assert(opt.url.endsWith('/api/v1/pay/tiers'))
+    opt.success({ statusCode: 200, data: { tiers: [{ id: 'membership_regular', amount_fen: 12345, duration_days: 17 }] } })
+  }
+  report.loadOffers('本节目')
+  await drain()
+  assert.strictEqual(report.data.memberText, '开通会员 · ¥123.45/17天')
+  assert.strictEqual(report.data.showSingleOffer, false)
+  assert.strictEqual(report.data.showMemberOffer, true)
+  var fixture = require('./xlsx-fixture')
+  var sheet = fixture.build([['节目名'], ['本节目']])
+  var headers = { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'X-Nadou-Export-Scope': 'program', 'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent('汇总-共导出1条.xlsx') }
+  route = function (opt) {
+    assert(opt.url.endsWith('/api/v1/queries/batch/program-export'))
+    assert.deepStrictEqual(opt.data, { program_name: '本节目' })
+    assert.strictEqual(opt.responseType, 'arraybuffer')
+    opt.success({ statusCode: 200, data: sheet, header: headers })
+  }
+  var actualBook = await api.exportBook('本节目', 'batch')
+  assert.strictEqual(actualBook.bytes.buffer, sheet, 'retain the exact server workbook')
+  assert.strictEqual(actualBook.filename, '汇总-共导出1条.xlsx')
+  delete headers['X-Nadou-Export-Scope']
+  assert.strictEqual((await api.exportBook('本节目', 'batch')).ok, false, 'reject an unscoped batch file')
+  headers['X-Nadou-Export-Scope'] = 'program'
+  headers['Content-Type'] = 'application/zip'
+  var zipped = fixture.zip({ '汇总-2.xlsx': Buffer.from(sheet), '汇总-1.xlsx': Buffer.from(sheet) })
+  var zipResponse = { header: headers, data: zipped.buffer.slice(zipped.byteOffset, zipped.byteOffset + zipped.byteLength) }
+  var archive = require('../miniprogram/utils/report-file').scopedFile(zipResponse)
+  assert.deepStrictEqual(archive.parts, ['汇总-1.xlsx', '汇总-2.xlsx'])
+  var written, openedPart, unlinked
+  var removed = []
+  wx.env = { USER_DATA_PATH: '/test' }
+  wx.getFileSystemManager = function () {
+    return {
+      mkdir: function (opts) { opts.success() },
+      readdir: function (opts) { opts.success({ files: ['export-100-1', 'my-notes', 'report.xlsx'] }) },
+      rmdir: function (opts) { removed.push(opts.dirPath); opts.complete() },
+      unlink: function (opts) { unlinked = opts.filePath },
+      writeFile: function (opts) { written = opts.data; opts.success() },
+      unzip: function (opts) { opts.success() }
+    }
+  }
+  wx.openDocument = function (opts) { openedPart = opts.filePath }
+  report.revision = state.sessionRevision()
+  report.saveBook(archive)
+  assert.strictEqual(written, zipResponse.data)
+  assert.deepStrictEqual(removed, ['/test/nadou-report-cache/export-100-1'])
+  assert(unlinked.endsWith('/汇总.zip'))
+  assert.deepStrictEqual(report.data.reportParts, ['汇总-1.xlsx', '汇总-2.xlsx'])
+  report.openPart({ currentTarget: { dataset: { name: '汇总-2.xlsx' } } })
+  assert(openedPart.endsWith('/汇总-2.xlsx'))
+  openedPart = null
+  report.openPart({ currentTarget: { dataset: { name: '其他.xlsx' } } })
+  assert.strictEqual(openedPart, null)
+  session('changed-report-reader')
+  report.openPart({ currentTarget: { dataset: { name: '汇总-1.xlsx' } } })
+  assert.strictEqual(openedPart, null, 'another account cannot open a prior export')
+  report.onUnload()
 
   // 11. 确认片单时创建失败，按网络异常提示，不进入结果页。
   resetTraffic()

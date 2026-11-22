@@ -1,6 +1,7 @@
 var assert = require('assert')
 var config = require('../miniprogram/config')
 config.calibrating = false
+config.mode = 'hybrid' // Exercise the development checkout in trialMode.
 var trial = require('../miniprogram/utils/trial')
 assert.strictEqual(config.trialMode, true)
 var modals = 0

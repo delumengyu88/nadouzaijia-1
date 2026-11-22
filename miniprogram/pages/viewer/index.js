@@ -6,6 +6,7 @@ var present = require('../../utils/present')
 var config = require('../../config')
 var httpApi = require('../../api/http')
 var member = require('../../utils/member')
+var beijingTime = require('../../utils/date').beijingTime
 
 function mockMode() {
   return (config.mode || 'mock') === 'mock'
@@ -35,11 +36,11 @@ Page({
     var search = query.example === '1' && !mockMode() ? httpApi.exampleReport(name) : (query.example === '1' ? api.exampleReport(name) : api.searchProgram(name))
     var self = this
     if (search && typeof search.then === 'function') {
-      this.setData(Object.assign(nav.layout('viewer', this.query), { loading: true, missing: false, image: '', canSave: false, downloadEntry: false }))
+      this.setData(Object.assign(nav.layout('viewer', this.query), { loading: true, failed: false, missing: false, image: '', canSave: false, downloadEntry: false }))
       function current() { return !self.disposed && (query.example === '1' || revision === state.sessionRevision()) }
       search.then(function (result) { if (current()) self.applySearch(result, query) }).catch(function () {
         if (!current()) return
-        self.setData({ loading: false, missing: true })
+        self.setData({ loading: false, failed: true, missing: false })
       })
       return
     }
@@ -52,9 +53,7 @@ Page({
       ;(search.records || []).forEach(function (rec) {
         if (rec && rec.locked !== true && rec.record_id === query.id) picked = rec
       })
-      var image = ''
-      if (picked && /^https:\/\//.test(picked.hd_url || '')) image = picked.hd_url
-      else if (picked && /^https:\/\//.test(picked.thumbnail_url || '')) image = picked.thumbnail_url
+      var image = picked && (picked.hd_url || picked.thumbnail_url) || ''
       var checked = picked && picked.checked_at
       var layout = nav.layout('viewer', this.query)
       this.setData({
@@ -68,9 +67,11 @@ Page({
         mock: false,
         plainShot: !image,
         image: image,
-        date: checked ? String(checked).replace('T', ' ').slice(0, 16) : '',
+        date: beijingTime(checked),
         time: picked && picked.timestamps ? picked.timestamps.join('、') : '',
-        low: false,
+        low: picked && picked.access === 'lowres',
+        quality: picked && picked.access === 'full' && picked.hd_url ? '高清' :
+          picked && picked.access === 'lowres' ? '低清' : '',
         canSave: false,
         programOnly: false,
         loading: false,
@@ -84,14 +85,16 @@ Page({
         if (!rec.locked && rec.record_id === query.id) row = rec
       })
     }
-    var real = api.isLive && query.example !== '1'
+    var real = !mockMode()
     var extra = real ? {} : present.findRow(query.id) || {}
     var prof = require('../../config').mode === 'live' ? require('../../api/identity').syncAccess() : api.profile()
     var low = !!(extra.low || (row && row.access === 'lowres') || (!real && (prof.tier === 'free' || prof.tier === 'guest')))
-    var canSave = !!(row && row.can_download_screenshot && !low && query.example !== '1')
+    var imageUrl = require('../../api/shape').imageUrl
+    var image = row && ((!low && imageUrl(row.hd_url)) || imageUrl(row.thumbnail_url)) || ''
+    var canSave = !!(row && row.can_download_screenshot && !low && (!real || image) && query.example !== '1')
     var programOnly = row && row.access === 'full' && !row.can_download_screenshot
-    if (query.view === 'free') { low = true; canSave = false; programOnly = false }
-    if (query.view === 'nodl') { low = false; canSave = false; programOnly = true }
+    if (mockMode() && query.view === 'free') { low = true; canSave = false; programOnly = false }
+    if (mockMode() && query.view === 'nodl') { low = false; canSave = false; programOnly = true }
     var offer = member.downloadOffer({
       canSave: canSave,
       low: low,
@@ -108,17 +111,23 @@ Page({
       category: row ? (row.category || '') : '',
       unknown: !(row && row.platform) && !extra.platform,
       mock: !real,
-      image: real && row && /^https:\/\//.test(row.hd_url || row.thumbnail_url || '') ? (row.hd_url || row.thumbnail_url) : '',
-      date: real ? (row && row.checked_at || '').replace('T', ' ').slice(0, 16) : (extra.date || '') + ' ' + (extra.clock || ''),
+      image: real ? image : '',
+      plainShot: real && !image,
+      date: real ? beijingTime(row && row.checked_at) : (extra.date || '') + ' ' + (extra.clock || ''),
       time: real ? (row && row.timestamps || []).join('、') : extra.time || '',
       low: low,
+      quality: low ? '低清' : (!real || (row && imageUrl(row.hd_url)) ? '高清' : ''),
       canSave: canSave,
       downloadEntry: offer.downloadEntry,
       blockedReason: offer.blockedReason,
       programOnly: programOnly,
       loading: false,
-      missing: !row && query.view !== 'free' && query.view !== 'nodl'
+      missing: !row && !(mockMode() && (query.view === 'free' || query.view === 'nodl'))
     })
+  },
+  imageFailed: function (event) {
+    if (event.currentTarget.dataset.src !== this.data.image) return
+    this.setData({ image: '', plainShot: true, canSave: false, downloadEntry: false })
   },
   back: function () {
     if (getCurrentPages().length > 1) wx.navigateBack()

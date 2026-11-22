@@ -367,9 +367,18 @@ global.Component = function (def) { global.__component = def }
 global.getCurrentPages = function () { return [{}, {}] }
 
 var defaults = require(path.join(root, 'config'))
-if (defaults.mode !== 'hybrid' || defaults.trialMode !== true || defaults.calibrating !== true) {
-  fail('trial defaults must enable hybrid mode, trialMode and calibrating')
+if (defaults.mode !== 'live' || defaults.trialMode !== true || defaults.calibrating !== true) {
+  fail('trial defaults must enable live mode, trialMode and calibrating')
 }
+
+// A copied local development override cannot enable demo data in an uploaded build.
+var configSource = fs.readFileSync(path.join(root, 'config.js'), 'utf8')
+;['develop', 'trial', 'release', 'unknown'].forEach(function (version) {
+  var scope = { module: {}, wx: { getAccountInfoSync: function () { return { miniProgram: { envVersion: version } } } },
+    require: function () { return { mode: 'mock' } } }
+  require('vm').runInNewContext(configSource, scope)
+  if (scope.module.exports.mode !== (version === 'develop' ? 'mock' : 'live')) fail('incorrect data source for ' + version)
+})
 
 // Baseline state coverage is explicitly mock; live routing has separate async checks.
 require(path.join(root, 'config')).mode = 'mock'
