@@ -53,6 +53,19 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("NADOU_TASK_EXPORT_PATH"),
     )
+    xpay_env: int | None = Field(default=None, ge=0, le=1, validation_alias="NADOU_XPAY_ENV")
+    xpay_offer: str = Field(default="", validation_alias="NADOU_XPAY_OFFER_ID")
+    xpay_live_key: SecretStr = Field(default=SecretStr(""), validation_alias="NADOU_XPAY_LIVE_KEY")
+    xpay_sandbox_key: SecretStr = Field(
+        default=SecretStr(""), validation_alias="NADOU_XPAY_SANDBOX_KEY"
+    )
+    xpay_products: dict[str, str] = Field(
+        default_factory=dict, validation_alias="NADOU_XPAY_PRODUCTS"
+    )
+    xpay_push_token: SecretStr = Field(
+        default=SecretStr(""), validation_alias="NADOU_XPAY_PUSH_TOKEN"
+    )
+    xpay_push_aes: SecretStr = Field(default=SecretStr(""), validation_alias="NADOU_XPAY_PUSH_AES")
     wx_appid: str = Field(default="", validation_alias="NADOU_WX_APPID")
     wx_appsecret: SecretStr = Field(default=SecretStr(""), validation_alias="NADOU_WX_APPSECRET")
     wechat_mch_id: str = Field(default="", validation_alias="NADOU_WECHAT_MCH_ID")

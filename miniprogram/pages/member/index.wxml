@@ -14,7 +14,7 @@
 </view>
 <view class="member-status" wx:elif="{{loading}}">加载中</view>
 <view class="member-status clip" wx:elif="{{guest}}">{{statusLine}}</view>
-<block wx:if="{{!loading}}">
+<block wx:if="{{!loading && !testBuild}}">
 <view class="choice {{plan.selectable ? '' : 'static'}} {{plan.selectable && selected == plan.id ? 'on' : ''}}" wx:for="{{plans}}" wx:for-item="plan" wx:key="id" data-id="{{plan.id}}" bindtap="pick">
   <view class="choice-top">
     <text class="choice-name">{{plan.name}}</text>
@@ -29,7 +29,12 @@
   </view>
 </view>
 </block>
-<view class="pay-slot">
+<view class="info-card" wx:if="{{showTestOffer}}">
+  <view class="info-name">支付测试 ¥1.00</view>
+  <view class="info-line">普通会员 1 天</view>
+  <button class="btn" bindtap="openTestOffer">确认开通 ¥1.00</button>
+</view>
+<view class="pay-slot" wx:if="{{!testBuild}}">
   <button class="btn pay-btn {{showPay ? '' : 'is-held'}}" bindtap="go" loading="{{loginLoading}}" disabled="{{loginLoading}}">{{payLabel}}</button>
 </view>
 <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>

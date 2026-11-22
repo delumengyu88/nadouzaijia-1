@@ -6,8 +6,11 @@ from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.types import PublicKeyTypes
+from fastapi import HTTPException
 
 from nadou.config import Settings, get_settings
+from nadou.payments import xpay, xpay_push
+from nadou.payments.catalog import LIVE_TEST
 from nadou.payments.crypto import load_private_key, load_public_key
 
 logger = logging.getLogger("nadou.payments")
@@ -91,3 +94,23 @@ def user_may_use_test_tier(user_id: str) -> bool:
         if part.strip()
     }
     return user_id in allowed
+
+
+def live_test_product_id(user_id: str) -> str | None:
+    settings = get_settings()
+    if settings.xpay_env != 0 or not user_may_use_test_tier(user_id):
+        return None
+    if not settings.wx_appid or not settings.wx_appsecret.get_secret_value():
+        return None
+    try:
+        xpay.configured()
+        xpay_push.configured_key()
+    except HTTPException:
+        return None
+    products = settings.xpay_products
+    product_id = products.get(LIVE_TEST.code)
+    if not product_id or product_id != product_id.strip() or len(product_id) > 128:
+        return None
+    if any(code != LIVE_TEST.code and value == product_id for code, value in products.items()):
+        return None
+    return product_id

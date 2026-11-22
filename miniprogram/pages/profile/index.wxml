@@ -49,7 +49,7 @@
     <view class="row-main"><view class="row-title">协议与隐私</view></view>
     <text class="chev">›</text>
   </view>
-  <button class="row" open-type="contact" session-from="profile">
+  <button class="row contact-row" open-type="contact" session-from="profile">
     <view class="row-main"><view class="row-title">联系客服</view></view>
     <text class="chev">›</text>
   </button>

@@ -248,3 +248,12 @@ def test_profile_reports_current_server_memberships(anonymous, session, clock, m
 def test_staff_token_cannot_authenticate_user_routes(workbench):
     response = workbench.client.get("/api/v1/auth/me", headers=bearer(workbench.admin_token))
     assert response.status_code == 401
+
+
+def test_missing_wechat_login_credentials_return_chinese_message(anonymous, monkeypatch):
+    from pydantic import SecretStr
+
+    monkeypatch.setattr(get_settings(), "wx_appsecret", SecretStr(""))
+    response = login(anonymous)
+    assert response.status_code == 503
+    assert response.json()["detail"] == "微信登录未配置"

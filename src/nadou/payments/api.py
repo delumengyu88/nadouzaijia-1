@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from nadou.auth import UserSessions
 from nadou.models import User
 from nadou.payments.service import PayError, PaymentService
+from nadou.payments.xpay_api import register_virtual_orders
 from nadou.user_orders import UserOrders
 
 logger = logging.getLogger("nadou.payments")
@@ -40,6 +41,8 @@ class PaymentApi:
                     ) from None
                 raise
 
+        register_virtual_orders(app, get_session, payer, clock, notifier, grant_writer)
+
         def service() -> PaymentService:
             return PaymentService(clock, notifier, grant_writer)
 
@@ -60,8 +63,14 @@ class PaymentApi:
             )
 
         @app.get("/api/v1/pay/tiers")
-        def list_tiers(user: User = Depends(payer), payments: PaymentService = Depends(service)):
-            return payments.list_tiers(user)
+        def list_tiers(
+            response: Response,
+            channel: str | None = None,
+            user: User = Depends(payer),
+            payments: PaymentService = Depends(service),
+        ):
+            response.headers["Cache-Control"] = "private, no-store"
+            return payments.list_tiers(user, virtual=channel == "virtual")
 
         @app.post("/api/v1/pay/orders")
         def create_order(
