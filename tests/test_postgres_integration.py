@@ -421,3 +421,74 @@ def test_user_session_round_trip_and_expiry(pg_session):
     with pytest.raises(HTTPException) as error:
         UserSessions.resolve(pg_session, "Bearer " + token, stored.expires_at)
     assert error.value.status_code == 401
+
+
+def test_overlapping_renewal_callbacks_stack_once_per_order(pg_session, clock):
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import timedelta
+    from threading import Barrier
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from sqlalchemy import select
+
+    from nadou.admin.notify import FakeNotifier
+    from nadou.admin.orders import OrderGrantWriter
+    from nadou.models import Entitlement, Order, OrderIssuance, User
+    from nadou.payments.service import PaymentService
+
+    owner = uuid4().hex
+    pg_session.add(User(id=owner, created_at=clock, wechat_openid=owner))
+    pg_session.flush()
+    numbers = [uuid4().hex, uuid4().hex]
+    for number in numbers:
+        pg_session.add(
+            Order(
+                id=number,
+                order_number=number,
+                user_id=owner,
+                tier="vip",
+                duration_days=30,
+                amount=599,
+                amount_fen=59900,
+                status="待支付",
+                created_at=clock,
+            )
+        )
+    pg_session.commit()
+    service = PaymentService(lambda: clock, FakeNotifier(), OrderGrantWriter())
+    config = SimpleNamespace(appid="test-app", mchid="test-merchant")
+    workers_ready = Barrier(3)
+    factory = sessionmaker(pg_session.get_bind())
+
+    def confirm(number):
+        with factory.begin() as worker:
+            order = worker.get(Order, number)
+            workers_ready.wait(timeout=10)
+            txn = {
+                "appid": config.appid,
+                "mchid": config.mchid,
+                "out_trade_no": number,
+                "trade_state": "SUCCESS",
+                "amount": {"total": 59900},
+                "payer": {"openid": owner},
+                "transaction_id": number,
+            }
+            service._confirm(worker, order, config, txn, notify=True)
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = [pool.submit(confirm, n) for n in [*numbers, numbers[0]]]
+        for future in futures:
+            future.result(timeout=20)
+    ends = sorted(
+        pg_session.scalars(select(Entitlement.expires_at).where(Entitlement.user_id == owner))
+    )
+    assert ends == [clock + timedelta(days=30), clock + timedelta(days=60)]
+    assert (
+        len(
+            pg_session.scalars(
+                select(OrderIssuance).where(OrderIssuance.order_id.in_(numbers))
+            ).all()
+        )
+        == 2
+    )

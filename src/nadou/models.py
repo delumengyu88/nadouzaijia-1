@@ -351,6 +351,18 @@ class Order(Base):
     wechat_transaction_id: Mapped[str | None] = mapped_column(String(64))
 
 
+class VirtualOrder(Base):
+    """Immutable catalog/environment snapshot for the WeChat virtual channel."""
+
+    __tablename__ = "virtual_orders"
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), primary_key=True)
+    env: Mapped[int] = mapped_column(Integer, nullable=False)
+    product_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    delivery_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    refund_no: Mapped[str | None] = mapped_column(String(64), unique=True)
+    wx_refund_no: Mapped[str | None] = mapped_column(String(64), unique=True)
+
+
 class OrderIssuance(Base):
     """One issuance attempt chain per order. The unique order id makes it idempotent."""
 
@@ -382,8 +394,7 @@ class MemberQuery(Base):
     ``user_id`` stays nullable so rows written before this column existed
     still load. A row with no owner cannot be listed, opened, or exported.
     ``seen_at`` is when that user opened a finished query.
-    ``ix_member_queries_user_id_created_at`` is the access path for a later
-    retention delete; this process does not delete expired rows.
+    ``ix_member_queries_user_id_created_at`` supports the scheduled retention job.
     """
 
     __tablename__ = "member_queries"
