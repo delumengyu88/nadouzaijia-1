@@ -15,7 +15,7 @@ var BADGE = {
 
 var TEXT = {
   pay: '请按客服指引完成线下付款，付款不在小程序内完成。',
-  delivered: '材料已线下交付，请确认查收。'
+  delivered: '材料已线下交付。'
 }
 
 function dash(value) {
@@ -158,7 +158,6 @@ function presentDetail(item) {
     refundTime: '',
     refundText: refundLine(item),
     canWithdraw: status === 'submitted',
-    canConfirm: status === 'delivered',
     contactFrom: 'evidence:' + (item.no || ''),
     times: [
       { label: '提交', value: shownTime(item.created_at) },

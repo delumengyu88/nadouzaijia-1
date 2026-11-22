@@ -33,10 +33,12 @@ VIP = PayProduct("membership_vip", "VIP", "vip", 30, 599, 59900)
 # One day of 普通会员 so an experience-version payment can run the grant path.
 TEST = PayProduct("membership_test", "支付测试", "regular", 1, 0, 1, test_only=True)
 
+LIVE_TEST = PayProduct("membership_test_live", "现网支付测试", "regular", 1, 1, 100, test_only=True)
+
 # Workbench membership conversion and revenue skip these.
 # membership_dev stays after the experience-build route is removed: those rows
 # are historical orders, and dropping the code would count them as paid again.
-TEST_PRODUCTS = frozenset({TEST.code, "membership_dev"})
+TEST_PRODUCTS = frozenset({TEST.code, LIVE_TEST.code, "membership_dev"})
 
 _PRODUCTS = (REGULAR, VIP, TEST)
 _BY_CODE = {product.code: product for product in _PRODUCTS}
@@ -58,7 +60,7 @@ def product_for_sale(code: str, *, test_enabled: bool) -> PayProduct | None:
 def product_by_code(code: str | None) -> PayProduct | None:
     if code is None:
         return None
-    return _BY_CODE.get(code)
+    return LIVE_TEST if code == LIVE_TEST.code else _BY_CODE.get(code)
 
 
 def excluded_from_workbench_stats(product: str | None) -> bool:
