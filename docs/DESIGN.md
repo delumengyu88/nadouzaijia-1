@@ -293,6 +293,10 @@ Some `index_records` rows have no task in the export and a NULL `uploaded_at`. F
 1. `NADOU_TRIAL_TOOLS` 精确等于 `1`（默认 `0`。`true`、`yes` 或其他值都视为关闭）。生产必须保持 `0`。
 2. `user_may_use_test_tier` 放行当前用户。这是和微信支付 0.01 元 `membership_test` 档同一个函数：`NADOU_WECHAT_PAY_TEST_TIER` 为打开，且用户 id 在 `NADOU_WECHAT_PAY_TEST_USERS`（逗号分隔，默认空，空名单等于没有人）。只认用户 id，不认 openid。不要再设第二份名单，也不要把真实账号写进仓库或镜像。
 
+要用档位切换，必须同时打开 `NADOU_WECHAT_PAY_TEST_TIER`。白名单里的人因此也会在支付档位列表里看到 0.01 元档。
+
+切换会立刻把该账号当前仍有效的普通会员和 VIP 改成到期，包括真实付过费的，而且不会按原来的到期时间恢复。白名单里只放测试账号。
+
 ### 小程序怎么调
 
 `POST /api/v1/dev/tier`
@@ -325,7 +329,7 @@ Some `index_records` rows have no task in the export and a NULL `uploaded_at`. F
 
 已登录且两道门都通过，但 `tier` 不是这三个值时，返回 400，`detail` 为 `tier must be free, regular, or vip`。
 
-`membership_dev` 加在 `TEST_PRODUCTS` 里，和 `membership_test` 走同一条排除：不进入收入口径 `EntitlementBook.revenue_entitlements`，也不进入邀请码「兑换后 30 天内付费转化」。订单列表里仍能看到这些订单。不新增 `is_test` 列。迁移 `20261122_0011` 只放宽 `ck_orders_product`，`down_revision` 是 `20261122_0010`。
+`membership_dev` 加在 `TEST_PRODUCTS` 里，和 `membership_test` 走同一条排除：不进入收入口径 `EntitlementBook.revenue_entitlements`，也不进入邀请码「兑换后 30 天内付费转化」。订单列表里仍能看到这些订单。不新增 `is_test` 列。迁移 `20261122_0011` 只放宽 `ck_orders_product`，`down_revision` 是 `20261122_0010`。这个取值和集合里的位置在接口拆除后仍然保留，见下面的清单。
 
 ### 上线检查清单（正式版提交审核前）
 
@@ -333,14 +337,14 @@ Some `index_records` rows have no task in the export and a NULL `uploaded_at`. F
 - [ ] 删除本接口，不要只关开关就提交审核
 - [ ] 确认 `NADOU_WECHAT_PAY_TEST_USERS` 为空，部署配置和仓库里都没有真实用户 id
 
-删除时一并去掉：
+只删除这些：
 
 - 整个 `src/nadou/devtools/`
 - `src/nadou/main.py` 里的 `register_trial_tools(...)`
 - `src/nadou/config.py` 里的 `trial_tools`
-- `ck_orders_product` 中的 `membership_dev`（`models.py`；若 `20261122_0011` 已在环境执行过，再补一条迁移收回这个取值，并先删掉已有的 dev 订单）
-- `src/nadou/payments/catalog.py` 里 `TEST_PRODUCTS` 的 `membership_dev`（`membership_test` 仍留给 0.01 元档）
 - `tests/test_trial_tools.py`
 - 本节，以及 README、`.env.example` 里对应的 `NADOU_TRIAL_TOOLS` 说明
+
+`membership_dev` 永久留在 `TEST_PRODUCTS` 和 `ck_orders_product` 里，当作已经写下的订单的标记。从 `TEST_PRODUCTS` 拿掉之后，这些金额为 0 的订单会重新被算进付费转化。从约束里拿掉需要再做一次迁移，库里只要还有 `membership_dev` 行，迁移就会失败。
 
 `NADOU_WECHAT_PAY_TEST_USERS` 和 `user_may_use_test_tier` 与 0.01 元档共用。只下线体验版切换时不要删它们。

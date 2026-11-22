@@ -34,6 +34,8 @@ VIP = PayProduct("membership_vip", "VIP", "vip", 30, 599, 59900)
 TEST = PayProduct("membership_test", "支付测试", "regular", 1, 0, 1, test_only=True)
 
 # Workbench membership conversion and revenue skip these.
+# membership_dev stays after the experience-build route is removed: those rows
+# are historical orders, and dropping the code would count them as paid again.
 TEST_PRODUCTS = frozenset({TEST.code, "membership_dev"})
 
 _PRODUCTS = (REGULAR, VIP, TEST)

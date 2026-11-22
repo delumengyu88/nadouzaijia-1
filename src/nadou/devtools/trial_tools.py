@@ -8,14 +8,17 @@ on, and the user id in ``NADOU_WECHAT_PAY_TEST_USERS``. There is no second list.
 The server never reads the mini program's version or environment.
 
 Delete this package before the official mini program is submitted for review,
-and remove the call sites below with it:
+and remove only the call sites below with it:
 
 - ``src/nadou/main.py`` — ``register_trial_tools(...)``
 - ``src/nadou/config.py`` — ``trial_tools``
-- ``membership_dev`` from ``ck_orders_product`` in ``models.py`` (migration 0011)
-- ``membership_dev`` from ``TEST_PRODUCTS`` in ``src/nadou/payments/catalog.py``
 - ``tests/test_trial_tools.py``
 - the 体验版会员档位开关 section in ``docs/DESIGN.md``, plus the README note
+
+Leave ``membership_dev`` in ``TEST_PRODUCTS`` and in ``ck_orders_product``.
+Those rows are historical orders. Dropping the product from the set would
+count them as paid conversions again. Tightening the check constraint needs
+another migration, which fails while any ``membership_dev`` row remains.
 """
 
 from datetime import datetime
@@ -50,6 +53,8 @@ class TrialTierSwitch:
     ``free`` expires live 普通 and VIP grants and writes no order. ``regular`` and
     ``vip`` expire those grants, then open the chosen tier through
     ``OrderGrantWriter`` and one ``membership_dev`` order. No backdated rows.
+    Expiry is immediate and is not restored, including a real paid membership.
+    The allowlist is for test accounts only.
     """
 
     def apply(self, session: Session, user: User, tier: str, now: datetime) -> dict:
