@@ -28,6 +28,7 @@ from nadou.public_config import PublicConfig
 from nadou.schemas import SearchOut
 from nadou.search import EmptyQuery, ProgramSearch, UnknownUser
 from nadou.signed_url import FakeSignedUrlProvider, SignedUrlProvider
+from nadou.user_orders import UserOrders
 
 _BEIJING = ZoneInfo("Asia/Shanghai")
 
@@ -139,6 +140,7 @@ def create_app(
     InviteState.register(app, get_session, clock)
     UserEvidence.register(app, get_session, clock, alerts)
     PaymentApi.register(app, get_session, clock, alerts, grant_writer)
+    UserOrders.register(app, get_session, clock)
     # Experience-build only. Delete this line with src/nadou/devtools before review.
     register_trial_tools(app, get_session, clock)
     AdminApi.register(app, get_session, clock, alerts, grant_writer)

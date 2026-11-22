@@ -28,6 +28,7 @@ This PR is the smallest backend later PRs can build on: import the hourly task e
 | `nadou.main` | FastAPI app |
 | `nadou.public_config` | `PublicConfig`, the unauthenticated splash switch |
 | `nadou.payments` | WeChat Pay JSAPI orders, notification, and grant |
+| `nadou.user_orders` | `UserOrders`, the signed-in mini-program order list |
 | `nadou.seed` | Synthetic CSV + index rows through the importer |
 
 Normalization and parsing are classes. `SignedUrlProvider` is the seam the real CDN signer will replace; the API calls only that.
@@ -63,6 +64,7 @@ The API shows `其他平台` (`PlatformNames.OTHER`) only on records the caller 
 8. `GET /api/v1/evidence-requests/{id}` — 本人工单详情。非本人或不存在都是 404。
 9. `POST /api/v1/evidence-requests/{id}/withdraw` — 仅「已提交」可撤回为「已取消」。
 10. `POST /api/v1/evidence-requests/{id}/confirm` — 仅「已交付」可确认为「已完成」。
+11. `GET /api/v1/pay/orders` — the signed-in user's orders, newest first. See below. One order is the existing `GET /api/v1/pay/orders/{order_number}`.
 
 Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is local-only until WeChat login lands.** Do not expose this header as account authentication on a shared or deployed API. There is no import endpoint; import is `TaskExportImporter`, used by the seed script and tests. Workbench upload can call the same class later.
 
@@ -97,6 +99,36 @@ Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is loc
 ```
 
 不返回邀请码明文、渠道、手机号、兑换时间，也不返回权益档位或到期时间。这些页面都不用后两项；`bindSub` 在小程序 mock 里恒为空字符串，个人中心模板也没有使用，所以不放进响应。响应带 `Cache-Control: no-store`。
+
+### 小程序我的订单
+
+`GET /api/v1/pay/orders` 使用和 `GET /api/v1/auth/me` 相同的登录态：`Authorization: Bearer <token>`。未登录返回 401，`detail` 为 `authentication required`。封禁返回 403，`detail` 为 `account is disabled`。只返回当前用户的订单，按 `created_at` 倒序，同一时刻再按订单 id 倒序。没有订单时正文是 `[]`。列表和 `GET /api/v1/pay/orders/{order_number}` 的响应都带 `Cache-Control: no-store`，包括查单的 404。下单和同步不带这个头。
+
+`product` 属于 `TEST_PRODUCTS`（`membership_test`、`membership_dev`）的订单照实返回，`isTest` 为 true，由调用方决定是否展示。其他订单 `isTest` 为 false。
+
+| 字段 | 来源 |
+|---|---|
+| `orderNo` | `orders.order_number` |
+| `title` | 在售目录里的商品名。目录没有该编码时为 `null`（`membership_dev` 不在目录里） |
+| `line` | `statusText · 价格 · 北京时间的日期`。有 `amount_fen` 时按分换算，整元不写小数，否则保留两位；没有 `amount_fen` 时用元整数 `amount` |
+| `status` | 下表的英文码。库里没有对应码时为 `null` |
+| `statusText` | 库内中文状态原文 |
+| `product` | 商品编码，没有则为 `null` |
+| `isTest` | 商品编码在 `TEST_PRODUCTS` 中 |
+
+| 库内状态 | `status` | 说明 |
+|---|---|---|
+| 待支付 | `pending` | 小程序已有 |
+| 已支付 | `paid` | 小程序没有这个英文码，本接口自定 |
+| 已发放 | `granted` | 小程序已有 |
+| 发放异常 | `grant_error` | 小程序已有 |
+| 已退款 | `refunded` | 小程序没有这个英文码，本接口自定 |
+
+不返回预支付标识、微信交易号、退款原因、用户 id、商户信息或回调正文。
+
+单笔详情不另建路由，复用 `GET /api/v1/pay/orders/{order_number}`。不是当前用户的订单，或订单不存在，都是 404，`detail` 为 `订单不存在`。该接口原有字段不变：`status` 仍是中文库内状态，`title` 仍是目录商品名（目录没有则为 `null`）。查单响应在这些字段之外附上 `orderNo`、`line`、`statusText`、`product`、`isTest`。英文 `status` 不写入详情，避免改掉原有的中文 `status`。下单和同步走同一个视图，因此也会带上这五个字段，原有字段同样不改。
+
+支付页还用到、这里不返回的字段（没有库内数据，不编造）：`programName`、`card`、`priceText`、`blurb`、`renewLine`、`coverLine`、`payText`、`allowRepay`、`allowCheck`、`showPay`、`successLine`。
 
 ### 用户侧委托取证
 

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from nadou.auth import UserSessions
 from nadou.models import User
 from nadou.payments.service import PayError, PaymentService
+from nadou.user_orders import UserOrders
 
 logger = logging.getLogger("nadou.payments")
 
@@ -43,14 +44,20 @@ class PaymentApi:
             return PaymentService(clock, notifier, grant_writer)
 
         @app.exception_handler(PayError)
-        def pay_error(_request: Request, exc: PayError):
+        def pay_error(request: Request, exc: PayError):
             logger.warning("payment rejected status=%s reason=%s", exc.status_code, exc.detail)
+            headers = {}
+            if request.method == "GET" and request.url.path.startswith("/api/v1/pay/orders/"):
+                headers["Cache-Control"] = UserOrders.CACHE_CONTROL
             if exc.notify:
                 return JSONResponse(
                     status_code=exc.status_code,
                     content={"code": "FAIL", "message": "失败"},
+                    headers=headers,
                 )
-            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+            return JSONResponse(
+                status_code=exc.status_code, content={"detail": exc.detail}, headers=headers
+            )
 
         @app.get("/api/v1/pay/tiers")
         def list_tiers(user: User = Depends(payer), payments: PaymentService = Depends(service)):
@@ -73,7 +80,10 @@ class PaymentApi:
             session: Session = Depends(get_session, scope="function"),
             payments: PaymentService = Depends(service),
         ):
-            return payments.get_order(session, user, order_number)
+            return JSONResponse(
+                payments.get_order(session, user, order_number),
+                headers={"Cache-Control": UserOrders.CACHE_CONTROL},
+            )
 
         @app.post("/api/v1/pay/orders/{order_number}/sync")
         def sync_order(
