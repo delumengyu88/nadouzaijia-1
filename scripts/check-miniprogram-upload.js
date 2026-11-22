@@ -63,12 +63,14 @@ var XLSX = '仅支持 .xlsx 文件'
 function expectPrompt(page, text) {
   assert.strictEqual(page.data.phase, 'fail')
   assert.strictEqual(page.data.failText, text)
-  assert.strictEqual(page.data.showReselect, true)
+  assert.strictEqual(page.data.fromFile, true)
   var opened = pickerOpened
   page.upload()
   assert.strictEqual(pickerOpened, opened + 1)
   assert.strictEqual(page.data.phase, 'fail')
   assert.strictEqual(page.data.failText, text)
+  page.reset()
+  assert.strictEqual(page.data.phase, 'edit')
 }
 
 // 3. 两列都没有：提示缺的是「节目名称」列，并说明只在前 10 行找表头。
@@ -142,12 +144,20 @@ p.onInput({ detail: { value: '   ' } })
 p.showParsed('---')
 assert.strictEqual(p.data.phase, 'preview')
 assert.strictEqual(p.data.fromFile, false)
-// 粘贴没有有效节目名时，用的是读取失败文案，下面同样是「重新选择」。
+// 粘贴没有有效节目名时留在失败页，按钮是「重新输入」，回到粘贴框。
 p.showParsed('123')
+assert.strictEqual(p.data.phase, 'fail')
 assert.strictEqual(p.data.fromFile, false)
-expectPrompt(p, READ)
+assert.strictEqual(p.data.failText, READ)
+p.reset()
+assert.strictEqual(p.data.phase, 'edit')
 
-// 页面模板：三种失败提示下的「重新选择」都绑定 upload。
+// 上传失败页：只有一个主按钮「重新选择」；下方文字链接「改为粘贴节目名」回到输入页；没有「重新输入」。
 var wxml = require('fs').readFileSync(require('path').join(__dirname, '../miniprogram/pages/input/index.wxml'), 'utf8')
-assert(/wx:if="\{\{showReselect\}\}" bindtap="upload">重新选择</.test(wxml))
+var uploadActions = /<view wx:if="\{\{fromFile\}\}">([\s\S]*?)<\/view>\s*<view class="btn block" wx:else/.exec(wxml)[1]
+assert.strictEqual((uploadActions.match(/class="btn block"/g) || []).length, 1)
+assert(/class="btn block" bindtap="upload">重新选择</.test(uploadActions))
+assert(/class="link" bindtap="reset">改为粘贴节目名</.test(uploadActions))
+assert.strictEqual(uploadActions.indexOf('重新输入'), -1)
+assert(/bindtap="reset">重新输入</.test(wxml))
 console.log('upload sheet: name-only, name+owner, missing column, read failures and re-pick checks ok')
