@@ -42,28 +42,36 @@ function guestCenter() {
   return { guest: true, tier: 'guest', statusLine: member.statusLine('guest') }
 }
 
+var TIER_NAME = { vip: 'VIP', regular: '普通会员', free: '免费用户' }
+
 function profileFromMe(body) {
   var src = body && typeof body === 'object' ? body : {}
   var tier = knownTier(src.tier)
   var lines = []
   var title = MARK
+  var heading = TIER_NAME[tier] || '会员信息'
+  var detail = MARK
   if (tier === 'vip' || tier === 'regular') {
     var raw = tier === 'vip' ? src.vip_expires_at : src.regular_expires_at
     var until = expiryText(raw)
-    title = member.statusLine(tier, until === null ? MARK : until)
+    var shown = until === null ? MARK : until
+    title = member.statusLine(tier, shown)
+    detail = shown === MARK ? MARK : '至 ' + shown
     if (tier === 'vip') {
       var extra = expiryText(src.regular_expires_at)
       if (extra !== null) lines.push(member.statusLine('regular', extra))
     }
   } else if (tier === 'free') {
     title = member.statusLine('free')
+    detail = title
   }
   return {
     guest: false,
     tier: tier,
-    nickname: MARK,
+    heading: heading,
+    detail: detail,
     title: title,
-    badge: tier === 'vip' ? 'VIP' : '',
+    badge: '',
     lines: lines,
     bound: false,
     bindText: '兑换邀请码',

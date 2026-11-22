@@ -105,9 +105,40 @@
   text-overflow: ellipsis;
 }
 
-.member-page .member-status.fail {
-  height: auto;
+.member-page .fail-card {
+  margin: 12px 16px 0;
+  padding: 14px;
+  border-radius: 12px;
+  background: #fff;
+  text-align: center;
+}
+
+.member-page .fail-copy {
   color: #dc2626;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.member-page .retry-btn {
+  margin-top: 8px;
+  min-width: 88px;
+  height: 32px;
+  line-height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: #1D4E9E;
+  color: #fff;
+  font-size: 14px;
+}
+
+.member-page .retry-btn::after { border: none; }
+
+.member-page .corner {
+  margin-right: 8px;
+  color: #1D4E9E;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
 }
 
 .member-page .invite-link {

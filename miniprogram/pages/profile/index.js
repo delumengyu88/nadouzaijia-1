@@ -6,10 +6,21 @@ function readProfile() {
   return require('../../api/http').profile()
 }
 
+function showProfile(info) {
+  if (!info || info.guest || info.heading) return info
+  var names = { vip: 'VIP', regular: '普通会员', free: '免费用户' }
+  var heading = names[info.tier] || '会员信息'
+  var detail = ''
+  if (info.tier === 'free') detail = '免费 · 可看 180 天以上低清记录'
+  else if (info.title && info.title.indexOf('至 ') !== -1) detail = info.title.slice(info.title.indexOf('至 '))
+  else detail = '\u2014'
+  return Object.assign({}, info, { heading: heading, detail: detail })
+}
+
 Page({
   data: {
     useMock: require('../../config').mode === 'mock',
-    title: '个人中心',
+    title: '我的',
     showSheet: false,
     loading: require('../../config').mode !== 'mock',
     loadError: false,
@@ -24,7 +35,7 @@ Page({
     this._seq = (this._seq || 0) + 1
     var seq = this._seq
     if (info && typeof info.then === 'function') {
-      data.title = '个人中心'
+      data.title = '我的'
       data.showSheet = false
       data.useMock = false
       data.loading = true
@@ -43,7 +54,9 @@ Page({
         next.useMock = false
         next.loading = false
         next.loadError = false
+        profile = showProfile(profile)
         Object.keys(profile).forEach(function (key) { next[key] = profile[key] })
+        next.title = '我的'
         self.setData(next)
       }, function () {
         if (seq !== self._seq) return
@@ -54,17 +67,20 @@ Page({
           nickname: '',
           badge: '',
           lines: [],
-          bindText: ''
+          bindText: '兑换邀请码',
+          bound: false
         })
       })
       return
     }
-    data.title = '个人中心'
+    data.title = '我的'
     data.showSheet = false
     data.useMock = require('../../config').mode === 'mock'
     data.loading = false
     data.loadError = false
+    info = showProfile(info)
     Object.keys(info).forEach(function (key) { data[key] = info[key] })
+    data.title = '我的'
     this.setData(data)
     nav.selectTab(this, 2)
   },

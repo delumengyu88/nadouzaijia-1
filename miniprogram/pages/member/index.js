@@ -2,6 +2,15 @@ var api = require('../../api/index')
 var nav = require('../../utils/nav')
 var member = require('../../utils/member')
 
+function markPlans(plans, tier) {
+  var currentId = tier === 'vip' ? 'membership_vip' : tier === 'regular' ? 'membership_regular' : tier === 'free' ? 'free' : ''
+  return (plans || []).map(function (plan) {
+    var next = Object.assign({}, plan, { current: !!currentId && plan.id === currentId })
+    if (!plan.selectable) next.priceText = ''
+    return next
+  })
+}
+
 function selectedPlan(plans, selected) {
   var found = null
   ;(plans || []).forEach(function (item) {
@@ -46,16 +55,8 @@ Page({
         self.paint(center)
       }, function () {
         if (seq !== self._seq) return
-        self.setData({
-          loading: false,
-          loadError: true,
-          statusLine: '',
-          plans: [],
-          showPay: false,
-          payLabel: '',
-          guest: false,
-          extraLine: ''
-        })
+        self.paint({ guest: false, tier: '', statusLine: '', extraLine: '' })
+        self.setData({ loading: false, loadError: true, guest: false })
       })
       return
     }
@@ -68,7 +69,7 @@ Page({
   },
   paint: function (info) {
     var data = nav.layout('member', this.query)
-    var plans = member.decoratePlans(api.membershipPlans(), info.tier)
+    var plans = markPlans(api.membershipPlans(), info.tier)
     var plan = selectedPlan(plans, this.data.selected)
     if (plan && !plan.selectable) plan = null
     data.title = '会员中心'

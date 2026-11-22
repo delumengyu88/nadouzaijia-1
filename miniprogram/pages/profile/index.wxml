@@ -1,27 +1,28 @@
 <view class="tab-page">
 <view class="nav" style="padding-top: {{statusBarHeight}}px;">
-  <view class="nav-bar"><view class="nav-title">{{title}}</view></view>
+  <view class="nav-bar"><view class="nav-title">我的</view></view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
 <view class="body">
   <view class="card" wx:if="{{loading}}">
     <view class="sub">加载中</view>
   </view>
-  <view class="card load-fail" wx:elif="{{loadError}}" bindtap="retryLoad">加载失败，点击重试</view>
+  <view class="card load-fail" wx:elif="{{loadError}}">
+    <view class="fail-copy">网络异常，请重试</view>
+    <button class="retry-btn" bindtap="retryLoad">重试</button>
+  </view>
   <view class="card choice-top" wx:elif="{{guest}}">
     <text class="row-title">未登录</text>
     <view><button class="login-link" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">微信登录</button><view class="login-error" wx:if="{{loginError}}">{{loginError}}</view></view>
   </view>
   <view class="card" wx:else>
     <view class="choice-top">
-      <text class="nick" wx:if="{{nickname}}">{{nickname}}</text>
-      <text class="h1" wx:else style="font-size:36rpx;">{{title}}</text>
-      <text class="tag vip" wx:if="{{badge}}">{{badge}}</text>
+      <text class="nick">{{heading}}</text>
     </view>
-    <view class="ex-line" wx:if="{{nickname}}">{{title}}</view>
+    <view class="ex-line" wx:if="{{detail}}">{{detail}}</view>
     <view class="ex-line" wx:for="{{lines}}" wx:key="*this">{{item}}</view>
   </view>
-  <block wx:if="{{!guest && !loading && !loadError}}">
+  <block wx:if="{{!guest && !loading}}">
     <view class="row" data-url="/pages/evidence-list/index" bindtap="go">
       <view class="row-main"><view class="row-title">取证申请</view></view>
       <text class="chev">›</text>
