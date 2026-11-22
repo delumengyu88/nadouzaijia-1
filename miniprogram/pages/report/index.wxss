@@ -1,3 +1,22 @@
 /* local */
 
 .evidence-link { color: #1D4E9E; font-size: 26rpx; margin-left: 20rpx; padding: 20rpx 0; }
+
+/* Lock the native button to the view.btn.block.plain box it replaced. */
+button.btn.block.plain {
+  display: block;
+  box-sizing: border-box;
+  width: calc(100% - 64rpx);
+  min-width: 0;
+  margin: 24rpx 32rpx 0;
+  padding: 0;
+  height: 88rpx;
+  line-height: 84rpx;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  text-align: center;
+}
+button.btn.block.plain::after {
+  border: none;
+}
