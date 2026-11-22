@@ -9,5 +9,7 @@ until alembic upgrade head; do
   fi
   sleep 1
 done
-python -m nadou seed-demo
+if [ "${NADOU_ALLOW_DEV_SEED:-0}" = "1" ]; then
+  python -m nadou seed-demo
+fi
 exec uvicorn nadou.main:app --host 0.0.0.0 --port 8000
