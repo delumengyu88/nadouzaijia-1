@@ -15,6 +15,8 @@ global.wx = {
   navigateTo: function (opts) { navigation.push(opts.url) },
   switchTab: function (opts) { navigation.push(opts.url) }
 }
+var app = { globalData: { splashShownThisLaunch: true } }
+global.getApp = function () { return app }
 var api = require('../miniprogram/api')
 var state = require('../miniprogram/api/state')
 function drain() { return new Promise(function (resolve) { setImmediate(resolve) }) }
@@ -54,7 +56,8 @@ function success(id) {
 }
 async function main() {
   for (var name of ['home', 'profile', 'member']) {
-    api.reset(); api.markSplashSeen()
+    api.reset()
+    app.globalData.splashShownThisLaunch = true
     var p = page(name)
     var handler = name === 'member' ? 'go' : 'login'
     p[handler]()
