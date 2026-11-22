@@ -91,7 +91,7 @@ Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is loc
 
 撤回和确认在状态不对时返回 409 `{code:"invalid_state", message:…}`。这两步写审计。`AuditWriter` 的操作者是员工账号；用户自己操作时没有员工，所以 `actor_id` 为空，`after_json` 里记下 `user_id`，不记手机号。
 
-提交成功后走现有 `Notifier`。正文含标题、节目名、工单号、取证类型和脱敏手机号。通知抛错不影响 201。
+事务提交成功之后才走现有 `Notifier`（请求返回前先 `commit`，通知放在后台任务里）。正文含标题、节目名、工单号、取证类型和脱敏手机号。通知抛错不影响 201；提交没写进库就不会发。工单号连续三次都冲突时返回 503 `{code:"no_unavailable", message:"提交失败，请稍后再试"}`。
 
 ## Import
 

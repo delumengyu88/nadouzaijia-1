@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import sessionmaker
 
+from nadou.admin.evidence import ApplicationNumbers
 from nadou.admin.notify import Notifier
 from nadou.auth import UserSessions
 from nadou.config import get_settings
@@ -480,6 +481,71 @@ def test_notice_is_masked_and_a_failure_still_submits(workbench, caplog):
     assert row.program_name == "通知失败节目"
     assert row.request_type == "近期"
     assert PHONE not in caplog.text
+
+
+def test_notice_runs_only_after_the_row_is_committed(workbench):
+    seen: dict[str, str | None] = {"no": None}
+
+    class AfterCommit(Notifier):
+        def notify(self, title: str, body: str) -> None:
+            other = sessionmaker(bind=workbench.session.get_bind(), expire_on_commit=False)()
+            try:
+                row = other.scalar(
+                    select(EvidenceRequest).where(EvidenceRequest.program_name == "提交后通知")
+                )
+                seen["no"] = None if row is None else row.application_number
+            finally:
+                other.close()
+            assert PHONE not in title and PHONE not in body
+
+    app = create_app(
+        database=Database(engine=workbench.session.get_bind()),
+        now=workbench.clock,
+        notifier=AfterCommit(),
+    )
+    _user, headers = login(workbench)
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/v1/evidence-requests",
+            headers=headers,
+            json={"name": "提交后通知", "kind": "normal", "phone": PHONE},
+        )
+    assert created.status_code == 201, created.text
+    assert seen["no"] == created.json()["no"]
+
+
+def test_application_number_collision_is_503(workbench, monkeypatch):
+    user, headers = login(workbench)
+    taken = EvidenceRequest(
+        id="taken-number",
+        application_number="QZ-TAKEN",
+        user_id=user.id,
+        request_type="常规",
+        status="已提交",
+        created_at=workbench.clock.now,
+        program_name="已占用编号",
+        contact_phone=PHONE,
+    )
+    workbench.session.add(taken)
+    workbench.session.commit()
+    calls = {"n": 0}
+
+    def collide(_session, _now):
+        calls["n"] += 1
+        return "QZ-TAKEN"
+
+    monkeypatch.setattr(ApplicationNumbers, "next_value", collide)
+    before = len(workbench.notifier.messages)
+    response = submit(workbench, headers, name="发不出号", kind="normal", phone=PHONE)
+    assert response.status_code == 503
+    assert response.json() == {"code": "no_unavailable", "message": "提交失败，请稍后再试"}
+    assert PHONE not in response.text
+    assert calls["n"] == 3
+    assert len(workbench.notifier.messages) == before
+    workbench.session.rollback()
+    workbench.session.expire_all()
+    rows = workbench.session.scalars(select(EvidenceRequest)).all()
+    assert [row.program_name for row in rows] == ["已占用编号"]
 
 
 def test_generated_dates_are_not_copied_onto_the_request(workbench):

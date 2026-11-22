@@ -5,7 +5,7 @@ import unicodedata
 from datetime import datetime
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
@@ -252,9 +252,8 @@ class EvidenceUserBook:
         EvidenceStatus.IN_PROGRESS,
     )
 
-    def __init__(self, session: Session, notifier: Notifier, now: datetime) -> None:
+    def __init__(self, session: Session, now: datetime) -> None:
         self.session = session
-        self.notifier = notifier
         self.now = now
         # Members are not staff. The audit row keeps the user id in the payload.
         self.audit = AuditWriter(session, now, None, None)
@@ -270,9 +269,7 @@ class EvidenceUserBook:
         existing = EvidenceUserBook.find_open(self.session, user.id, name)
         if existing is not None:
             raise EvidenceUserBook.duplicate(existing)
-        row = self._stage(user.id, name, stored_kind, platform, note, phone)
-        EvidenceUserNotice.send(self.notifier, name, row.application_number, stored_kind, phone)
-        return row
+        return self._stage(user.id, name, stored_kind, platform, note, phone)
 
     def list_for(self, user: User) -> list[dict]:
         rows = self.session.scalars(
@@ -347,10 +344,12 @@ class EvidenceUserBook:
                     self.session.add(row)
                     self.session.flush()
             except IntegrityError:
-                self.session.expunge(row)
+                # The savepoint rollback already drops the pending row.
+                if row in self.session:
+                    self.session.expunge(row)
                 continue
             return row
-        raise EvidenceUserError(422, "unavailable", "提交失败，请稍后再试")
+        raise EvidenceUserError(503, "no_unavailable", "提交失败，请稍后再试")
 
     @staticmethod
     def find_open(session: Session, user_id: str, name: str) -> EvidenceRequest | None:
@@ -399,11 +398,22 @@ class UserEvidence:
         @app.post("/api/v1/evidence-requests", status_code=201)
         async def submit_user_evidence(
             request: Request,
+            background: BackgroundTasks,
             user: User = Depends(current_user),
             session: Session = Depends(get_session, scope="function"),
         ):
             fields = await EvidenceUserBody.read(request)
-            row = EvidenceUserBook(session, notifier, clock()).submit(user, fields)
+            row = EvidenceUserBook(session, clock()).submit(user, fields)
+            # Commit before the notice. DingTalk must not keep the user-row lock,
+            # and a commit failure must not announce a ticket that was not stored.
+            notice = (
+                row.program_name or "",
+                row.application_number,
+                row.request_type,
+                row.contact_phone or "",
+            )
+            session.commit()
+            background.add_task(EvidenceUserNotice.send, notifier, *notice)
             return {"id": row.id, "no": row.application_number}
 
         @app.get("/api/v1/evidence-requests")
@@ -411,7 +421,7 @@ class UserEvidence:
             user: User = Depends(current_user),
             session: Session = Depends(get_session, scope="function"),
         ):
-            return EvidenceUserBook(session, notifier, clock()).list_for(user)
+            return EvidenceUserBook(session, clock()).list_for(user)
 
         @app.get("/api/v1/evidence-requests/{request_id}")
         def get_user_evidence(
@@ -419,7 +429,7 @@ class UserEvidence:
             user: User = Depends(current_user),
             session: Session = Depends(get_session, scope="function"),
         ):
-            return EvidenceUserBook(session, notifier, clock()).get(user, request_id)
+            return EvidenceUserBook(session, clock()).get(user, request_id)
 
         @app.post("/api/v1/evidence-requests/{request_id}/withdraw")
         def withdraw_user_evidence(
@@ -427,7 +437,7 @@ class UserEvidence:
             user: User = Depends(current_user),
             session: Session = Depends(get_session, scope="function"),
         ):
-            return EvidenceUserBook(session, notifier, clock()).withdraw(user, request_id)
+            return EvidenceUserBook(session, clock()).withdraw(user, request_id)
 
         @app.post("/api/v1/evidence-requests/{request_id}/confirm")
         def confirm_user_evidence(
@@ -435,4 +445,4 @@ class UserEvidence:
             user: User = Depends(current_user),
             session: Session = Depends(get_session, scope="function"),
         ):
-            return EvidenceUserBook(session, notifier, clock()).confirm(user, request_id)
+            return EvidenceUserBook(session, clock()).confirm(user, request_id)
