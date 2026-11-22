@@ -9,8 +9,8 @@ function notReady() {
 module.exports = {
   bootstrap: function () { state.load() },
   reset: function () { state.reset() },
-  splashSeen: function () { return true },
-  markSplashSeen: function () {},
+  splashSeen: function () { return require('./splash').seen() },
+  markSplashSeen: function () { require('./splash').markSeen() },
   markAnnounceSeen: function () {},
   homeState: function () {
     return {
