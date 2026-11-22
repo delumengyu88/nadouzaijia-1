@@ -2,15 +2,6 @@ var api = require('../../api/index')
 var nav = require('../../utils/nav')
 var member = require('../../utils/member')
 
-function markPlans(plans, tier) {
-  var currentId = tier === 'vip' ? 'membership_vip' : tier === 'regular' ? 'membership_regular' : tier === 'free' ? 'free' : ''
-  return (plans || []).map(function (plan) {
-    var next = Object.assign({}, plan, { current: !!currentId && plan.id === currentId })
-    if (!plan.selectable) next.priceText = ''
-    return next
-  })
-}
-
 function defaultPlanId(tier) {
   if (tier === 'regular') return 'membership_regular'
   if (tier === 'vip' || tier === 'free') return 'membership_vip'
@@ -86,7 +77,7 @@ Page({
   paint: function (info) {
     info = presentCenter(info)
     var data = nav.layout('member', this.query)
-    var plans = markPlans(api.membershipPlans(), info.tier)
+    var plans = member.decoratePlans(api.membershipPlans(), info.tier)
     var plan = selectedPlan(plans, this.data.selected)
     if (!plan || !plan.selectable) plan = selectedPlan(plans, defaultPlanId(info.tier))
     if (plan && !plan.selectable) plan = null
