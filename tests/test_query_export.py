@@ -776,14 +776,14 @@ def test_sheet2_matches_the_unresolved_summary(session, clock):
     summary = rest_table(workbook["未命中与待处理"])
     assert summary == [
         ("没有这场", RestStatus.MISS, None),
-        ("待确认剧", RestStatus.FAILED, "候选甲、候选乙"),
+        ("待确认剧", "检索中", "候选甲、候选乙"),
         ("失败剧", RestStatus.FAILED, "名称无法解析"),
         ("太新了", RestStatus.MISS, None),
     ]
     counts = {}
     for _name, status, _detail in summary:
         counts[status] = counts.get(status, 0) + 1
-    assert counts == {RestStatus.MISS: 2, RestStatus.FAILED: 2}
+    assert counts == {RestStatus.MISS: 2, "检索中": 1, RestStatus.FAILED: 1}
     workbook.close()
 
 
@@ -1021,7 +1021,7 @@ def _assert_parts(blob: bytes, expected_rows: int):
                 assert workbook.sheetnames == ["命中结果", "未命中与待处理"]
                 assert rest_table(workbook["未命中与待处理"]) == [
                     ("落在末卷", RestStatus.MISS, None),
-                    ("待核名", RestStatus.FAILED, "候选丙"),
+                    ("待核名", "检索中", "候选丙"),
                 ]
             else:
                 assert workbook.sheetnames == ["命中结果"]
