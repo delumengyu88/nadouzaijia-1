@@ -10,15 +10,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from nadou.admin.audit import AuditWriter
-from nadou.admin.orders import EntitlementIssuer, OrderGrantWriter, OrderRefund
+from nadou.admin.orders import EntitlementIssuer, OrderGrantWriter, OrderLookup, OrderRefund
 from nadou.auth import WeChatLogin
 from nadou.config import get_settings
-from nadou.evidence_user import EvidenceUserLock
 from nadou.models import Order, User, VirtualOrder
 from nadou.payments import xpay, xpay_push
 from nadou.payments.catalog import product_by_code, product_for_sale
 from nadou.payments.config import user_may_use_test_tier
 from nadou.payments.service import _view
+from nadou.user_orders import UserOrders
 
 
 class CreateVirtualOrder(BaseModel):
@@ -64,8 +64,7 @@ def checked_payment(order, virtual, remote):
 
 
 def lock(session, order, virtual):
-    EvidenceUserLock.hold(session, order.user_id)
-    session.refresh(order)
+    OrderLookup.lock_membership(session, order)
     session.refresh(virtual)
 
 
@@ -196,7 +195,7 @@ def register_virtual_orders(app: FastAPI, get_session, payer, clock, notifier, w
         session: Session = Depends(get_session, scope="function"),
     ):
         order, _ = virtual_row(session, number, user.id)
-        return _private(_view(order, product_by_code(order.product)))
+        return UserOrders.private_response(_view(order, product_by_code(order.product)))
 
     @app.post("/api/v1/xpay/orders/{number}/sync")
     def sync(

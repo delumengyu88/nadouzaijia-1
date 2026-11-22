@@ -46,7 +46,11 @@ def test_virtual_create_binds_account_and_keeps_secrets_private(virtual_setup, s
     assert number.startswith("XV")
     assert set(pay["virtual_payment"]) == {"mode", "signData", "paySig", "signature"}
     assert pay["amount_fen"] == 59900
-    assert client.get("/api/v1/xpay/orders/" + number).json()["status"] == "待支付"
+    detail = client.get("/api/v1/xpay/orders/" + number)
+    assert detail.headers["Cache-Control"] == "no-store"
+    assert detail.json()["status"] == "待支付"
+    assert detail.json()["amount_fen"] == "59900"
+    assert detail.json()["paid_at"] is None
     assert "virtual_payment" not in client.get("/api/v1/xpay/orders/" + number).json()
     assert (
         client.get("/api/v1/xpay/orders/" + number, headers={"Authorization": ""}).status_code
@@ -144,8 +148,12 @@ def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
         "status": 8,
     }
 
+    renewal_no = None
+
     def query(env, openid, merchant):
         assert env == 0 and openid == "virtual-owner"
+        if merchant == renewal_no:
+            return payment(renewal_no)
         return remote if merchant == number else refund
 
     monkeypatch.setattr(xpay, "query_order", query)
@@ -169,6 +177,16 @@ def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
         assert response.status_code == 200 and response.text == "success"
     assert session.query(OrderIssuance).count() == 1 and session.query(Entitlement).count() == 1
     assert client.get("/api/v1/xpay/orders/" + number).json()["status"] == "已发放"
+    from datetime import timedelta
+
+    original = session.query(Entitlement).one()
+    original_expiry = original.expires_at
+    renewal_no = buy(client)
+    assert (
+        signed_event(client, {**delivered, "OutTradeNo": renewal_no}, monkeypatch).text == "success"
+    )
+    renewal = session.query(Entitlement).filter(Entitlement.id != original.id).one()
+    assert renewal.expires_at == original_expiry + timedelta(days=30)
     refund_event = {
         "Event": "xpay_refund_notify",
         "RetCode": 0,
@@ -182,7 +200,6 @@ def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
     assert signed_event(client, refund_event, monkeypatch).status_code == 409
     assert client.get("/api/v1/xpay/orders/" + number).json()["status"] == "已发放"
     remote.update(payment(number, status=5))
-    original_expiry = session.query(Entitlement).one().expires_at
     assert signed_event(client, {**refund_event, "RetCode": 1}, monkeypatch).text == "success"
     for status in (None, 1, 5, 7):
         if status is None:
@@ -192,19 +209,21 @@ def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
         assert signed_event(client, refund_event, monkeypatch).status_code == 409
         assert client.get("/api/v1/xpay/orders/" + number).json()["status"] == "已发放"
         session.expire_all()
-        assert session.query(Entitlement).one().expires_at == original_expiry
+        assert original.expires_at == original_expiry
     refund["status"] = 8
     for _ in range(2):
         assert signed_event(client, refund_event, monkeypatch).text == "success"
     assert client.get("/api/v1/xpay/orders/" + number).json()["status"] == "已退款"
     session.expire_all()
-    revoked_expiry = session.query(Entitlement).one().expires_at
+    revoked_expiry = original.expires_at
+    assert renewal.expires_at == original_expiry
     assert revoked_expiry < original_expiry
     assert signed_event(client, delivered, monkeypatch).text == "success"
     assert client.get("/api/v1/xpay/orders/" + number).json()["status"] == "已退款"
     session.expire_all()
-    assert session.query(Entitlement).one().expires_at == revoked_expiry
-    assert session.query(OrderIssuance).count() == 1
+    assert original.expires_at == revoked_expiry
+    assert renewal.expires_at == original_expiry
+    assert session.query(OrderIssuance).count() == 2
 
 
 def test_poll_only_grants_matching_settled_order_and_retries_provider_ack(
