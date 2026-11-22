@@ -41,6 +41,8 @@ Page({
   showFail: function (code) {
     this.setData({
       phase: 'fail',
+      raw: '',
+      items: [],
       failText: FAIL[code] || FAIL.read,
       box: ''
     })
@@ -61,9 +63,10 @@ Page({
       }
       if (parsed.truncated) {
         self.setData({
-          phase: 'fail',
+          phase: 'limit',
           failText: FAIL.limit,
-          box: '',
+          raw: parsed.items.map(function (item) { return item.name }).join('\n'),
+          count: parsed.items.length,
           items: parsed.items
         })
         return

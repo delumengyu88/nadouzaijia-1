@@ -389,7 +389,14 @@ try {
   input.onInput({ detail: { value: limits.join('\n') } })
   input.recognizeText()
   flush()
-  expect(input.data.failText.indexOf('500') !== -1, 'over limit')
+  expect(input.data.phase === 'limit', 'over limit is queryable')
+  expect(input.data.failText === '已超过 500 个节目名，仅保留前 500 个。', 'over limit message')
+  expect(input.data.items.length === 500 && input.data.count === 500, '500/500 count')
+  expect(input.data.raw === limits.slice(0, 500).join('\n'), 'first 500 retained in order')
+  input.confirm()
+  var retainedQuery = api.listRecords().filter(function (row) { return row.id === api.listRecords()[0].id })
+  expect(retainedQuery.length === 500 && retainedQuery[499].name === limits[499],
+    'truncated query can start')
   cover('P05-limit')
   ;[
     ['a.xls', 20, 'xlsx', 'P05-fail-xlsx'],
@@ -627,7 +634,7 @@ var screens = {
   'P05-fail-size': 'pages/input/index fail size',
   'P05-fail-xlsx': 'pages/input/index fail xlsx',
   'P05-input': 'pages/input/index phase edit filled',
-  'P05-limit': 'pages/input/index fail limit',
+  'P05-limit': 'pages/input/index phase limit',
   'P05-preview': 'pages/input/index phase preview',
   'P05-recognizing': 'pages/input/index phase recognizing',
   'P07-allfail': 'pages/query/index allFail',
