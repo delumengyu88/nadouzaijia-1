@@ -52,7 +52,11 @@ async function main() {
   else require('../miniprogram/api/state').setSession({ token: 'test-member-token',
     expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: 'member', tier: 'vip' } })
   config.calibrating = false
-  var existing = await api.checkout('membership_vip')
+  var existingPromise = api.checkout('membership_vip')
+  while (pending.length && String(pending[0].url || '').indexOf('/api/v1/pay/') !== -1) {
+    pending.shift().success({ statusCode: 200, data: { detail: '支付未配置' } })
+  }
+  var existing = await existingPromise
   var orderNo = existing.ok ? existing.order.orderNo : 'unavailable'
   config.calibrating = true
   var input = page('input')
@@ -71,7 +75,10 @@ async function main() {
     assert.deepStrictEqual(result.data.items, [])
   }
   assert(api.getQuery(id).done, 'queries still finish during calibration')
-  if (api.isLive) assert.strictEqual(calls.length, 3, 'every title still reaches the real search endpoint')
+  if (api.isLive) {
+    var searches = calls.filter(function (item) { return String(item.url || '').indexOf('/api/v1/programs/search') !== -1 })
+    assert.strictEqual(searches.length, 3, 'every title still reaches the real search endpoint')
+  }
   result.updates.forEach(function (update) {
     assert(!update.head && !(update.items || []).length, 'no results or counts enter P07 data')
   })
