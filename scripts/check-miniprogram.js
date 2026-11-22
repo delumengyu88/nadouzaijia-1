@@ -482,7 +482,7 @@ try {
   for (var rowIndex = 0; rowIndex < 501; rowIndex++) manyRows.push(['节目' + rowIndex])
   expectUploadFail(workbook('many.xlsx', manyRows), '超过 500 行，请删减后再上传。', 'P05-fail-rows')
   uploadedSheets['/tmp/p05-plain.xlsx'] = new Uint8Array([1, 2, 3, 4]).buffer
-  expectUploadFail({ name: 'plain.xlsx', size: 4, path: '/tmp/p05-plain.xlsx' }, '文件读取失败，请重新选择文件。', 'P05-fail-read')
+  expectUploadFail({ name: 'plain.xlsx', size: 4, path: '/tmp/p05-plain.xlsx' }, '文件读取失败，请重新选择文件', 'P05-fail-read')
 
   var pay = open('pages/pay/index', { product: 'membership_vip' }, 'load')
   expect(pay.data.phase === 'pending' && pay.data.showPay, 'checkout')

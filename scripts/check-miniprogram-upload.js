@@ -58,7 +58,7 @@ assert.strictEqual(p.data.phase, 'preview')
 assert.deepStrictEqual(p.data.items.map(function (i) { return [i.name, i.owner] }), [['星河旧梦', '云豆传媒'], ['南岭追光 & 续', '']])
 
 var COL = '未找到「节目名称」列，请确认它在表格前 10 行内'
-var READ = '文件读取失败，请重新选择文件。'
+var READ = '文件读取失败，请重新选择文件'
 var XLSX = '仅支持 .xlsx 文件'
 function expectPrompt(page, text) {
   assert.strictEqual(page.data.phase, 'fail')
