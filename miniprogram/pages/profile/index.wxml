@@ -24,9 +24,9 @@
       <view class="row-main"><view class="row-title">查询记录</view></view>
       <text class="chev">›</text>
     </view>
-    <view class="row" data-url="/pages/invite/index" bindtap="go">
-      <view class="row-main"><view class="row-title">{{bindText}}</view></view>
-      <text class="chev" wx:if="{{!bound}}">›</text>
+    <view class="row" wx:if="{{!inviteLoading}}" data-url="/pages/invite/index" bindtap="go">
+      <view class="row-main"><view class="row-title">{{inviteError || bindText}}</view></view>
+      <text class="chev" wx:if="{{!bound && !inviteError}}">›</text>
     </view>
     <view class="row" data-url="/pages/orders/index" bindtap="go">
       <view class="row-main"><view class="row-title">我的订单</view></view>

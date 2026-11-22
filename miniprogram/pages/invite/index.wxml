@@ -13,6 +13,16 @@
     <view class="btn slim" bindtap="profile">查看个人中心</view>
   </view>
 </view>
+<view class="body" wx:elif="{{phase == 'loading'}}">
+  <view class="center-box"><view class="center-title">正在加载</view></view>
+</view>
+<view class="body" wx:elif="{{phase == 'guest'}}">
+  <button class="btn block" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">微信登录</button>
+  <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
+</view>
+<view class="body" wx:elif="{{phase == 'unavailable'}}">
+  <view class="center-box"><view class="center-title">{{message}}</view></view>
+</view>
 <view class="body" wx:else>
   <view class="note" wx:if="{{phase == 'form'}}">8 位字母或数字</view>
   <view class="note" wx:if="{{phase == 'rate'}}">8 位字母或数字</view>

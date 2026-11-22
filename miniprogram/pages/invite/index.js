@@ -2,22 +2,65 @@ var api = require('../../api/index')
 var nav = require('../../utils/nav')
 
 Page({
-  data: { title: '兑换邀请码', showBack: true, phase: 'form', code: '' },
+  data: { title: '兑换邀请码', showBack: true, phase: 'loading', code: '', loginLoading: false, loginError: '' },
   onLoad: function (query) {
+    this._query = query || {}
     var layout = nav.layout('invite', this.query)
-    var state = api.inviteState()
-    this.setData({
+    var base = {
       statusBarHeight: layout.statusBarHeight,
       navHeight: layout.navHeight,
       showBack: true,
       title: '兑换邀请码',
-      phase: state.bound ? 'bound' : 'form',
-      code: '',
-      message: state.bound ? '已绑定过邀请码，不能再填' : ''
-    })
-    if (query.view === 'rate') {
-      this.setData({ phase: 'rate', code: 'A8K3N2P7', message: '操作太频繁，请 1 小时后再试。' })
+      loginLoading: false,
+      loginError: ''
     }
+    if (require('../../config').mode !== 'live') {
+      var state = api.inviteState()
+      this.setData(Object.assign({
+        phase: state.bound ? 'bound' : 'form',
+        code: '',
+        message: state.bound ? '已绑定过邀请码，不能再填' : ''
+      }, base))
+      if (this._query.view === 'rate') {
+        this.setData({ phase: 'rate', code: 'A8K3N2P7', message: '操作太频繁，请 1 小时后再试。' })
+      }
+      return
+    }
+    this.setData(Object.assign({ phase: 'loading', code: '', message: '' }, base))
+    var self = this
+    var ticket = (this._inviteTicket = (this._inviteTicket || 0) + 1)
+    Promise.resolve().then(function () { return api.inviteState() }).then(function (next) {
+      if (ticket !== self._inviteTicket) return
+      self.applyState(next)
+    }, function () {
+      if (ticket !== self._inviteTicket) return
+      self.setData({ phase: 'unavailable', message: '网络异常，请重试', code: '' })
+    })
+  },
+  applyState: function (state) {
+    if (!state || !state.ok) {
+      this.setData({
+        phase: 'unavailable',
+        message: (state && state.message) || '服务暂不可用',
+        code: ''
+      })
+      return
+    }
+    if (state.guest) {
+      this.setData({ phase: 'guest', code: '', message: '' })
+      return
+    }
+    if (state.bound) {
+      this.setData({ phase: 'bound', code: '', message: '已绑定过邀请码，不能再填' })
+      return
+    }
+    this.setData({ phase: 'form', code: '', message: '' })
+  },
+  login: function () {
+    var self = this
+    return require('../../utils/login')(this, function () {
+      self.onLoad(self._query || {})
+    })
   },
   back: function () {
     if (getCurrentPages().length > 1) wx.navigateBack()
@@ -38,7 +81,7 @@ Page({
     })
   },
   submit: function () {
-    if (this._busy || this.data.phase === 'bound' || this.data.phase === 'rate' || this.data.phase === 'redeeming') return
+    if (this._busy || this.data.phase === 'bound' || this.data.phase === 'rate' || this.data.phase === 'redeeming' || this.data.phase === 'loading' || this.data.phase === 'guest' || this.data.phase === 'unavailable') return
     var code = this.data.code
     var self = this
     if (require('../../config').mode === 'live') {

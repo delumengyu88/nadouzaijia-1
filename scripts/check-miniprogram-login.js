@@ -29,13 +29,26 @@ function page(name) {
 function success(id) {
   logins.shift().success({ code: 'test-login-code' })
   return drain().then(function () {
-    var request = requests.shift()
+    var index = -1
+    requests.forEach(function (opt, i) {
+      if (opt.url.indexOf('/api/v1/auth/wechat/login') !== -1) index = i
+    })
+    assert(index !== -1, 'login request')
+    var request = requests.splice(index, 1)[0]
     assert.strictEqual(request.url, '/test-api/api/v1/auth/wechat/login')
     assert.strictEqual(request.method, 'POST')
     assert.deepStrictEqual(request.data, { code: 'test-login-code' })
     assert(!request.header.Authorization && !request.header['X-User-Id'])
     request.success({ statusCode: 200, data: { token: 'test-token-' + id, token_type: 'bearer',
       expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: id, tier: 'free' } } })
+    return drain()
+  }).then(function () {
+    requests.forEach(function (opt) {
+      if (opt.url.indexOf('/api/v1/invite-codes/state') !== -1) {
+        opt.success({ statusCode: 200, data: { guest: false, bound: false, bindText: '兑换邀请码' } })
+      }
+    })
+    requests = requests.filter(function (opt) { return opt.url.indexOf('/api/v1/invite-codes/state') === -1 })
     return drain()
   })
 }
