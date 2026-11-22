@@ -17,7 +17,7 @@
 <block wx:if="{{!loading && !testBuild}}">
 <view class="choice {{plan.selectable ? '' : 'static'}} {{plan.selectable && selected == plan.id ? 'on' : ''}}" wx:for="{{plans}}" wx:for-item="plan" wx:key="id" data-id="{{plan.id}}" bindtap="pick">
   <view class="choice-top">
-    <text class="choice-name">{{plan.name}}</text>
+    <text class="choice-name">{{plan.name}}<text class="current-tier" wx:if="{{plan.current}}">当前</text></text>
     <view class="price-row">
       <text class="price">{{plan.priceText}}</text>
       <view wx:if="{{plan.selectable}}" class="radio {{selected == plan.id ? 'on' : ''}}"></view>
