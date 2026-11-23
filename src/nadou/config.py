@@ -114,6 +114,34 @@ class Settings(BaseSettings):
     # Delete this field with src/nadou/devtools before review.
     trial_tools: str = Field(default="0", validation_alias="NADOU_TRIAL_TOOLS")
 
+    # Hit frames from W2's private COS export (see nadou.cos_frames). All five
+    # NADOU_FRAMES_COS_* values must be set; otherwise no frames are served, as before.
+    frames_cos_secret_id: str = Field(default="", validation_alias="NADOU_FRAMES_COS_SECRET_ID")
+    frames_cos_secret_key: SecretStr = Field(
+        default=SecretStr(""), validation_alias="NADOU_FRAMES_COS_SECRET_KEY"
+    )
+    frames_cos_bucket: str = Field(default="", validation_alias="NADOU_FRAMES_COS_BUCKET")
+    frames_cos_region: str = Field(default="", validation_alias="NADOU_FRAMES_COS_REGION")
+    frames_cos_prefix: str = Field(default="", validation_alias="NADOU_FRAMES_COS_PREFIX")
+    frames_cache_dir: str = Field(
+        default="/tmp/nadou-frames", validation_alias="NADOU_FRAMES_CACHE_DIR"
+    )
+    frames_cache_max_mb: int = Field(
+        default=2048, ge=0, validation_alias="NADOU_FRAMES_CACHE_MAX_MB"
+    )
+
+    @property
+    def frames_configured(self) -> bool:
+        return all(
+            (
+                self.frames_cos_secret_id.strip(),
+                self.frames_cos_secret_key.get_secret_value().strip(),
+                self.frames_cos_bucket.strip(),
+                self.frames_cos_region.strip(),
+                self.frames_cos_prefix.strip(),
+            )
+        )
+
     @property
     def demo_data(self) -> bool:
         return self.app_env in {"local", "test"} and self.data_source == "demo"

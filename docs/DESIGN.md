@@ -313,6 +313,25 @@ Each attempt is an `index_runs` row: start, finish, new rows, `success` or `fail
 
 If the newest successful run is more than two days old, the job calls `Notifier` once. The open `index_alert_episodes` row suppresses repeats. A later success closes that episode, and a new gap can alert again. The same job scans overdue evidence requests. `GET /api/v1/admin/index/status` returns `last_successful_index_at` for the future W09 page.
 
+## Hit frames from the W2 COS export
+
+`nadou.cos_frames.CosFrameSource` is the production frame source. It is enabled only when all
+five `NADOU_FRAMES_COS_SECRET_ID / _SECRET_KEY / _BUCKET / _REGION / _PREFIX` are set; then
+search reports `frames_ready: true`. Unset, nothing changes: no source, `frames_ready: false`.
+
+- W2 writes one 960px JPEG per visible consensus record to `<prefix>/frames/<task_id>/<HH-MM-SS>.jpg`
+  (first hit timestamp) and `<prefix>/frames_manifest.json` (`done`: `task_id|program_name` → key).
+- A record is located by the manifest (task id + raw or folded title), else by the first
+  timestamp key. The manifest is held in memory and re-checked every 10 minutes with
+  `If-None-Match`; after the first load, checks run in the background.
+- Objects are read with a signed GET (httpx, 2 s connect / 4 s read), never exposed as a URL.
+  Bytes are cached on disk (`NADOU_FRAMES_CACHE_DIR`, cap `NADOU_FRAMES_CACHE_MAX_MB`, oldest
+  evicted first); 403/404 are remembered for 10 minutes.
+- Any COS failure or a missing image is `FrameUnavailable`: the frame endpoint returns 404
+  「暂无截图」 (the mini program keeps the placeholder) and the report cell says 「暂无截图」.
+- Reports prefetch all visible rows' frames with up to 16 parallel reads (one retry each) within
+  an 8-second budget; late frames still land in the disk cache and show as 「暂无截图」 this time.
+
 ## Query workbook export
 
 `GET /api/v1/queries/{query_id}/export` writes the caller's view of one saved query. Missing `X-User-Id` is a free caller. An unknown user id is 404. A missing query id is 404. The query must belong to the caller (`member_queries.user_id`). Another member gets 404. Non-members still get 403 when the row has an owner, or when the id is missing, because that check runs first. A legacy row with a null `user_id` cannot be attributed: export and `GET /api/v1/queries/{id}` return 404 for every caller, and the row is omitted from `GET /api/v1/queries`, because allowing it would let anyone who knows the id export it.

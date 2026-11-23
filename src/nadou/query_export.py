@@ -1,4 +1,5 @@
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
@@ -690,6 +691,7 @@ class QueryExport:
         self.frames = frames
         self.now = now
         self.max_bytes = max_bytes
+        self._prefetched: dict[str, bytes] | None = None
 
     def export(
         self, query_id: str, user_id: str | None, *, program_name: str | None = None
@@ -750,8 +752,9 @@ class QueryExport:
         }
         if items and all(self._title(programs, item) in restricted for item in items):
             raise ExportForbidden("该节目仅授权在线展示摘要")
-        hits: list[ExportRow] = []
+        hits: list[ExportRow | None] = []
         rest: list[RestRow] = []
+        pending: list[tuple[int, tuple]] = []
         serial = 0
         for item in items:
             if self._title(programs, item) in restricted:
@@ -779,7 +782,9 @@ class QueryExport:
                 continue
             for record, task in visible:
                 serial += 1
-                hits.append(self._hit(item, canonical, record, task, grants, user_id, serial))
+                args = (item, canonical, record, task, grants, user_id, serial)
+                pending.append((len(hits), args))
+                hits.append(None)
             for band, count in locked.items():
                 if count:
                     hits.append(
@@ -791,7 +796,29 @@ class QueryExport:
                             count=count,
                         )
                     )
+        self._prefetch([args[2] for _index, args in pending])
+        if self._prefetched is not None and len(pending) > 1:
+            # Scaling, watermarking and encoding dominate a large report; Pillow releases
+            # the GIL for most of it, so a few threads cut the wall time.
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                built = list(pool.map(lambda args: self._hit(*args), [a for _i, a in pending]))
+            for (index, _args), row in zip(pending, built, strict=True):
+                hits[index] = row
+        else:
+            for index, args in pending:
+                hits[index] = self._hit(*args)
         return hits, rest
+
+    def _prefetch(self, records: list[IndexRecord]) -> None:
+        """Fetch many frames at once (capped parallelism) when the source supports it."""
+        self._prefetched = None
+        prefetch = getattr(self.frames, "prefetch", None)
+        if prefetch is None or not records:
+            return
+        try:
+            self._prefetched = prefetch(records)
+        except Exception:
+            self._prefetched = None
 
     def _locked_bands(
         self,
@@ -905,10 +932,14 @@ class QueryExport:
     def _frame(self, variant: str | None, record_id: str, user_id: str | None, *, blur: bool):
         if not variant or self.frames is None:
             return None
-        try:
-            raw = self.frames.fetch_representative(variant, record_id, user_id)
-        except FrameUnavailable:
-            return None
+        prefetched = self._prefetched
+        if prefetched is not None:
+            raw = prefetched.get(record_id)
+        else:
+            try:
+                raw = self.frames.fetch_representative(variant, record_id, user_id)
+            except FrameUnavailable:
+                return None
         if not raw:
             return None
         # Free-tier rows embed only the blurred picture; the clear one is never encoded.

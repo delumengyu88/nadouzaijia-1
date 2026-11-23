@@ -62,7 +62,11 @@ class RecordFrames:
         # The blurred picture starts from the low-resolution derivative, never the card.
         variant = "card" if view == "clear" else "lowres"
         try:
-            raw = self.frames.fetch_representative(variant, record.id, user_id)
+            fetch_record = getattr(self.frames, "fetch_record", None)
+            if fetch_record is not None:
+                raw = fetch_record(record)
+            else:
+                raw = self.frames.fetch_representative(variant, record.id, user_id)
         except FrameUnavailable:
             raise FrameMissing(record_id) from None
         if not raw:
