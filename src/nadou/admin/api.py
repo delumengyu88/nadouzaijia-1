@@ -34,7 +34,7 @@ from nadou.admin.evidence import (
 )
 from nadou.admin.indexing import CsvTaskExportSource, IndexJob, IndexRunBusy, IndexStatus
 from nadou.admin.invites import InviteBook, InviteStats, InviteView
-from nadou.admin.members import MemberAdmin, MemberDirectory, UserProfile, UserView
+from nadou.admin.members import EntitlementBook, MemberAdmin, MemberDirectory, UserProfile, UserView
 from nadou.admin.orders import (
     EntitlementIssuer,
     OrderAudit,
@@ -482,16 +482,30 @@ class AdminApi:
         def list_users(
             phone: str | None = None,
             q: str | None = None,
+            page: int = Query(default=1, ge=1),
+            page_size: int = Query(default=20, ge=1, le=100),
             account: StaffAccount = Depends(current_staff),
             session: Session = Depends(get_session, scope="function"),
         ):
-            query = (q or phone or "").strip()
-            if not query:
-                raise HTTPException(status_code=400, detail="phone is required")
-
             def action():
-                rows = MemberDirectory(session).by_contact(query)
-                return [UserView.render(row, reveal_phone=account.role == "admin") for row in rows]
+                rows, total = MemberDirectory(session).search(
+                    q or phone, page=page, page_size=page_size
+                )
+                grants = EntitlementBook.current_for_users(
+                    session, [row.id for row in rows], clock()
+                )
+                reveal = account.role == "admin"
+                return {
+                    "items": [
+                        UserView.list_item(
+                            row, reveal_phone=reveal, membership=grants.get(row.id)
+                        )
+                        for row in rows
+                    ],
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                }
 
             return Endpoint.invoke(action)
 
