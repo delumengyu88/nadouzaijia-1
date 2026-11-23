@@ -64,6 +64,10 @@ class NadouCommand:
             from nadou.summary_source import run
 
             raise SystemExit(run(args[1:]))
+        if args[:1] == ["w2-import"]:
+            from nadou.w2_import import run
+
+            raise SystemExit(run(args[1:]))
         if args[:1] == ["import-approved-hitlist"]:
             from nadou.hitlist import import_approved
 
@@ -80,6 +84,7 @@ class NadouCommand:
             "usage: python -m nadou index-run | python -m nadou seed-demo | "
             "python -m nadou export-review | python -m nadou query-retention [--apply] [--daily] | "
             "python -m nadou import-approved-hitlist --manifest CSV --workbook XLSX --task-id ID "
+            "| python -m nadou w2-import [--source DIR] [--force] [--status] "
             "| "
             "python -m nadou create-admin USERNAME"
         )

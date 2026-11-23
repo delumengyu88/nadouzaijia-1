@@ -1,0 +1,11 @@
+[Unit]
+Description=W2 index import hourly timer
+
+[Timer]
+# 每小时第 43 分钟（拉取器在 :23，留 20 分钟下载和校验）
+OnCalendar=*-*-* *:43:00
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

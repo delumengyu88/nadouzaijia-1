@@ -1,0 +1,19 @@
+[Unit]
+Description=W2 index sync puller (one-shot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# 受限服务账号运行（install.sh 自动创建，无登录 shell）
+User=w2sync
+Group=w2sync
+# 注入配置（config.env 为 KEY=value 格式，无 export）
+EnvironmentFile=/opt/w2-sync-puller/config.env
+ExecStart=/usr/bin/env bash -c 'cd /opt/w2-sync-puller && /usr/bin/python3 sync_puller.py'
+# 日志目录自动创建并归 w2sync 所有
+LogsDirectory=w2-sync-puller
+# 超时保护：下载大文件给足时间
+TimeoutStartSec=600
+# 失败不无限重启（timer 每小时会再次触发）
+Restart=no

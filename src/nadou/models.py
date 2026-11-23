@@ -468,6 +468,32 @@ class IndexRun(Base):
     error_summary: Mapped[str | None] = mapped_column(String(500))
 
 
+class W2IndexImport(Base):
+    """One attempt to import a W2 release into index_records.
+
+    The newest success row is the version users currently search. Failed rows keep
+    the reason; they never change index data because the import is one transaction.
+    """
+
+    __tablename__ = "w2_index_imports"
+    __table_args__ = (
+        CheckConstraint("status IN ('success', 'failed')", name="ck_w2_import_status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    version: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    db_sha256: Mapped[str | None] = mapped_column(String(64))
+    build_ts: Mapped[str | None] = mapped_column(String(40))
+    consensus_names: Mapped[int | None] = mapped_column(Integer)
+    kept_consensus_names: Mapped[int | None] = mapped_column(Integer)
+    hit_rows: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    stats: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
+    error_summary: Mapped[str | None] = mapped_column(String(500))
+    started_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+    finished_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False, index=True)
+
+
 class IndexRunLock(Base):
     """Single-row lock used where Postgres advisory locks are not available."""
 

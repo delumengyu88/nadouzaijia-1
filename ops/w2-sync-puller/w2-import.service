@@ -1,0 +1,13 @@
+[Unit]
+Description=W2 index import into nadou Postgres (one-shot)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# root 运行：要调用 docker compose。数据库密码只在 api 容器环境里，这里不保存
+User=root
+EnvironmentFile=/opt/w2-sync-puller/import.env
+ExecStart=/usr/bin/python3 /opt/w2-sync-puller/w2_import_runner.py
+TimeoutStartSec=2400
+Restart=no
