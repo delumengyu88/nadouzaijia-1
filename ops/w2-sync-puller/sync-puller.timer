@@ -1,0 +1,11 @@
+[Unit]
+Description=W2 index sync puller hourly timer
+
+[Timer]
+# 每小时第 23 分钟触发（错开整点，避免与上游 04:17 重建撞车）
+OnCalendar=*-*-* *:23:00
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
