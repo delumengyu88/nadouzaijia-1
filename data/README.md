@@ -23,3 +23,7 @@
 `publish-reviewed-summary` 用于权利方明确同意展示的一条节目摘要。运维人员先逐项核对原始人工反馈、指定任务、节目、平台与帧数，在私有 JSON 清单保存 `scope=single_program_summary`、`review=pass`、`rights_holder`、`task_id`、`program`、`platform`、`frame_count`、`w2_sha256`、`tasks_sha256` 和 `feedback_sha256`。反馈摘要由运维人员对核验过的原文件计算，人工审核结论来自权利方及原反馈。校验只读 W2 快照和任务 CSV。
 
 `python -m nadou publish-reviewed-summary --manifest 私有清单.json --w2 只读快照.db --task-csv 任务清单.csv --feedback-sha256 已实算的反馈摘要` 默认核验后回滚。加 `--apply` 仅更新对应既有索引行；生产须使用已备份验证的数据库与已审版本。授权留存清单、来源、反馈和行指纹，均不在用户接口返回。检索按既有权益分层，开放字段限于节目、命中数、平台、网络、日期、帧数。图片、视频、原报告和公开示例继续受限。
+
+## W2 每日索引自动导入
+
+大刀侧每天产出的 W2 版本由宿主机上的拉取器下载、校验并切换 `/var/lib/w2-index/current`，再由导入器执行 `python -m nadou w2-import --source <版本目录>` 写入 `index_records`。校验通过即上线，无需人工审批；导入在一个事务里完成，失败时继续使用上一版。导入的版本记录在 `w2_index_imports` 表，`python -m nadou w2-import --status` 或工作台 `/api/v1/admin/index/status` 的 `w2_index` 可查看。安装、回滚和故障演练见 `ops/w2-sync-puller/README.md`。

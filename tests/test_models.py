@@ -22,6 +22,7 @@ def test_schema_has_no_zip_or_download_tables():
         "virtual_orders",
         "order_issuances",
         "index_runs",
+        "w2_index_imports",
         "index_run_locks",
         "index_alert_episodes",
         "invite_codes",

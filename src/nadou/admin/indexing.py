@@ -11,6 +11,7 @@ from nadou.admin.notify import Notifier
 from nadou.filename_parser import FilenameParser
 from nadou.importer import TaskExportImporter
 from nadou.models import IndexAlertEpisode, IndexRun, IndexRunLock, Task
+from nadou.w2_import import W2ImportLog
 
 
 class TaskExportUnavailable(RuntimeError):
@@ -217,6 +218,7 @@ class IndexStatus:
             "last_run": None if latest is None else IndexStatus._run(latest),
             "runs": [IndexStatus._run(run) for run in runs],
             "unrecognized": IndexAlerts.unrecognized(session),
+            "w2_index": W2ImportLog.payload(session),
         }
 
     @staticmethod
