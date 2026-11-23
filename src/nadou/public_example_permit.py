@@ -13,7 +13,6 @@ from nadou.config import get_settings
 from nadou.db import Database
 from nadou.models import IndexRecord, PublicExamplePermit, Task
 from nadou.public_home import PublicHome
-from nadou.search import ProgramSearch
 from nadou.summary_source import file_hash
 from nadou.text import RecordAge
 
@@ -52,9 +51,7 @@ def grant(session, permission: PublicPermission, evidence: Path, now: datetime) 
         or task is None
         or task.source_unverified
         or record.hitlist_sha256 != permission.source_sha256
-        or not ProgramSearch.visible(record, task)
-        or not ProgramSearch.reportable(record)
-        or PublicHome._hit_time(task, record, now) is None
+        or not PublicHome.verified_public_source(record, task, now)
     ):
         raise ValueError("该行来源、公开日期或内容范围不符")
     row_hash = PublicHome.public_row_hash(record, task)

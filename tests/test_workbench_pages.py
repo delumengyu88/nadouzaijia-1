@@ -457,8 +457,10 @@ def test_publication_requires_exact_public_row_and_tracks_revocation(
     import json
 
     from nadou.config import get_settings
+    from nadou.hitlist import HitListImporter
     from nadou.models import HomepageExample, IndexRecord, Task
     from nadou.public_example_permit import run as manage_permit
+    from tests.test_hitlist import _workbook
     from tests.test_public_home import store
 
     monkeypatch.setenv("APP_ENV", "production")
@@ -468,9 +470,21 @@ def test_publication_requires_exact_public_row_and_tracks_revocation(
     title = "授权节目"
     for key in ("first", "other"):
         store(db, task_id=key, record_id=key, program=title, when=now - timedelta(days=200))
-        db.flush()
-        db.get(Task, key).approved_hitlist_sha256 = "a" * 64
-        db.get(IndexRecord, key).hitlist_sha256 = "a" * 64
+    store(db, task_id="first", record_id="sibling", program="同任务别的节目", with_task=False)
+    db.flush()
+    source = _workbook(
+        {
+            "AI共识": [
+                ["节目名称", "命中帧数", "时间戳"],
+                [title, 2, "00:01:02"],
+                ["同任务别的节目", 1, "00:03:04"],
+            ]
+        }
+    )
+    source_sha = hashlib.sha256(source).hexdigest()
+    for key in ("first", "other"):
+        HitListImporter(db).import_xlsx(source, task_id=key)
+    reader = add_user(db, now, "90000001209")
     db.add(HomepageExample(id="old", program_name="旧节目", sort_order=1, online=True))
     db.commit()
     root = "/api/v1/admin/content/"
@@ -495,7 +509,7 @@ def test_publication_requires_exact_public_row_and_tracks_revocation(
                 "record_id": "first",
                 "task_id": "first",
                 "program": title,
-                "source_sha256": "a" * 64,
+                "source_sha256": source_sha,
                 "scope": "anonymous_home_example_detail",
                 "permission_sha256": hashlib.sha256(proof.read_bytes()).hexdigest(),
             }
@@ -511,9 +525,21 @@ def test_publication_requires_exact_public_row_and_tracks_revocation(
     published = put_example("first", 201)
     url = "/api/v1/app/examples/" + title
     visible = workbench.client.get(url)
-    assert visible.status_code == 200 and [r["record_id"] for r in visible.json()["records"]] == [
-        "first"
+    assert visible.status_code == 200
+    assert visible.json()["records"] == [
+        {"platform": "广东移动", "checked_at": (now - timedelta(days=200)).date().isoformat()}
     ]
+    assert db.get(Task, "first").approved_hitlist_sha256 is None
+    for name in (title, "同任务别的节目"):
+        assert (
+            workbench.client.get(
+                "/api/v1/programs/search",
+                params={"name": name},
+                headers=workbench.client.auth(reader.id),
+            ).json()["outcome"]
+            == "unverified"
+        )
+    assert workbench.client.get("/api/v1/app/examples/同任务别的节目").status_code == 404
     rows = admin("GET", "examples")
     assert [(r["eligible"], r["visible"]) for r in rows] == [(False, False), (True, True)]
     assert manage_permit(["--revoke-record", "first", "--apply"]) == 0
