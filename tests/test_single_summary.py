@@ -132,9 +132,12 @@ def test_summary_never_unlocks_assets_or_another_row(session, clock, tmp_path, m
     client = make_client(session, clock)
     end = "/api/v1/programs/search"
     for user in ("free", "regular", "picture", "vip", "program"):
-        resp = client.get(end, params={"name": p.program}, headers=client.auth(user))
+        headers = client.auth(user)
+        resp = client.get(end, params={"name": p.program}, headers=headers)
         assert resp.status_code == 200
         body = resp.json()
+        batch = client.post(end + "/batch", json={"names": [p.program]}, headers=headers)
+        assert batch.json() == [body]
         assert (
             body["outcome"] == "hit"
             and body["summary_only_count"] == 1

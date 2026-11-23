@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 
 class LockedRecordOut(BaseModel):
@@ -89,3 +89,11 @@ class SearchOut(BaseModel):
     # Rows with a generated date are never included.
     evidence_platforms: list[str] = []
     evidence_program_name: str = ""
+
+
+class BatchNames(BaseModel):
+    names: list[str] = Field(min_length=1, max_length=200)
+
+
+class BatchSearchIn(BatchNames):
+    query_id: str | None = Field(default=None, min_length=1, max_length=64)

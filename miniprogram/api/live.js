@@ -1,8 +1,11 @@
-// Real searches use the existing single-program endpoint. Job progress is local.
+// Results are stored in input order; each batch completes and retries independently.
 var http = require('./http')
 var state = require('./state')
 var text = require('../utils/text')
 var config = require('../config')
+var BATCH_SIZE = 200
+var MAX_IN_FLIGHT = 3
+var MAX_ATTEMPTS = 3
 var jobs = {}
 var knownQueries = {}
 var seenOnce = {}
@@ -57,21 +60,6 @@ function queryRequest(path, data, method, binary) {
     } catch (err) {
       reject(queryError('网络异常，请重试', 0))
     }
-  })
-}
-function postResult(id, name, failed) {
-  if (!id || knownQueries[id] !== state.userId()) return
-  var body = { name: name }
-  if (failed) body.failed = true
-  queryRequest('/api/v1/queries/' + encodeURIComponent(id) + '/results', body, 'POST').then(function () {}, function () {})
-}
-function syncReports(job) {
-  if (!job || !job.items) return
-  job.items.forEach(function (item) {
-    if (item.reported) return
-    if (!item.body && !item.error) return
-    item.reported = true
-    postResult(job.id, item.name, !item.body)
   })
 }
 function recordLimit(value) {
@@ -138,32 +126,18 @@ function sanitizeDetail(detail) {
   }
 }
 
-// A search that never settles (request never sent, callback lost, sync throw) must not
-// leave the page polling forever: after timeoutMs the item fails and can be retried.
 class QueryGuard {
   static now() { return Date.now() }
   static timeoutMs() { return 60000 }
   static timeoutText() { return '查询超时，请重试' }
   static networkText() { return '网络异常，请重试' }
   static expire(job) {
-    var pending = job && job.pending
-    if (!pending || QueryGuard.now() - pending.sentAt < QueryGuard.timeoutMs()) return
-    // Stop the whole queue. Marking only the in-flight row would let the next
-    // tick start another title, so the timeout banner would never appear.
-    job.items.forEach(function (item) {
-      if (item.body || item.error) return
-      item.error = QueryGuard.timeoutText()
-      item.timedOut = true
-      item.network = false
+    job.batches.forEach(function (batch) {
+      var attempt = batch.pending
+      if (attempt && QueryGuard.now() - attempt.sentAt >= QueryGuard.timeoutMs()) {
+        finishFailure(job, batch, attempt, queryError(QueryGuard.timeoutText(), 0))
+      }
     })
-    job.pending = null
-  }
-  static send(name) {
-    try {
-      return Promise.resolve(http.searchProgram(name))
-    } catch (error) {
-      return Promise.reject(new Error('查询失败，请重试'))
-    }
   }
 }
 
@@ -195,7 +169,6 @@ function describe(item) {
 function view(job) {
   if (!job) return null
   QueryGuard.expire(job)
-  syncReports(job)
   var finished = job.items.filter(function (item) { return item.body || item.error }).length
   var rows = job.items.map(describe)
   var hits = rows.filter(function (r) { return r.hit }).length
@@ -205,65 +178,77 @@ function view(job) {
   var timedOut = job.items.some(function (item) { return item.timedOut })
   var network = job.items.some(function (item) { return item.network })
   var progressed = job.items.filter(function (item) { return item.body }).length
-  // Network failures still settle the row, so calibration and retries can see a
-  // finished job, but they do not count as progress and do not open the results list.
+  // Count successful rows when the network fails. Partial results stay visible.
   var done = finished === rows.length
   var count = network ? progressed : finished
-  return { id: job.id, queued: !job.started && !network, running: !!job.started && !done && !network, done: done,
-    networkError: network, showNetworkRetry: network,
+  return { id: job.id, queued: !job.started, running: !!job.started && !done, done: done,
+    networkError: done && network && progressed === 0, showNetworkRetry: done && network && progressed === 0,
     percent: rows.length ? Math.round(count / rows.length * 100) : 0, items: rows,
     head: done && !network ? '共 ' + rows.length + ' 个｜命中 ' + hits + '｜未命中 ' + misses + '｜失败 ' + fails + (unverified ? '｜待核验 ' + unverified : '') : '已完成 ' + count + ' / ' + rows.length,
     allFail: done && fails === rows.length, showFailBanner: done && fails > 0,
     failBanner: network ? QueryGuard.networkText() : timedOut ? QueryGuard.timeoutText() : fails === rows.length ? '全部查询失败，请重试。' : '部分查询失败，请重试。',
     showRetryAll: done && fails > 0, itemRetry: true }
 }
-function networkHeld(job) {
-  return !!(job && job.items.some(function (item) { return item.network }))
+function finishFailure(job, batch, attempt, error) {
+  if (batch.pending !== attempt) return
+  batch.pending = null
+  var sameSession = state.token() === attempt.token && !!attempt.token
+  if (sameSession && batch.attempts < MAX_ATTEMPTS &&
+      (!error.statusCode || error.statusCode >= 500 || error.statusCode === 429)) {
+    sendBatch(job, batch)
+    return
+  }
+  batch.finished = true
+  batch.items.forEach(function (item) {
+    item.error = error.message || '查询失败，请重试'
+    item.timedOut = item.error === QueryGuard.timeoutText()
+    item.network = item.error === QueryGuard.networkText()
+  })
+  if (sameSession) {
+    queryRequest('/api/v1/queries/' + encodeURIComponent(job.id) + '/results/failed',
+      { names: batch.names }, 'POST').catch(function () {})
+  }
 }
-function applyFailure(item, error) {
-  var message = (error && error.message) || '查询失败，请重试'
-  item.error = message
-  item.network = message === QueryGuard.networkText()
-  item.timedOut = false
+function sendBatch(job, batch) {
+  var attempt = { sentAt: QueryGuard.now(), token: state.token() }
+  batch.pending = attempt
+  batch.attempts++
+  queryRequest('/api/v1/programs/search/batch', { names: batch.names, query_id: job.id }, 'POST')
+    .then(function (rows) {
+      if (batch.pending !== attempt) return
+      if (!Array.isArray(rows) || rows.length !== batch.items.length) throw new Error('检索结果暂不可用')
+      var results = rows.map(http.sanitizeSearchResult)
+      results.forEach(function (body, index) { batch.items[index].body = body })
+      batch.pending = null
+      batch.finished = true
+    }).catch(function (error) { finishFailure(job, batch, attempt, error) })
 }
 function advance(id) {
   var job = currentJobs()[id]
+  if (!job) return null
   QueryGuard.expire(job)
-  if (!job || job.pending || networkHeld(job)) return view(job)
-  var item = job.items.filter(function (row) { return !row.body && !row.error })[0]
-  if (!item) return view(job)
   job.started = true
-  var pending = { item: item, sentAt: QueryGuard.now() }
-  job.pending = pending
-  // Capture the caller before awaiting; account changes never share results.
-  // A late answer is applied only while this attempt is still the active one,
-  // so a timed-out or retried request cannot run twice or overwrite the new one.
-  QueryGuard.send(item.name).then(function (body) {
-    if (job.pending !== pending) return
-    if (body) {
-      item.body = body
-      item.error = ''
-      item.network = false
-      item.timedOut = false
-    } else applyFailure(item, new Error('查询失败，请重试'))
-  }, function (error) {
-    if (job.pending === pending) applyFailure(item, error)
-  }).then(function () {
-    if (job.pending === pending) job.pending = null
-    if (currentJobs()[id] === job) syncReports(job)
+  var active = job.batches.filter(function (batch) { return batch.pending }).length
+  job.batches.forEach(function (batch) {
+    if (active < MAX_IN_FLIGHT && !batch.pending && !batch.finished) {
+      active++
+      sendBatch(job, batch)
+    }
   })
   return view(job)
 }
 function retry(id, name) {
   var job = currentJobs()[id]
-  if (!job || job.pending) return view(job)
-  job.items.forEach(function (item) {
-    if (item.error && (!name || item.name === name)) {
+  if (!job) return null
+  job.batches.forEach(function (batch) {
+    if (!batch.finished || !batch.items[0].error || (name && batch.names.indexOf(name) < 0)) return
+    batch.finished = false
+    batch.attempts = 0
+    batch.items.forEach(function (item) {
       item.error = ''
-      item.timedOut = false
       item.network = false
-      item.reported = false
-    }
+      item.timedOut = false
+    })
   })
   return advance(id)
 }
@@ -281,7 +266,12 @@ module.exports = {
       var id = detail && detail.id
       if (!id) return { ok: false, message: '服务暂不可用' }
       rememberQuery(id)
-      currentJobs()[id] = { id: id, items: titles.map(function (name) { return { name: name } }) }
+      var items = titles.map(function (name) { return { name: name } })
+      var batches = []
+      for (var i = 0; i < items.length; i += BATCH_SIZE) {
+        batches.push({ items: items.slice(i, i + BATCH_SIZE), names: titles.slice(i, i + BATCH_SIZE), attempts: 0 })
+      }
+      currentJobs()[id] = { id: id, items: items, batches: batches }
       return { ok: true, id: id }
     }, function (error) {
       if (error && error.sessionChanged) return { ok: false, sessionChanged: true }
@@ -303,7 +293,7 @@ module.exports = {
   markQuerySeen: function (id) {
     if (!id || knownQueries[id] !== state.userId() || seenOnce[id] === state.userId()) return
     seenOnce[id] = state.userId()
-    queryRequest('/api/v1/queries/' + encodeURIComponent(id) + '/seen', {}, 'POST').then(function () {}, function () {})
+    queryRequest('/api/v1/queries/' + encodeURIComponent(id) + '/seen?brief=true', {}, 'POST').then(function () {}, function () {})
   },
   listRecordPage: listRecordPage,
   listRecords: function (limit) {

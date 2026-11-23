@@ -6,6 +6,14 @@ var testOffer = require('./live-test-offer')
 var diamond = require('./diamond')
 var evidence = require('./evidence')
 
+function sanitizeSearchResult(body) {
+  if (!body || ['hit', 'miss', 'recent_only', 'unverified'].indexOf(body.outcome) < 0 ||
+      (!Array.isArray(body.records) && !Array.isArray(body.platform_groups))) {
+    throw new Error('检索结果暂不可用')
+  }
+  return shape.sanitizeSearch(body)
+}
+
 function notReady() {
   return Promise.resolve({ ok: false, message: '服务暂不可用，请改用本地数据' })
 }
@@ -408,11 +416,10 @@ module.exports = {
   retryItem: function () { return null },
   retryAll: function () { return null },
   listRecords: function () { return [] },
+  sanitizeSearchResult: sanitizeSearchResult,
   searchProgram: function (name) {
     return request('/api/v1/programs/search', { name: name }).then(function (body) {
-      if (!body || ['hit', 'miss', 'recent_only', 'unverified'].indexOf(body.outcome) < 0 ||
-          (!Array.isArray(body.records) && !Array.isArray(body.platform_groups))) throw new Error('检索结果暂不可用')
-      return shape.sanitizeSearch(body)
+      return sanitizeSearchResult(body)
     })
   },
   homeContent: function () {

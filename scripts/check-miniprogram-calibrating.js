@@ -74,9 +74,12 @@ function callsExceptOrders() {
 function respond(outcome) {
   var req = pending.shift()
   if (outcome === 'fail') { req.fail(); return }
-  req.success({ statusCode: 200, data: { program_name: req.data.name, outcome: outcome, platform_count: 1,
+  function result(name) {
+    return { program_name: name, outcome: outcome, platform_count: 1,
     platform_groups: [{ records: [{ record_id: 'real-record', locked: false, platform: '真实测试平台',
-      access: 'full', can_download_report: true }] }], locked_records: [] } })
+      access: 'full', can_download_report: true }] }], locked_records: [] }
+  }
+  req.success({statusCode:200, data:req.data.names ? req.data.names.map(result) : result(req.data.name)})
 }
 async function main() {
   var api = require('../miniprogram/api')
@@ -111,7 +114,7 @@ async function main() {
   assert(api.getQuery(id).done, 'queries still finish during calibration')
   if (api.isLive) {
     var searches = calls.filter(function (item) { return String(item.url || '').indexOf('/api/v1/programs/search') !== -1 })
-    assert.strictEqual(searches.length, 3, 'every title still reaches the real search endpoint')
+    assert.deepStrictEqual(searches.map(item => item.data.names), [['真实测试片', '无结果测试片', '失败测试片']])
   }
   result.updates.forEach(function (update) {
     assert(!update.head && !(update.items || []).length, 'no results or counts enter P07 data')

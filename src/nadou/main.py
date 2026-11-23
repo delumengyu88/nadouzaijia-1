@@ -26,8 +26,8 @@ from nadou.models import User
 from nadou.payments.api import PaymentApi
 from nadou.public_config import PublicConfig
 from nadou.public_home import PublicHome
-from nadou.query_records import QueryRecords
-from nadou.schemas import SearchOut
+from nadou.query_records import QueryNotFound, QueryRecords, QueryRejected, ResultSummary
+from nadou.schemas import BatchSearchIn, SearchOut
 from nadou.search import EmptyQuery, ProgramSearch, UnknownUser
 from nadou.signed_url import FakeSignedUrlProvider, SignedUrlProvider
 from nadou.user_orders import UserOrders
@@ -126,6 +126,36 @@ def create_app(
             raise HTTPException(status_code=400, detail="name is required") from None
         except UnknownUser:
             raise HTTPException(status_code=404, detail="user not found") from None
+
+    @app.post(
+        "/api/v1/programs/search/batch",
+        response_model=list[SearchOut],
+        response_model_exclude_none=True,
+    )
+    def search_programs(
+        payload: BatchSearchIn,
+        session: Session = Depends(get_session, scope="function"),
+        user: User = Depends(current_user),
+    ):
+        now = clock()
+        try:
+            programs = (
+                QueryRecords.batch_programs(session, user.id, payload.query_id, payload.names)
+                if payload.query_id
+                else {}
+            )
+            results, matches = ProgramSearch(session, urls, now).search_many(payload.names, user.id)
+            for name, program in programs.items():
+                program.resolution, program.detail, program.matched_name = (
+                    ResultSummary.assess_pairs(name, matches.get(name, []), now)
+                )
+            return results
+        except EmptyQuery:
+            raise HTTPException(400, "name is required") from None
+        except QueryNotFound:
+            raise HTTPException(404, "query not found") from None
+        except QueryRejected as exc:
+            raise HTTPException(400, exc.detail) from None
 
     @app.post("/api/v1/invite-codes/redeem")
     def redeem_invite(
