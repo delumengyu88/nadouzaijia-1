@@ -131,7 +131,7 @@ Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is loc
 
 公告只返回 `online` 且 `starts_at <= now < ends_at` 的行，排序与工作台列表相同：`starts_at` 降序，再按 `id`。已下线、未开始、已到期（含 `ends_at` 等于当前时刻）都不返回。工作台在多条同时落在窗口内时，会把除 `starts_at` 最新的一条外标成「已被更新覆盖」；这个接口不另做这层隐藏，窗口内的上线条都返回，调用方可以取第一条当作当前弹窗。没有公告时 `announcements` 是 `[]`。
 
-示例只返回 `homepage_examples.online` 的行，排序与工作台相同：`sort_order`，再按 `id`。卡片不读添加时写下的 `platform_hits` 和 `detected_on`。`line` / `sub` 按该节目当前仍可进入报告的索引记录现算：`hit_type` 为 `consensus`，任务规则与检索的 `ProgramSearch.included` 相同（没有任务的行保留，测试任务和未完成任务去掉），并且 `date_generated` 为假。`line` 里的平台数与检索的 `platform_count` 同一口径，只统计真实检测日龄满 30 天的记录。`sub` 的条数也只数这些记录；日期是这些记录里最晚的真实检测日（北京日历日）。真实检测日用 `ProgramSearch.record_time`（任务提交时间，否则文件上传时间，否则记录上的 `uploaded_at`），从不用 `generated_uploaded_at`，也从不用当天填空。一条都没有时 `sub` 为 `命中 0 条记录`，后面不接日期。
+正式首页按工作台排序显示最多 5 条示例。工作台同时显示配置为上线的数量和此刻匿名首页实际可见的数量，离线历史保留。发布需选中已有匿名展示许可的具体记录。来源版本、记录内容或许可变更后，旧发布即失效。历史配置与之前的片单来源核准不能自动发布。授权运维流程见 [首页示例公开授权](PUBLIC_EXAMPLES.md)。首页和示例详情响应使用 `Cache-Control: no-store`，每次读取按当前资格计算。
 
 `platformTotal` 是全库已收录平台数，不是某一个节目的 `platform_count`。口径：`index_records.hit_type = consensus` 的记录所关联的任务里，能通过 `ProgramSearch.included` 和 `ProgramSearch._unverified` 的，再取 `ProgramSearch._platform_key`（省份可以为空，加上运营商）去重。子类型（OTT、百视通）和公网/专网不另算一个平台。`其他平台` 和 `平台未识别` 是未核实来源的展示名，不计入。这个数不按 30 天过滤，也不因 `date_generated` 把平台拿掉：生成日期只影响示例上能不能把该行的时间当成检测日。没有可计平台时返回 `0`，不写死固定数字。
 

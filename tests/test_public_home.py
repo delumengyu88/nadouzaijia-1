@@ -135,14 +135,14 @@ def test_home_empty_needs_no_login_and_writes_nothing(session, clock):
         blank = client.get(example_url("   "))
     assert bare.request.headers.get("authorization") is None
     assert bare.status_code == 200
-    assert bare.headers["cache-control"] == "public, max-age=60"
+    assert bare.headers["cache-control"] == "no-store"
     assert bare.json() == {"announcements": [], "examples": [], "platformTotal": 0}
     assert bogus.status_code == 200
     assert bogus.json() == bare.json()
     for response in (missing, blank):
         assert response.status_code == 404
         assert response.json() == {"detail": "example not found"}
-        assert response.headers["cache-control"] == "public, max-age=60"
+        assert response.headers["cache-control"] == "no-store"
     assert snapshot(session) == before
 
 
@@ -194,7 +194,7 @@ def test_home_hides_offline_and_out_of_window_content(workbench):
 
     response = workbench.client.get("/api/v1/app/home")
     assert response.status_code == 200
-    assert response.headers["cache-control"] == "public, max-age=60"
+    assert response.headers["cache-control"] == "no-store"
     body = response.json()
     assert [item["title"] for item in body["announcements"]] == ["生效公告", "更早公告"]
     live = body["announcements"][0]
@@ -490,7 +490,7 @@ def test_examples_use_real_dates_and_skip_generated_rows(workbench):
         headers={"Authorization": "Bearer not-a-session"},
     )
     assert report.status_code == 200
-    assert report.headers["cache-control"] == "public, max-age=60"
+    assert report.headers["cache-control"] == "no-store"
     detail = report.json()
     assert detail["name"] == program
     assert detail["program_name"] == program

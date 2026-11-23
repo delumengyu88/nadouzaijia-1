@@ -1,12 +1,14 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import false, func, select, text, update
 from sqlalchemy.orm import Session
 
 from nadou.admin.audit import AuditWriter
 from nadou.admin.errors import WorkbenchError
-from nadou.models import Announcement, HomepageExample, IndexRecord, SplashConfig, Task
+from nadou.models import Announcement, HomepageExample, SplashConfig
+from nadou.normalize import ProgramNormalizer
+from nadou.public_home import PublicHome
 
 
 class SplashBook:
@@ -198,7 +200,7 @@ class AnnouncementView:
 
 
 class ExampleBook:
-    LIMIT = 5
+    LIMIT = PublicHome.EXAMPLE_LIMIT
 
     def __init__(self, session: Session, audit: AuditWriter, now: datetime) -> None:
         self.session = session
@@ -209,24 +211,90 @@ class ExampleBook:
         rows = self.session.scalars(
             select(HomepageExample).order_by(HomepageExample.sort_order, HomepageExample.id)
         ).all()
-        return [ExampleView.render(row) for row in rows]
+        groups, tokens = PublicHome.example_records(
+            self.session, self.now, [row.program_name for row in rows]
+        )
+        visible = {row.id for row, _ in PublicHome.published_rows(rows, groups, tokens)}
+        result = []
+        for row in rows:
+            pairs = groups.get(ProgramNormalizer.canonical(row.program_name), [])
+            selected = [
+                (rec, task) for rec, task in pairs if not row.record_id or rec.id == row.record_id
+            ]
+            result.append(
+                {
+                    **ExampleView.render(row),
+                    **self._facts(selected),
+                    "eligible": PublicHome.example_eligible(pairs, row.record_id),
+                    "visible": row.id in visible,
+                }
+            )
+        return result
+
+    def describe(self, row: HomepageExample) -> dict:
+        return next(item for item in self.list_rows() if item["id"] == row.id)
+
+    def _lock(self) -> None:
+        # Serialize both the capacity check and insertion, including an empty publication list.
+        if self.session.get_bind().dialect.name == "postgresql":
+            self.session.execute(text("LOCK TABLE homepage_examples IN SHARE ROW EXCLUSIVE MODE"))
+        else:
+            self.session.execute(update(HomepageExample).where(false()).values(online=False))
+
+    def _check_space(self) -> None:
+        count = self.session.scalar(
+            select(func.count())
+            .select_from(HomepageExample)
+            .where(HomepageExample.online.is_(True))
+        )
+        if count >= self.LIMIT:
+            raise WorkbenchError(409, "已配置 5 条上线示例，请先将一条下线。")
+
+    def _check_title(self, name: str, excluding: str | None = None) -> None:
+        existing = self.session.execute(
+            select(HomepageExample.id, HomepageExample.program_name).where(
+                HomepageExample.online.is_(True)
+            )
+        )
+        canonical = ProgramNormalizer.canonical(name)
+        if any(
+            other_id != excluding and ProgramNormalizer.canonical(other) == canonical
+            for other_id, other in existing
+        ):
+            raise WorkbenchError(409, "该节目已有一条上线配置，请先处理原配置。")
+
+    def _qualify(self, name, record_id):
+        groups, tokens = PublicHome.example_records(self.session, self.now, [name])
+        pairs = groups.get(ProgramNormalizer.canonical(name), [])
+        if not PublicHome.example_eligible(pairs, record_id):
+            raise WorkbenchError(409, "所选记录当前没有可公开展示的示例授权。")
+        if tokens:
+            if not record_id and len(pairs) != 1:
+                raise WorkbenchError(409, "该节目有多条可公开记录，请先下线旧配置并选择具体记录。")
+            record_id = record_id or pairs[0][0].id
+            pairs = [(record, task) for record, task in pairs if record.id == record_id]
+        return pairs, record_id, tokens.get(record_id)
 
     def add(self, program_name: str, record_id: str | None) -> HomepageExample:
         name = program_name.strip()
         if not name or len(name) > 200:
             raise WorkbenchError(400, "program name is required")
-        current = self.session.scalar(select(func.count()).select_from(HomepageExample)) or 0
-        if current >= ExampleBook.LIMIT:
-            raise WorkbenchError(409, "homepage examples are limited to 5")
-        hits, detected = self._facts(name, record_id)
+        self._lock()
+        record_id = (record_id or "").strip() or None
+        pairs, record_id, token = self._qualify(name, record_id)
+        self._check_space()
+        self._check_title(name)
+        last = self.session.scalar(select(func.max(HomepageExample.sort_order))) or 0
+        facts = self._facts(pairs)
         row = HomepageExample(
             id=str(uuid4()),
             program_name=name,
             record_id=(record_id or "").strip() or None,
-            sort_order=int(current) + 1,
+            publication_token=token,
+            sort_order=last + 1,
             online=True,
-            platform_hits=hits,
-            detected_on=detected,
+            platform_hits=facts["platform_hits"],
+            detected_on=facts["detected_on"],
         )
         self.session.add(row)
         self.session.flush()
@@ -240,8 +308,14 @@ class ExampleBook:
         return row
 
     def set_online(self, example_id: str, online: bool) -> HomepageExample:
+        self._lock()
         row = self._require(example_id)
         before = ExampleView.render(row)
+        if online:
+            _, row.record_id, row.publication_token = self._qualify(row.program_name, row.record_id)
+            if not row.online:
+                self._check_space()
+            self._check_title(row.program_name, excluding=row.id)
         row.online = online
         self.session.flush()
         self.audit.write(
@@ -254,6 +328,7 @@ class ExampleBook:
         return row
 
     def move(self, example_id: str, direction: str) -> HomepageExample:
+        self._lock()
         row = self._require(example_id)
         rows = list(
             self.session.scalars(
@@ -283,26 +358,17 @@ class ExampleBook:
             raise WorkbenchError(404, "example not found")
         return row
 
-    def _facts(self, program_name: str, record_id: str | None) -> tuple[int, datetime | None]:
-        records = list(
-            self.session.scalars(
-                select(IndexRecord).where(IndexRecord.program_name == program_name)
-            ).all()
+    def _facts(self, pairs) -> dict:
+        keys = {key for _, task in pairs if (key := PublicHome.countable_platform(task))}
+        latest = max(
+            (
+                when
+                for record, task in pairs
+                if (when := PublicHome._hit_time(task, record, self.now))
+            ),
+            default=None,
         )
-        if record_id:
-            chosen = self.session.get(IndexRecord, record_id)
-            if chosen is not None and chosen not in records:
-                records.append(chosen)
-        platforms: set[str] = set()
-        detected = None
-        for record in records:
-            task = self.session.get(Task, record.task_id)
-            if task is not None and task.platform_name and not task.source_unverified:
-                platforms.add(task.platform_name)
-            when = None if task is None else task.created_at
-            if when is not None and (detected is None or when > detected):
-                detected = when
-        return len(platforms), detected
+        return {"platform_hits": len(keys), "detected_on": latest}
 
 
 class ExampleView:
@@ -321,21 +387,10 @@ class ExampleView:
 
 class ProgramCatalog:
     @staticmethod
-    def list_programs(session: Session) -> list[dict]:
-        records = list(
-            session.scalars(select(IndexRecord).order_by(IndexRecord.program_name)).all()
-        )
-        grouped: dict[str, list[IndexRecord]] = {}
-        for record in records:
-            grouped.setdefault(record.program_name, []).append(record)
-        listed = []
-        for name in sorted(grouped):
-            sample = grouped[name][0]
-            listed.append(
-                {
-                    "program_name": name,
-                    "record_id": sample.id,
-                    "records": len(grouped[name]),
-                }
-            )
-        return listed
+    def list_programs(session: Session, now: datetime) -> list[dict]:
+        groups, _ = PublicHome.example_records(session, now)
+        return [
+            {"program_name": name, "record_id": rec.id, "records": len(pairs)}
+            for name, pairs in groups.items()
+            for rec, _ in pairs
+        ]

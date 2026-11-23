@@ -526,10 +526,24 @@ class Announcement(Base):
     created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
 
 
+class PublicExamplePermit(Base):
+    """Operator-recorded permission for anonymous display of one verified record version."""
+
+    __tablename__ = "public_example_permits"
+    record_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    permission_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    publication_token: Mapped[str] = mapped_column(String(36), nullable=False)
+
+
 class HomepageExample(Base):
-    """At most five rows. The workbench enforces the cap."""
+    """Ordered historical settings. At most five may be configured online."""
 
     __tablename__ = "homepage_examples"
+
+    publication_token: Mapped[str | None] = mapped_column(String(36))
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     program_name: Mapped[str] = mapped_column(String(200), nullable=False)

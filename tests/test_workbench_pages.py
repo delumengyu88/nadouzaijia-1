@@ -416,3 +416,117 @@ def test_index_import_is_audited(workbench):
     ).all()
     assert logged
     assert logged[-1].after_json["status"] == "success"
+
+
+def test_offline_examples_free_slots_and_republishing_obeys_limit(workbench):
+    base = "/api/v1/admin/content/examples"
+    token = workbench.admin_token
+
+    def add(name):
+        return call(
+            workbench, "POST", base, token, json={"program_name": name}, expected=201
+        ).json()
+
+    def toggle(row, flag, status=200):
+        return call(
+            workbench,
+            "POST",
+            base + "/" + row["id"] + "/online",
+            token,
+            json={"online": flag},
+            expected=status,
+        )
+
+    first = add("留档示例")
+    for i in range(4):
+        add(f"其余示例{i}")
+    toggle(first, False)
+    last = add("新增示例")
+    toggle(first, True, 409)
+    toggle(last, False)
+    toggle(first, True)
+    rows = call(workbench, "GET", base, token).json()
+    assert len(rows) == 6
+    assert sum(r["online"] for r in rows) == sum(r["visible"] for r in rows) == 5
+
+
+def test_publication_requires_exact_public_row_and_tracks_revocation(
+    workbench, monkeypatch, tmp_path
+):
+    import hashlib
+    import json
+
+    from nadou.config import get_settings
+    from nadou.models import HomepageExample, IndexRecord, Task
+    from nadou.public_example_permit import run as manage_permit
+    from tests.test_public_home import store
+
+    monkeypatch.setenv("APP_ENV", "production")
+    get_settings.cache_clear()
+    db = workbench.session
+    now = workbench.clock.now
+    title = "授权节目"
+    for key in ("first", "other"):
+        store(db, task_id=key, record_id=key, program=title, when=now - timedelta(days=200))
+        db.flush()
+        db.get(Task, key).approved_hitlist_sha256 = "a" * 64
+        db.get(IndexRecord, key).hitlist_sha256 = "a" * 64
+    db.add(HomepageExample(id="old", program_name="旧节目", sort_order=1, online=True))
+    db.commit()
+    root = "/api/v1/admin/content/"
+    token = workbench.admin_token
+
+    def admin(method, path, **kw):
+        return call(workbench, method, root + path, token, **kw).json()
+
+    def put_example(record, status):
+        return admin(
+            "POST", "examples", json={"program_name": title, "record_id": record}, expected=status
+        )
+
+    assert admin("GET", "programs") == []
+    put_example("first", 409)
+    proof = tmp_path / "proof.txt"
+    proof.write_text("fixture permission for full anonymous display")
+    manifest = tmp_path / "permit.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "record_id": "first",
+                "task_id": "first",
+                "program": title,
+                "source_sha256": "a" * 64,
+                "scope": "anonymous_home_example_detail",
+                "permission_sha256": hashlib.sha256(proof.read_bytes()).hexdigest(),
+            }
+        )
+    )
+    monkeypatch.setenv("DATABASE_URL", str(db.get_bind().url))
+    get_settings.cache_clear()
+    args = ["--manifest", str(manifest), "--permission-file", str(proof)]
+    assert manage_permit(args) == 0 and admin("GET", "programs") == []
+    assert manage_permit(args + ["--apply"]) == 0
+    assert admin("GET", "programs") == [{"program_name": title, "record_id": "first", "records": 1}]
+    put_example("other", 409)
+    published = put_example("first", 201)
+    url = "/api/v1/app/examples/" + title
+    visible = workbench.client.get(url)
+    assert visible.status_code == 200 and [r["record_id"] for r in visible.json()["records"]] == [
+        "first"
+    ]
+    rows = admin("GET", "examples")
+    assert [(r["eligible"], r["visible"]) for r in rows] == [(False, False), (True, True)]
+    assert manage_permit(["--revoke-record", "first", "--apply"]) == 0
+    assert workbench.client.get(url).status_code == 404
+    assert manage_permit(args + ["--apply"]) == 0
+    assert workbench.client.get(url).status_code == 404
+    admin("POST", "examples/" + published["id"] + "/online", json={"online": True})
+    assert workbench.client.get(url).status_code == 200
+    db.get(IndexRecord, "first").timestamps = ["00:02:11"]
+    db.commit()
+    assert workbench.client.get(url).status_code == 404
+    assert admin("GET", "programs") == []
+    row = next(r for r in admin("GET", "examples") if r["id"] == published["id"])
+    assert row["online"] and not row["visible"] and not row["eligible"]
+    admin("POST", "examples/" + published["id"] + "/online", json={"online": False})
+    admin("POST", "examples/" + published["id"] + "/online", json={"online": True}, expected=409)

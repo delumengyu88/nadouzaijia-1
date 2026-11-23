@@ -1,5 +1,6 @@
 """Public mini-program home. Reads announcements, examples, and the index; never writes."""
 
+import re
 from collections.abc import Callable
 from datetime import datetime
 
@@ -11,16 +12,18 @@ from sqlalchemy.orm import Session
 from nadou.config import get_settings
 from nadou.entitlements import EntitlementPolicy
 from nadou.importer import TestTaskFilter
-from nadou.models import Announcement, HomepageExample, IndexRecord, Task
+from nadou.models import Announcement, HomepageExample, IndexRecord, PublicExamplePermit, Task
 from nadou.normalize import ProgramNormalizer
 from nadou.search import ProgramSearch
+from nadou.summary_source import digest, row_fingerprint
 from nadou.text import RecordAge
 
 
 class PublicHome:
     """Unauthenticated home content. No user, no entitlement, no default-row insert."""
 
-    CACHE_CONTROL = "public, max-age=60"
+    EXAMPLE_LIMIT = 5
+    CACHE_CONTROL = "no-store"
 
     @staticmethod
     def register(app: FastAPI, get_session, now: Callable[[], datetime]) -> None:
@@ -63,22 +66,25 @@ class PublicHome:
     @staticmethod
     def examples(session: Session, now: datetime) -> list[dict]:
         cards = []
-        for row in PublicHome._online_examples(session):
-            records = PublicHome._reportable(session, row.program_name)
-            if not get_settings().demo_data and not records:
-                continue
+        for row, records in PublicHome.published(session, now):
             summary = PublicHome._summary(records, now)
             cards.append({"name": row.program_name, "line": summary["line"], "sub": summary["sub"]})
         return cards
 
     @staticmethod
     def example(session: Session, name: str, now: datetime) -> dict | None:
-        chosen = PublicHome._match_example(session, name)
-        if chosen is None:
+        canonical = ProgramNormalizer.canonical(name)
+        chosen_pair = next(
+            (
+                (row, pairs)
+                for row, pairs in PublicHome.published(session, now)
+                if ProgramNormalizer.canonical(row.program_name) == canonical
+            ),
+            None,
+        )
+        if chosen_pair is None:
             return None
-        rows = PublicHome._reportable(session, chosen.program_name)
-        if not get_settings().demo_data and not rows:
-            return None
+        chosen, rows = chosen_pair
         summary = PublicHome._summary(rows, now)
         # Same rows as line/sub. Under 30 days is the forensic bucket: no grant
         # reveals it, so a public report omits the row instead of listing it.
@@ -166,43 +172,101 @@ class PublicHome:
             ).all()
         )
 
-    @staticmethod
-    def _match_example(session: Session, name: str) -> HomepageExample | None:
-        canonical = ProgramNormalizer.canonical(name)
-        if not canonical:
-            return None
-        for row in PublicHome._online_examples(session):
-            if ProgramNormalizer.canonical(row.program_name) == canonical:
-                return row
-        return None
+    @classmethod
+    def published(cls, session: Session, now: datetime) -> list:
+        online = cls._online_examples(session)
+        groups, tokens = cls.example_records(session, now, [row.program_name for row in online])
+        return cls.published_rows(online, groups, tokens)
+
+    @classmethod
+    def published_rows(cls, rows, groups, tokens) -> list:
+        chosen = []
+        seen = set()
+        for row in rows:
+            name = ProgramNormalizer.canonical(row.program_name)
+            pairs = groups.get(name, [])
+            if not get_settings().demo_data:
+                if (
+                    not row.record_id
+                    or not row.publication_token
+                    or tokens.get(row.record_id) != row.publication_token
+                ):
+                    continue
+                pairs = [(rec, task) for rec, task in pairs if rec.id == row.record_id]
+            if row.online and name not in seen and cls.example_eligible(pairs, row.record_id):
+                chosen.append((row, pairs))
+                seen.add(name)
+                if len(chosen) == cls.EXAMPLE_LIMIT:
+                    break
+        return chosen
 
     @staticmethod
-    def _reportable(session: Session, program_name: str) -> list[tuple[IndexRecord, Task | None]]:
-        """Consensus rows search would keep, minus any date_generated row.
+    def example_eligible(pairs, record_id: str | None) -> bool:
+        if record_id:
+            return any(record.id == record_id for record, _ in pairs)
+        return bool(pairs) or get_settings().demo_data
 
-        Generated placeholders are excluded the same way exports and formal
-        reports exclude them. Their generated_uploaded_at is never a checked_at.
-        """
-        canonical = ProgramNormalizer.canonical(program_name)
-        if not canonical:
-            return []
-        records = list(
-            session.scalars(select(IndexRecord).where(IndexRecord.program_name == canonical)).all()
+    @staticmethod
+    def public_row_hash(record: IndexRecord, task: Task) -> str:
+        # The permit identifies the precise row, source hash, and all public report fields.
+        return digest(
+            [
+                row_fingerprint(record, task),
+                record.category,
+                task.platform_subtype,
+                task.file_uploaded_at.isoformat() if task.file_uploaded_at else None,
+                record.uploaded_at.isoformat() if record.uploaded_at else None,
+            ]
         )
-        task_ids = {record.task_id for record in records}
-        tasks: dict[str, Task] = {}
-        if task_ids:
-            for task in session.scalars(select(Task).where(Task.task_id.in_(task_ids))).all():
-                tasks[task.task_id] = task
-        kept: list[tuple[IndexRecord, Task | None]] = []
-        for record in records:
-            task = tasks.get(record.task_id)
-            if not ProgramSearch.visible(record, task):
+
+    @classmethod
+    def example_records(cls, session: Session, now: datetime, names=None) -> tuple[dict, dict]:
+        """Fetch qualifying rows in one join. Only a targeted or authorized subset enters Python."""
+        settings = get_settings()
+        demo = settings.demo_data
+        stmt = (
+            select(IndexRecord, Task)
+            .outerjoin(Task, Task.task_id == IndexRecord.task_id)
+            .where(
+                IndexRecord.hit_type == "consensus",
+                IndexRecord.date_generated.is_(False),
+                IndexRecord.summary_grant.is_(None),
+            )
+        )
+        if names is not None:
+            names = {ProgramNormalizer.canonical(name) for name in names}
+            if not names:
+                return {}, {}
+            stmt = stmt.where(IndexRecord.program_name.in_(names))
+        if not demo:
+            stmt = (
+                stmt.add_columns(PublicExamplePermit)
+                .join(PublicExamplePermit, PublicExamplePermit.record_id == IndexRecord.id)
+                .where(
+                    PublicExamplePermit.active.is_(True),
+                    IndexRecord.hitlist_sha256 == PublicExamplePermit.source_sha256,
+                    Task.status == "done",
+                    Task.is_test.is_(False),
+                    IndexRecord.hitlist_sha256 == Task.approved_hitlist_sha256,
+                )
+            )
+        groups = {}
+        tokens = {}
+        for row in session.execute(stmt.order_by(IndexRecord.program_name, IndexRecord.id)):
+            rec, task = row[:2]
+            if not ProgramSearch.visible(rec, task) or not ProgramSearch.reportable(rec):
                 continue
-            if not ProgramSearch.reportable(record):
+            if not demo and (
+                cls._hit_time(task, rec, now) is None
+                or task.source_unverified
+                or not re.fullmatch("[0-9a-f]{64}", row[2].permission_sha256)
+                or row[2].row_sha256 != cls.public_row_hash(rec, task)
+            ):
                 continue
-            kept.append((record, task))
-        return kept
+            if not demo:
+                tokens[rec.id] = row[2].publication_token
+            groups.setdefault(rec.program_name, []).append((rec, task))
+        return groups, tokens
 
     @staticmethod
     def _hit_time(task: Task | None, record: IndexRecord, now: datetime) -> datetime | None:
