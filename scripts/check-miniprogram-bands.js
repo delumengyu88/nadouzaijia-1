@@ -285,14 +285,104 @@ async function main() {
   assert(reportWxml.indexOf('一次看全部') === -1, 'footer must not say 一次看全部')
   assert(reportWxml.indexOf('或 <text class="tl-link" bindtap="buyTimelineMember">{{timeline.memberCta}}</text> · 30天以上全部可看') !== -1, 'footer limits membership to 30天以上')
 
-  // 10. 首页说明。
-
+  // 10. 首页说明：四个四字标签同一行。
   var homeWxml = fs.readFileSync(path.join(root, 'pages/home/index.wxml'), 'utf8')
-  ;['检索全平台播出/命中记录', '按时间分档查看', '会员看更多', '可下载报告'].forEach(function (text) {
-    assert(homeWxml.indexOf(text) !== -1, 'home guide: ' + text)
+  var homeWxss = fs.readFileSync(path.join(root, 'pages/home/index.wxss'), 'utf8')
+  ;['全网检索', '分档查看', '会员多看', '下载报告'].forEach(function (text) {
+    assert(homeWxml.indexOf('class="guide-tag">' + text) !== -1, 'home guide: ' + text)
+    assert(text.length === 4, 'home guide tag is 4 characters: ' + text)
   })
+  assert(homeWxss.indexOf('flex-wrap: nowrap') !== -1, 'guide stays on one row')
+  assert(/\.guide-tag\s*\{[^}]*white-space: nowrap/.test(homeWxss), 'guide tags do not wrap')
+  assert(homeWxml.indexOf('最近查询 · {{recent.name}} · 已可看 {{recent.count}} 条') !== -1)
+  assert(homeWxml.indexOf('wx:if="{{recent}}"') !== -1)
+  assert(homeWxml.indexOf('查看全部 ›') !== -1)
 
-  // 11. 不得改动的发布开关。
+  // 11. 首页最近查询：只展示可见档，锁定和 30 天内不出现；没有可看记录时整块隐藏。
+  function previewRec(id, bucket, extra) {
+    return Object.assign({
+      record_id: id,
+      platform: '陕西联通',
+      network_type: '专网',
+      frame_count: 29,
+      checked_at: '2025-10-19T12:00:00+08:00',
+      timestamps: ['00:00:05', '00:00:06'],
+      age_bucket: bucket,
+      locked: false,
+      frame_view: 'blur'
+    }, extra || {})
+  }
+  function openBand(key, count, view) {
+    return { band: key, label: bands.LABELS[key], count: count, state: 'open', frame_view: view || 'blur', unlocked_by: 'tier' }
+  }
+  var previewSearch = {
+    program_name: '夏日友人帐',
+    outcome: 'hit',
+    viewer_tier: 'free',
+    frames_ready: false,
+    records: [
+      previewRec('a', 'ge_180'),
+      previewRec('b', 'ge_180', { platform: '河南移动', network_type: '公网' }),
+      previewRec('c', 'ge_180', { platform: '广东电信', network_type: '公网' }),
+      previewRec('d', 'ge_180', { platform: '第四条不应出现', network_type: '公网' }),
+      previewRec('lock', 'd90_179', { locked: true }),
+      previewRec('recent', 'lt_30', { locked: true })
+    ],
+    bands: [
+      openBand('ge_180', 4, 'blur'),
+      { band: 'd90_179', label: '90–180天', count: 12, state: 'locked', frame_view: '', unlock: { product: 'unlock_band_90_180', amount_fen: 1990, price_text: '¥19.9', purchasable: true } },
+      { band: 'd30_89', label: '30–90天', count: 8, state: 'locked', frame_view: '' },
+      { band: 'lt_30', label: '30天内', count: 4, state: 'evidence', frame_view: '' }
+    ]
+  }
+  var preview = bands.homePreview(previewSearch, 3)
+  assert.strictEqual(preview.name, '夏日友人帐')
+  assert.strictEqual(preview.count, 4)
+  assert.strictEqual(preview.rows.length, 3)
+  assert.strictEqual(preview.rows[0].id, 'a')
+  assert.strictEqual(preview.rows[2].id, 'c')
+  assert.strictEqual(preview.rows[0].expanded, true)
+  assert.strictEqual(preview.blur, true)
+  assert.strictEqual(preview.framesReady, false)
+  assert(JSON.stringify(preview).indexOf('lock') === -1)
+  assert(JSON.stringify(preview).indexOf('lt_30') === -1)
+  assert(JSON.stringify(preview).indexOf('第四条') === -1)
+  assert.strictEqual(bands.homePreview(Object.assign({}, previewSearch, {
+    records: previewSearch.records.filter(function (r) { return r.age_bucket !== 'ge_180' }),
+    bands: [
+      { band: 'ge_180', label: '180天以上', count: 0, state: 'open', frame_view: 'blur' },
+      { band: 'd90_179', label: '90–180天', count: 12, state: 'locked', frame_view: '' },
+      { band: 'd30_89', label: '30–90天', count: 8, state: 'locked', frame_view: '' },
+      { band: 'lt_30', label: '30天内', count: 4, state: 'evidence', frame_view: '' }
+    ]
+  })), null, 'empty visible bands hide the section')
+  assert.strictEqual(bands.homePreview(null), null)
+  var oldBackend = bands.homePreview({
+    program_name: '夏日友人帐',
+    outcome: 'hit',
+    records: [
+      previewRec('old-open', 'ge_180'),
+      previewRec('old-lock', 'd90_179', { locked: true }),
+      previewRec('old-recent', 'lt_30'),
+      previewRec('old-unknown', 'unknown'),
+      previewRec('old-none', '')
+    ]
+  }, 3)
+  assert.strictEqual(oldBackend.count, 1)
+  assert.strictEqual(oldBackend.rows[0].id, 'old-open')
+  assert.strictEqual(bands.pickRecentHit([]), null)
+  assert.deepStrictEqual(bands.pickRecentHit([
+    { id: 'q1', name: '未命中片', badgeCls: 'muted' },
+    { id: 'q1', name: '夏日友人帐', badgeCls: 'ok' },
+    { id: 'q2', name: '另一部', badgeCls: 'ok' }
+  ]), { id: 'q1', name: '夏日友人帐' })
+  assert.strictEqual(bands.pickRecentHit([
+    { id: 'q1', name: '未命中片', badgeCls: 'muted' },
+    { id: 'q1', name: '也未命中', badgeCls: 'muted' }
+  ]), null)
+
+
+  // 12. 不得改动的发布开关。
   var configText = fs.readFileSync(path.join(root, 'config.js'), 'utf8')
   assert(configText.indexOf("mode: 'live'") !== -1)
   assert(configText.indexOf('trialMode: false') !== -1)

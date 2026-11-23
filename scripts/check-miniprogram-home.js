@@ -7,6 +7,15 @@ var homeView = fs.readFileSync(path.join(__dirname, '../miniprogram/pages/home/i
 var homeStyle = fs.readFileSync(path.join(__dirname, '../miniprogram/pages/home/index.wxss'), 'utf8')
 assert.match(homeView, /class="guest-identity">免费用户/)
 assert.match(homeView, /class="login-link guest-retry" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">重试/)
+;['全网检索', '分档查看', '会员多看', '下载报告'].forEach(function (tag) {
+  assert(homeView.indexOf('class="guide-tag">' + tag) !== -1, 'home tag: ' + tag)
+  assert.strictEqual(tag.length, 4)
+})
+assert(/\.guide\s*{[^}]*flex-wrap:\s*nowrap/.test(homeStyle), 'guide is a single nowrap row')
+assert(/\.guide-tag\s*{[^}]*white-space:\s*nowrap/.test(homeStyle), 'guide tags do not wrap')
+assert(homeView.indexOf('wx:if="{{recent}}"') !== -1)
+assert(homeView.indexOf('最近查询 · {{recent.name}} · 已可看 {{recent.count}} 条') !== -1)
+assert(homeView.indexOf('查看全部 ›') !== -1)
 assert.match(homeStyle, /\.guest-banner button\.guest-retry\s*{[^}]*width: auto;[^}]*margin: 0 0 0 auto;[^}]*white-space: nowrap;/)
 
 var config = require('../miniprogram/config')
@@ -502,6 +511,120 @@ async function main() {
   assert.strictEqual(shot.data.date, '')
   assert.strictEqual(calls.some(function (opt) { return String(opt.url).indexOf('thumbnail') !== -1 }), false)
 
+
+  // 最近查询：无记录、请求失败或没有可见档时，整块不展示；有可见记录时最多 3 条。
+  function patchSetData(inst) {
+    var inner = inst.setData
+    inst.setData = function (patch) {
+      var self = this
+      Object.keys(patch || {}).forEach(function (key) {
+        var match = /^recent\.rows\[(\d+)\]\.(\w+)$/.exec(key)
+        if (match) {
+          if (self.data.recent && self.data.recent.rows[Number(match[1])]) {
+            self.data.recent.rows[Number(match[1])][match[2]] = patch[key]
+          }
+          return
+        }
+        var one = {}
+        one[key] = patch[key]
+        inner.call(self, one)
+      })
+    }
+  }
+  function recentSearch(visible) {
+    var records = visible ? [{
+      record_id: 'a', platform: '陕西联通', network_type: '专网', frame_count: 29,
+      checked_at: '2025-10-19T12:00:00+08:00', timestamps: ['00:00:05'],
+      age_bucket: 'ge_180', locked: false, frame_view: 'blur'
+    }, {
+      record_id: 'b', platform: '河南移动', network_type: '公网', frame_count: 12,
+      checked_at: '2026-03-08T12:00:00+08:00', timestamps: ['00:00:06'],
+      age_bucket: 'ge_180', locked: false, frame_view: 'blur'
+    }, {
+      record_id: 'c', platform: '广东电信', network_type: '公网', frame_count: 8,
+      checked_at: '2026-05-07T12:00:00+08:00', timestamps: ['00:00:07'],
+      age_bucket: 'ge_180', locked: false, frame_view: 'blur'
+    }, {
+      record_id: 'd', platform: '不应出现', network_type: '公网', frame_count: 1,
+      checked_at: '2026-05-08T12:00:00+08:00', timestamps: ['00:00:08'],
+      age_bucket: 'ge_180', locked: false, frame_view: 'blur'
+    }] : []
+    return {
+      program_name: '夏日友人帐', outcome: 'hit', viewer_tier: 'free', frames_ready: false,
+      platform_count: visible ? 4 : 0, records: records,
+      bands: [
+        { band: 'ge_180', label: '180天以上', count: visible ? 4 : 0, state: 'open', frame_view: 'blur' },
+        { band: 'd90_179', label: '90–180天', count: 12, state: 'locked', frame_view: '' },
+        { band: 'd30_89', label: '30–90天', count: 8, state: 'locked', frame_view: '' },
+        { band: 'lt_30', label: '30天内', count: 4, state: 'evidence', frame_view: '' }
+      ]
+    }
+  }
+  async function loadRecentHome(opts) {
+    var inst = page(defs.home)
+    patchSetData(inst)
+    inst.onShow()
+    settleHome(homeBody({ examples: [], announcements: [] }))
+    if (opts.listFail) failPart('/api/v1/queries')
+    else fulfill('/api/v1/queries', opts.list || { items: [], total: 0 })
+    await drain()
+    if (opts.searchFail) {
+      failPart('/api/v1/programs/search')
+      await drain()
+    } else if (opts.search) {
+      fulfill('/api/v1/programs/search', opts.search)
+      await drain()
+    }
+    return inst
+  }
+
+  state.setSession({
+    token: 'home-token',
+    expires_at: new Date(Date.now() + 86400000).toISOString(),
+    user: { id: 'home-user', tier: 'free' }
+  })
+  var logged = await loadRecentHome({ list: { items: [], total: 0 } })
+  assert.strictEqual(logged.data.recent, null, 'no query hides the recent section')
+
+  var failedList = await loadRecentHome({ listFail: true })
+  assert.strictEqual(failedList.data.recent, null, 'a list failure hides the recent section')
+
+  var missed = await loadRecentHome({
+    list: { items: [{ id: 'q1', name: '没有这部', badge: '未命中', badgeCls: 'muted', line: '未命中' }], total: 1 }
+  })
+  assert.strictEqual(missed.data.recent, null, 'a miss hides the recent section')
+
+  var failedSearch = await loadRecentHome({
+    list: { items: [{ id: 'q1', name: '夏日友人帐', badge: '已命中', badgeCls: 'ok', line: '已命中' }], total: 1 },
+    searchFail: true
+  })
+  assert.strictEqual(failedSearch.data.recent, null, 'a search failure hides the recent section')
+
+  var emptyVisible = await loadRecentHome({
+    list: { items: [{ id: 'q1', name: '夏日友人帐', badge: '已命中', badgeCls: 'ok', line: '已命中' }], total: 1 },
+    search: recentSearch(false)
+  })
+  assert.strictEqual(emptyVisible.data.recent, null, 'no visible band hides the recent section')
+
+  var shown = await loadRecentHome({
+    list: { items: [{ id: 'q1', name: '夏日友人帐', badge: '已命中', badgeCls: 'ok', line: '已命中' }], total: 1 },
+    search: recentSearch(true)
+  })
+  assert(shown.data.recent, 'visible records show the recent section')
+  assert.strictEqual(shown.data.recent.name, '夏日友人帐')
+  assert.strictEqual(shown.data.recent.count, 4)
+  assert.strictEqual(shown.data.recent.queryId, 'q1')
+  assert.strictEqual(shown.data.recent.rows.length, 3)
+  assert.strictEqual(shown.data.recent.rows[0].platform, '陕西联通')
+  assert.strictEqual(shown.data.recent.rows[0].network, '专网')
+  assert.strictEqual(shown.data.recent.rows[0].frames, '命中 29 帧')
+  assert.strictEqual(shown.data.recent.rows[0].expanded, true)
+  assert.strictEqual(shown.data.recent.rows[0].src, '')
+  assert.strictEqual(shown.data.recent.blur, true)
+  shown.openRecent()
+  assert.strictEqual(navigated[navigated.length - 1], '/pages/report/index?name=' + encodeURIComponent('夏日友人帐') + '&id=q1')
+
+  var mock = require('../miniprogram/api/mock')
   var mock = require('../miniprogram/api/mock')
   mock.homeState().examples.forEach(function (card) {
     assert(!/^命中\s*0\s*条/.test(card.sub), card.name)
