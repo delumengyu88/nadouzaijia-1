@@ -106,6 +106,27 @@ def test_production_search_history_example_and_download_share_approval(session, 
     assert row["can_download_report"] and not row["can_download_screenshot"]
     assert not row.get("thumbnail_url") and not row.get("hd_url") and "signed://" not in str(report)
     assert client.get("/api/v1/app/home").json()["platformTotal"] == 1
+    assert client.get(example).status_code == 404
+    from nadou.models import PublicExamplePermit
+    from nadou.public_home import PublicHome
+
+    item = session.scalar(select(IndexRecord).where(IndexRecord.task_id == task.task_id))
+    session.add(
+        PublicExamplePermit(
+            record_id=item.id,
+            source_sha256=item.hitlist_sha256,
+            permission_sha256="a" * 64,
+            active=True,
+            publication_token="test-publication-token",
+            row_sha256=PublicHome.public_row_hash(item, task),
+        )
+    )
+    session.commit()
+    assert client.get(example).status_code == 404
+    configured = session.get(HomepageExample, "example")
+    configured.record_id = item.id
+    configured.publication_token = "test-publication-token"
+    session.commit()
     assert client.get(example).status_code == 200
     for old in ("exact", "miss"):
         assert client.get("/api/v1/queries/" + old).json()["items"][0]["hit"]

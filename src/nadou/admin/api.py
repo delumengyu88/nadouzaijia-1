@@ -18,7 +18,6 @@ from nadou.admin.content import (
     AnnouncementBook,
     AnnouncementView,
     ExampleBook,
-    ExampleView,
     ProgramCatalog,
     SplashBook,
     SplashView,
@@ -841,7 +840,7 @@ class AdminApi:
             _account: StaffAccount = Depends(require_admin),
             session: Session = Depends(get_session, scope="function"),
         ):
-            return ProgramCatalog.list_programs(session)
+            return ProgramCatalog.list_programs(session, clock())
 
         @app.post("/api/v1/admin/content/examples", status_code=201)
         def add_example(
@@ -851,10 +850,9 @@ class AdminApi:
             session: Session = Depends(get_session, scope="function"),
         ):
             def action():
-                row = ExampleBook(session, writer(session, account, request), clock()).add(
-                    payload.program_name, payload.record_id
-                )
-                return ExampleView.render(row)
+                book = ExampleBook(session, writer(session, account, request), clock())
+                row = book.add(payload.program_name, payload.record_id)
+                return book.describe(row)
 
             return Endpoint.invoke(action)
 
@@ -867,10 +865,9 @@ class AdminApi:
             session: Session = Depends(get_session, scope="function"),
         ):
             def action():
-                row = ExampleBook(session, writer(session, account, request), clock()).set_online(
-                    example_id, payload.online
-                )
-                return ExampleView.render(row)
+                book = ExampleBook(session, writer(session, account, request), clock())
+                row = book.set_online(example_id, payload.online)
+                return book.describe(row)
 
             return Endpoint.invoke(action)
 
@@ -883,10 +880,9 @@ class AdminApi:
             session: Session = Depends(get_session, scope="function"),
         ):
             def action():
-                row = ExampleBook(session, writer(session, account, request), clock()).move(
-                    example_id, payload.direction
-                )
-                return ExampleView.render(row)
+                book = ExampleBook(session, writer(session, account, request), clock())
+                row = book.move(example_id, payload.direction)
+                return book.describe(row)
 
             return Endpoint.invoke(action)
 

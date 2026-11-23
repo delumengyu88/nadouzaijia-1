@@ -37,7 +37,12 @@ function explain(data, status) {
   if (status === 401) return "请先登录。";
   if (status === 403) return "当前账号不能做这项操作。";
   if (status === 404) return "没有找到对应记录。";
-  if (status === 409) return "当前状态不能进行这项操作。";
+  if (status === 409) {
+    const reasons = ["已配置 5 条上线示例，请先将一条下线。", "该节目已有一条上线配置，请先处理原配置。",
+      "所选记录当前没有可公开展示的示例授权。", "该节目有多条可公开记录，请先下线旧配置并选择具体记录。"];
+    if (data && reasons.includes(data.detail)) return data.detail;
+    return "当前状态不能进行这项操作。";
+  }
   return "操作没有完成，请检查填写内容。";
 }
 
@@ -723,22 +728,28 @@ async function renderContent() {
         <td>${freq}</td><td><span class="tag ${tone}">${escapeHtml(row.state)}</span></td><td>${toggle}</td></tr>`;
     })
     .join("");
+  const onlineCount = state.examples.filter(row => row.online).length;
+  const visibleCount = state.examples.filter(row => row.visible).length;
   const exampleCards = state.examples
     .map((row, index) => {
       const detected = row.detected_on ? ymd(row.detected_on) : "—";
+      const status = row.visible ? "首页可见" : row.online ? "已配置 · 首页不可见" : "已下线";
+      const note = row.eligible ? "" : '<div class="muted">当前没有符合公开展示条件的记录</div>';
       return `<div class="example-card"><div class="order">${index + 1}</div><div class="thumb"><span>示例</span></div><div style="flex:1">
         <h4>${escapeHtml(row.program_name)}</h4>
-        <div class="muted">命中 ${row.platform_hits} 个平台 · 检测日期 ${escapeHtml(detected)}</div>
-        <div style="margin-top:6px">${row.online ? '<span class="tag tag-green">已上线</span>' : '<span class="tag tag-gray">已下线</span>'}</div>
+        ${row.eligible ? `<div class="muted">命中 ${row.platform_hits} 个平台 · 检测日期 ${escapeHtml(detected)}</div>` : ""}
+        <div style="margin-top:6px"><span class="tag ${row.visible ? "tag-green" : "tag-gray"}">${status}</span></div>${note}
       </div><div style="display:flex;flex-direction:column;gap:6px">
         <button class="btn btn-default btn-sm" type="button" data-act="example-up" data-id="${escapeHtml(row.id)}">上移</button>
         <button class="btn btn-default btn-sm" type="button" data-act="example-down" data-id="${escapeHtml(row.id)}">下移</button>
-        <button class="btn btn-default btn-sm" type="button" data-act="example-toggle" data-id="${escapeHtml(row.id)}" data-online="${row.online ? "0" : "1"}">${row.online ? "下线" : "上线"}</button>
+        ${row.online && row.eligible && !row.visible ? `<button class="btn btn-primary btn-sm" type="button" data-act="example-toggle" data-id="${escapeHtml(row.id)}" data-online="1">确认发布</button>` : ""}
+        <button class="btn btn-default btn-sm" type="button" data-act="example-toggle" ${!row.online && (!row.eligible || onlineCount >= 5) ? "disabled" : ""} data-id="${escapeHtml(row.id)}" data-online="${row.online ? "0" : "1"}">${row.online ? "下线" : "上线"}</button>
       </div></div>`;
     })
     .join("");
   const options = state.programs
-    .map((row) => `<option value="${escapeHtml(row.program_name)}">${escapeHtml(row.program_name)}</option>`)
+    .filter(row => !state.examples.some(item => item.online && item.visible && item.program_name === row.program_name))
+    .map(row => `<option value="${escapeHtml(row.record_id)}">${escapeHtml(row.program_name)}${row.records > 1 ? " · " + escapeHtml(row.record_id) : ""}</option>`)
     .join("");
   shell(
     "内容配置",
@@ -753,12 +764,12 @@ async function renderContent() {
         <button class="btn btn-primary" type="button" data-act="ann-create">新建公告</button>
       </div></div>
     </div>
-    <div class="card"><div class="card-hd">首页示例记录<span class="sub">${state.examples.length} / 5</span></div><div class="card-bd">
-      <p class="help" style="margin-top:0">每张卡片须醒目标注「示例」。最多 5 条。满 5 条后需先下线或移除一条再添加。</p>
+    <div class="card"><div class="card-hd">首页示例记录<span class="sub">已配置上线 ${onlineCount} / 5 · 首页可见 ${visibleCount} 条</span></div><div class="card-bd">
+      <p class="help" style="margin-top:0">下线记录保留在列表中。只有具有公开展示授权的节目可以上线。</p>
       <div style="display:flex;flex-direction:column;gap:10px">${exampleCards || "暂无示例"}</div>
       <div style="margin-top:12px;display:flex;gap:8px">
-        <select class="select w-md" id="example-program">${options}</select>
-        <button class="btn btn-primary" type="button" data-act="example-add">添加示例</button>
+        <select class="select w-md" id="example-program" ${options ? "" : "disabled"}>${options || "<option>暂无可公开展示的候选节目</option>"}</select>
+        <button class="btn btn-primary" type="button" data-act="example-add" ${!options || onlineCount >= 5 ? "disabled" : ""}>添加示例</button>
       </div>
     </div></div>`,
     false,
@@ -1401,9 +1412,11 @@ async function onClick(event) {
     return;
   }
   if (act === "example-add") {
+    const selected = state.programs.find(row => row.record_id === value("#example-program"));
+    if (!selected) return;
     const result = await api("/api/v1/admin/content/examples", {
       method: "POST",
-      json: { program_name: value("#example-program"), record_id: null },
+      json: { program_name: selected.program_name, record_id: selected.record_id },
     });
     await afterChange(result.ok, result.status, result.data);
     return;

@@ -1,5 +1,6 @@
 """Public mini-program home. Reads announcements, examples, and the index; never writes."""
 
+import re
 from collections.abc import Callable
 from datetime import datetime
 
@@ -11,16 +12,18 @@ from sqlalchemy.orm import Session
 from nadou.config import get_settings
 from nadou.entitlements import EntitlementPolicy
 from nadou.importer import TestTaskFilter
-from nadou.models import Announcement, HomepageExample, IndexRecord, Task
+from nadou.models import Announcement, HomepageExample, IndexRecord, PublicExamplePermit, Task
 from nadou.normalize import ProgramNormalizer
 from nadou.search import ProgramSearch
+from nadou.summary_source import digest
 from nadou.text import RecordAge
 
 
 class PublicHome:
     """Unauthenticated home content. No user, no entitlement, no default-row insert."""
 
-    CACHE_CONTROL = "public, max-age=60"
+    EXAMPLE_LIMIT = 5
+    CACHE_CONTROL = "no-store"
 
     @staticmethod
     def register(app: FastAPI, get_session, now: Callable[[], datetime]) -> None:
@@ -63,22 +66,25 @@ class PublicHome:
     @staticmethod
     def examples(session: Session, now: datetime) -> list[dict]:
         cards = []
-        for row in PublicHome._online_examples(session):
-            records = PublicHome._reportable(session, row.program_name)
-            if not get_settings().demo_data and not records:
-                continue
+        for row, records in PublicHome.published(session, now):
             summary = PublicHome._summary(records, now)
             cards.append({"name": row.program_name, "line": summary["line"], "sub": summary["sub"]})
         return cards
 
     @staticmethod
     def example(session: Session, name: str, now: datetime) -> dict | None:
-        chosen = PublicHome._match_example(session, name)
-        if chosen is None:
+        canonical = ProgramNormalizer.canonical(name)
+        chosen_pair = next(
+            (
+                (row, pairs)
+                for row, pairs in PublicHome.published(session, now)
+                if ProgramNormalizer.canonical(row.program_name) == canonical
+            ),
+            None,
+        )
+        if chosen_pair is None:
             return None
-        rows = PublicHome._reportable(session, chosen.program_name)
-        if not get_settings().demo_data and not rows:
-            return None
+        chosen, rows = chosen_pair
         summary = PublicHome._summary(rows, now)
         # Same rows as line/sub. Under 30 days is the forensic bucket: no grant
         # reveals it, so a public report omits the row instead of listing it.
@@ -97,8 +103,6 @@ class PublicHome:
             "unverified_source_count": summary["unverified_source_count"],
             "line": summary["line"],
             "sub": summary["sub"],
-            "evidence_platforms": PublicHome._evidence_platforms(ordered, now),
-            "evidence_program_name": chosen.program_name if rows else None,
             "records": [PublicHome._record(record, task, now) for record, task in ordered],
         }
 
@@ -166,43 +170,124 @@ class PublicHome:
             ).all()
         )
 
-    @staticmethod
-    def _match_example(session: Session, name: str) -> HomepageExample | None:
-        canonical = ProgramNormalizer.canonical(name)
-        if not canonical:
-            return None
-        for row in PublicHome._online_examples(session):
-            if ProgramNormalizer.canonical(row.program_name) == canonical:
-                return row
-        return None
+    @classmethod
+    def published(cls, session: Session, now: datetime) -> list:
+        online = cls._online_examples(session)
+        groups, tokens = cls.example_records(session, now, [row.program_name for row in online])
+        return cls.published_rows(online, groups, tokens)
+
+    @classmethod
+    def published_rows(cls, rows, groups, tokens) -> list:
+        chosen = []
+        seen = set()
+        for row in rows:
+            name = ProgramNormalizer.canonical(row.program_name)
+            pairs = groups.get(name, [])
+            if not get_settings().demo_data:
+                if (
+                    not row.record_id
+                    or not row.publication_token
+                    or tokens.get(row.record_id) != row.publication_token
+                ):
+                    continue
+                pairs = [(rec, task) for rec, task in pairs if rec.id == row.record_id]
+            if row.online and name not in seen and cls.example_eligible(pairs, row.record_id):
+                chosen.append((row, pairs))
+                seen.add(name)
+                if len(chosen) == cls.EXAMPLE_LIMIT:
+                    break
+        return chosen
 
     @staticmethod
-    def _reportable(session: Session, program_name: str) -> list[tuple[IndexRecord, Task | None]]:
-        """Consensus rows search would keep, minus any date_generated row.
+    def example_eligible(pairs, record_id: str | None) -> bool:
+        if record_id:
+            return any(record.id == record_id for record, _ in pairs)
+        return bool(pairs) or get_settings().demo_data
 
-        Generated placeholders are excluded the same way exports and formal
-        reports exclude them. Their generated_uploaded_at is never a checked_at.
-        """
-        canonical = ProgramNormalizer.canonical(program_name)
-        if not canonical:
-            return []
-        records = list(
-            session.scalars(select(IndexRecord).where(IndexRecord.program_name == canonical)).all()
+    @staticmethod
+    def public_row_hash(record: IndexRecord, task: Task) -> str:
+        # The permit identifies the precise row, source hash, and all public report fields.
+        return digest(
+            [
+                record.id,
+                record.task_id,
+                record.program_name,
+                record.program_name_raw,
+                record.hitlist_sha256,
+                record.frame_count,
+                record.timestamps,
+                task.raw_filename,
+                task.platform_name,
+                task.platform_operator,
+                task.platform_province,
+                task.created_at.astimezone(RecordAge.TZ).isoformat() if task.created_at else None,
+                task.file_uploaded_at.isoformat() if task.file_uploaded_at else None,
+                record.uploaded_at.isoformat() if record.uploaded_at else None,
+            ]
         )
-        task_ids = {record.task_id for record in records}
-        tasks: dict[str, Task] = {}
-        if task_ids:
-            for task in session.scalars(select(Task).where(Task.task_id.in_(task_ids))).all():
-                tasks[task.task_id] = task
-        kept: list[tuple[IndexRecord, Task | None]] = []
-        for record in records:
-            task = tasks.get(record.task_id)
-            if not ProgramSearch.visible(record, task):
-                continue
-            if not ProgramSearch.reportable(record):
-                continue
-            kept.append((record, task))
-        return kept
+
+    @classmethod
+    def verified_public_source(cls, record: IndexRecord, task: Task | None, now: datetime) -> bool:
+        """Verify an imported row independently of batch rights for private searches."""
+        return bool(
+            task
+            and TestTaskFilter.commercial_task(task)
+            and not ProgramSearch._unverified(task)
+            and record.summary_grant is None
+            and ProgramSearch.confirmed(record)
+            and ProgramSearch.reportable(record)
+            and re.fullmatch(r"[0-9a-f]{64}", record.hitlist_sha256 or "")
+            and cls._hit_time(task, record, now) is not None
+        )
+
+    @classmethod
+    def example_records(cls, session: Session, now: datetime, names=None) -> tuple[dict, dict]:
+        """Fetch qualifying rows in one join. Only a targeted or authorized subset enters Python."""
+        settings = get_settings()
+        demo = settings.demo_data
+        stmt = (
+            select(IndexRecord, Task)
+            .outerjoin(Task, Task.task_id == IndexRecord.task_id)
+            .where(
+                IndexRecord.hit_type == "consensus",
+                IndexRecord.date_generated.is_(False),
+                IndexRecord.summary_grant.is_(None),
+            )
+        )
+        if names is not None:
+            names = {ProgramNormalizer.canonical(name) for name in names}
+            if not names:
+                return {}, {}
+            stmt = stmt.where(IndexRecord.program_name.in_(names))
+        if not demo:
+            stmt = (
+                stmt.add_columns(PublicExamplePermit)
+                .join(PublicExamplePermit, PublicExamplePermit.record_id == IndexRecord.id)
+                .where(
+                    PublicExamplePermit.active.is_(True),
+                    IndexRecord.hitlist_sha256 == PublicExamplePermit.source_sha256,
+                    Task.status == "done",
+                    Task.is_test.is_(False),
+                )
+            )
+        groups = {}
+        tokens = {}
+        for row in session.execute(stmt.order_by(IndexRecord.program_name, IndexRecord.id)):
+            rec, task = row[:2]
+            if demo:
+                if not ProgramSearch.visible(rec, task) or not ProgramSearch.reportable(rec):
+                    continue
+            else:
+                permit = row[2]
+                if (
+                    not cls.verified_public_source(rec, task, now)
+                    or not re.fullmatch("[0-9a-f]{64}", permit.permission_sha256)
+                    or permit.row_sha256 != cls.public_row_hash(rec, task)
+                ):
+                    continue
+                tokens[rec.id] = permit.publication_token
+            groups.setdefault(rec.program_name, []).append((rec, task))
+        return groups, tokens
 
     @staticmethod
     def _hit_time(task: Task | None, record: IndexRecord, now: datetime) -> datetime | None:
@@ -268,46 +353,14 @@ class PublicHome:
         return sorted(rows, key=key)
 
     @staticmethod
-    def _evidence_platforms(
-        rows: list[tuple[IndexRecord, Task | None]], now: datetime
-    ) -> list[str]:
-        # Recognized platforms on rows old enough to count as hits.
-        # date_generated rows are already gone. Under-30 rows stay out, matching
-        # search, which only lists platforms from open (not forensic) records.
-        names: list[str] = []
-        for record, task in rows:
-            if PublicHome.countable_platform(task) is None or task is None:
-                continue
-            if PublicHome._hit_time(task, record, now) is None:
-                continue
-            name = task.platform_name
-            if name and name not in names:
-                names.append(name)
-        return names
-
-    @staticmethod
     def _record(record: IndexRecord, task: Task | None, now: datetime) -> dict:
-        when = ProgramSearch.record_time(task, record)
-        age = RecordAge.days(when, now) if when is not None else None
-        unverified = ProgramSearch._unverified(task)
-        platform = ProgramSearch.UNRECOGNIZED_PLATFORM if unverified else task.platform_name
+        when = PublicHome._hit_time(task, record, now)
+        platform = (
+            ProgramSearch.UNRECOGNIZED_PLATFORM
+            if ProgramSearch._unverified(task)
+            else task.platform_name
+        )
         return {
-            "record_id": record.id,
             "platform": platform,
-            "platform_province": None if unverified or task is None else task.platform_province,
-            "platform_operator": None if unverified or task is None else task.platform_operator,
-            "platform_subtype": None if unverified or task is None else task.platform_subtype,
-            "network_type": None if task is None else task.network_type,
-            "category": record.category,
-            "frame_count": record.frame_count,
-            "timestamps": list(record.timestamps or []),
-            "checked_at": when.astimezone(RecordAge.TZ).isoformat() if when is not None else None,
-            "age_bucket": None if age is None else EntitlementPolicy.age_bucket(age),
-            # No caller and no signer: these search fields have no public source.
-            "thumbnail_url": None,
-            "hd_url": None,
-            "access": None,
-            "can_download_report": None,
-            "can_download_screenshot": None,
-            "locked": None,
+            "checked_at": when.astimezone(RecordAge.TZ).date().isoformat(),
         }

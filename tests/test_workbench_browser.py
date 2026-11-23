@@ -164,6 +164,9 @@ def test_each_workbench_page_loads_without_console_errors():
             row = page.get_by_role("row").filter(has_text=name)
             row.get_by_role("button", name="下线").click()
             row.get_by_role("button", name="上线").wait_for()
+            header = page.locator(".card-hd").filter(has_text="首页示例记录")
+            online_count = page.locator(".example-card button[data-online='0']").count()
+            playwright_sync.expect(header).to_contain_text(f"已配置上线 {online_count} / 5")
             example = page.locator(".example-card").first
             original = example.locator("h4").inner_text()
             card = page.locator(".example-card").filter(has_text=original)
@@ -174,6 +177,7 @@ def test_each_workbench_page_loads_without_console_errors():
             card.get_by_role("button", name="上移").click()
             playwright_sync.expect(example.locator("h4")).to_have_text(original)
             card.get_by_role("button", name="下线").click()
+            playwright_sync.expect(header).to_contain_text(f"已配置上线 {online_count - 1} / 5")
             card.get_by_role("button", name="上线").click()
             card.get_by_role("button", name="下线").wait_for()
             assert not splash_requests

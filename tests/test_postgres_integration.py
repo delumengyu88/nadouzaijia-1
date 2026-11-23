@@ -492,3 +492,71 @@ def test_overlapping_renewal_callbacks_stack_once_per_order(pg_session, clock):
         )
         == 2
     )
+
+
+def test_public_example_concurrent_add_and_republish_share_five_slots():
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import UTC
+    from threading import Barrier
+    from uuid import uuid4
+
+    from sqlalchemy import select, text
+    from sqlalchemy.schema import CreateSchema, DropSchema
+
+    from nadou.admin.audit import AuditWriter
+    from nadou.admin.content import ExampleBook
+    from nadou.admin.errors import WorkbenchError
+    from nadou.db import Base
+    from nadou.models import HomepageExample
+
+    engine = create_engine_for(_database_url())
+    schema = "example_test_" + uuid4().hex
+    now = datetime.now(UTC)
+    factory = sessionmaker(bind=engine)
+    choose_schema = text(f'SET LOCAL search_path TO "{schema}"')
+    with engine.begin() as conn:
+        conn.execute(CreateSchema(schema))
+        conn.execute(choose_schema)
+        Base.metadata.create_all(conn)
+    try:
+        with factory.begin() as session:
+            session.execute(choose_schema)
+            book = ExampleBook(session, AuditWriter(session, now, None, None), now)
+            for i in range(4):
+                book.add("并发节目" + str(i), None)
+            old = book.add("历史节目", None)
+            old_id = old.id
+            book.set_online(old_id, False)
+        barrier = Barrier(2)
+
+        def publish(reopen):
+            try:
+                with factory.begin() as session:
+                    session.execute(choose_schema)
+                    book = ExampleBook(session, AuditWriter(session, now, None, None), now)
+                    barrier.wait(timeout=10)
+                    if reopen:
+                        book.set_online(old_id, True)
+                    else:
+                        book.add("另一节目", None)
+                return 200
+            except WorkbenchError as exc:
+                return exc.status_code
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            assert sorted(pool.map(publish, (False, True))) == [200, 409]
+        with factory.begin() as session:
+            session.execute(choose_schema)
+            assert (
+                len(
+                    session.scalars(
+                        select(HomepageExample).where(HomepageExample.online.is_(True))
+                    ).all()
+                )
+                == 5
+            )
+            assert session.get(HomepageExample, old_id)
+    finally:
+        with engine.begin() as conn:
+            conn.execute(DropSchema(schema, cascade=True))
+        engine.dispose()

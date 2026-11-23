@@ -204,6 +204,14 @@ async function main() {
   assert.deepStrictEqual(emptyBody.evidence_platforms, [])
   assert.strictEqual(emptyBody.outcome, 'miss')
 
+  var datedReport = http.exampleReport('公开单条')
+  ok({name: '公开单条', program_name: '公开单条', example: true, outcome: 'hit',
+    platform_count: 1, records: [{platform: '广东移动', checked_at: '2026-08-13'}]})
+  var datedView = present(await datedReport, {name: '公开单条'})
+  assert.strictEqual(datedView.groups[0].rows[0].date, '2026-08-13')
+  assert.strictEqual(datedView.groups[0].rows[0].clock, '')
+  assert.strictEqual(datedView.showDownload, false)
+
   var nullReport = http.exampleReport('无日期')
   ok({
     name: '无日期', program_name: '无日期', example: true, outcome: 'hit',

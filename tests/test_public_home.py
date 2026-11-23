@@ -135,14 +135,14 @@ def test_home_empty_needs_no_login_and_writes_nothing(session, clock):
         blank = client.get(example_url("   "))
     assert bare.request.headers.get("authorization") is None
     assert bare.status_code == 200
-    assert bare.headers["cache-control"] == "public, max-age=60"
+    assert bare.headers["cache-control"] == "no-store"
     assert bare.json() == {"announcements": [], "examples": [], "platformTotal": 0}
     assert bogus.status_code == 200
     assert bogus.json() == bare.json()
     for response in (missing, blank):
         assert response.status_code == 404
         assert response.json() == {"detail": "example not found"}
-        assert response.headers["cache-control"] == "public, max-age=60"
+        assert response.headers["cache-control"] == "no-store"
     assert snapshot(session) == before
 
 
@@ -194,7 +194,7 @@ def test_home_hides_offline_and_out_of_window_content(workbench):
 
     response = workbench.client.get("/api/v1/app/home")
     assert response.status_code == 200
-    assert response.headers["cache-control"] == "public, max-age=60"
+    assert response.headers["cache-control"] == "no-store"
     body = response.json()
     assert [item["title"] for item in body["announcements"]] == ["生效公告", "更早公告"]
     live = body["announcements"][0]
@@ -490,7 +490,7 @@ def test_examples_use_real_dates_and_skip_generated_rows(workbench):
         headers={"Authorization": "Bearer not-a-session"},
     )
     assert report.status_code == 200
-    assert report.headers["cache-control"] == "public, max-age=60"
+    assert report.headers["cache-control"] == "no-store"
     detail = report.json()
     assert detail["name"] == program
     assert detail["program_name"] == program
@@ -500,14 +500,9 @@ def test_examples_use_real_dates_and_skip_generated_rows(workbench):
     assert detail["unverified_source_count"] == 1
     assert detail["line"] == body["examples"][1]["line"]
     assert detail["sub"] == body["examples"][1]["sub"]
-    assert detail["evidence_platforms"] == ["浙江移动", "广东移动"]
-    assert detail["evidence_program_name"] == program
-    assert [row["record_id"] for row in detail["records"]] == [
-        "hit-zj",
-        "hit-bad",
-        "hit-ott",
-        "hit-gd",
-    ]
+    assert "evidence_platforms" not in detail and "evidence_program_name" not in detail
+    assert all(set(row) == {"platform", "checked_at"} for row in detail["records"])
+    assert len(detail["records"]) == 4
     assert "hit-young" not in report.text
     assert "江苏移动" not in report.text
     assert day_of(young) not in report.text
@@ -516,18 +511,9 @@ def test_examples_use_real_dates_and_skip_generated_rows(workbench):
     assert day_of(shandong) not in report.text
     latest = detail["records"][0]
     assert latest["platform"] == "浙江移动"
-    assert latest["network_type"] == "专网"
-    assert latest["age_bucket"] == "d30_89"
-    assert datetime.fromisoformat(latest["checked_at"]) == recent
+    assert latest["checked_at"] == day_of(recent)
     assert detail["records"][1]["platform"] == "其他平台"
-    assert detail["records"][1]["platform_operator"] is None
-    for row in detail["records"]:
-        assert row["thumbnail_url"] is None
-        assert row["hd_url"] is None
-        assert row["access"] is None
-        assert row["can_download_report"] is None
-        assert row["can_download_screenshot"] is None
-        assert row["locked"] is None
+    assert all(len(row["checked_at"]) == 10 for row in detail["records"])
     folded = workbench.client.get(example_url("  海边来信  "))
     assert folded.status_code == 200
     assert folded.json()["name"] == program
@@ -560,8 +546,7 @@ def test_example_name_is_folded_and_young_only_has_no_fallback_date(workbench):
     assert body["name"] == "AbC节目"
     assert body["program_name"] == "abc节目"
     assert body["outcome"] == "recent_only"
-    assert body["evidence_platforms"] == []
-    assert body["evidence_program_name"] == "AbC节目"
+    assert "evidence_program_name" not in body and "evidence_platforms" not in body
     assert body["records"] == []
     assert "fold-rec" not in report.text
     assert "广东移动" not in report.text
@@ -607,10 +592,7 @@ def test_anonymous_example_omits_records_under_30_days(workbench):
     assert report.request.headers.get("authorization") is None
     assert report.status_code == 200
     body = report.json()
-    assert [row["record_id"] for row in body["records"]] == ["day-30"]
-    assert body["records"][0]["platform"] == "广东移动"
-    assert body["records"][0]["age_bucket"] == "d30_89"
-    assert datetime.fromisoformat(body["records"][0]["checked_at"]) == old_enough
+    assert body["records"] == [{"platform": "广东移动", "checked_at": day_of(old_enough)}]
     assert body["line"] == "涉及 1 个平台"
     assert body["sub"] == f"命中 1 条记录 · {day_of(old_enough)}"
     assert body["outcome"] == "hit"
