@@ -1,5 +1,7 @@
 /* local */
 
+page { overflow-x: hidden; }
+
 .evidence-link { text-align: right; color: #1D4E9E; font-size: 26rpx; padding: 8rpx 0 0; }
 .report-btn { margin-top: 16rpx; }
 .miss-actions { margin-top: 16rpx; }
@@ -24,3 +26,142 @@
   font-weight: 600;
 }
 .item-retry { width: 48%; margin-top: 16rpx; margin-left: 0; margin-right: auto; }
+
+/* 旋转弧会画出方形包围盒。不裁切时真机会把这块算进页面宽度，右缘出现一列淡字。 */
+.query-root { width: 100%; overflow-x: hidden; }
+.q-ring-block {
+  width: 100%;
+  padding-top: 120rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+}
+.q-ring {
+  position: relative;
+  width: 160rpx;
+  height: 160rpx;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+}
+.q-ring-track {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 160rpx;
+  height: 160rpx;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 8rpx solid #E5E9F0;
+}
+.q-ring-progress {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 160rpx;
+  height: 160rpx;
+  z-index: 1;
+}
+.q-ring-clip {
+  position: absolute;
+  top: 0;
+  width: 80rpx;
+  height: 160rpx;
+  overflow: hidden;
+}
+.q-ring-clip.right { right: 0; }
+.q-ring-clip.left { left: 0; }
+.q-ring-half {
+  position: absolute;
+  top: 0;
+  width: 80rpx;
+  height: 160rpx;
+  background: #1D4E9E;
+  transition: transform 300ms linear;
+}
+.q-ring-half.right {
+  right: 0;
+  border-radius: 0 80rpx 80rpx 0;
+  transform-origin: 0% 50%;
+}
+.q-ring-half.left {
+  left: 0;
+  border-radius: 80rpx 0 0 80rpx;
+  transform-origin: 100% 50%;
+}
+.q-ring-spinner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 160rpx;
+  height: 160rpx;
+  z-index: 2;
+}
+.q-ring-arc {
+  width: 160rpx;
+  height: 160rpx;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 8rpx solid transparent;
+  border-top-color: #1D4E9E;
+  animation: q-ring-spin 0.9s linear infinite;
+}
+@keyframes q-ring-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.q-ring-hole {
+  position: absolute;
+  left: 8rpx;
+  top: 8rpx;
+  width: 144rpx;
+  height: 144rpx;
+  border-radius: 50%;
+  background: #f4f6f8;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.q-ring-ratio {
+  width: 128rpx;
+  height: 44rpx;
+  line-height: 44rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  text-align: center;
+  color: #1c2430;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.q-ring-label {
+  width: 100%;
+  height: 44rpx;
+  margin-top: 28rpx;
+  padding: 0 32rpx;
+  box-sizing: border-box;
+  line-height: 44rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  text-align: center;
+  color: #1c2430;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.q-ring-wait {
+  width: 100%;
+  height: 32rpx;
+  margin-top: 8rpx;
+  padding: 0 32rpx;
+  box-sizing: border-box;
+  line-height: 32rpx;
+  font-size: 24rpx;
+  text-align: center;
+  color: #8b95a3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

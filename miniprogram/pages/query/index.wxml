@@ -1,4 +1,4 @@
-<view hidden="{{showSplash}}" aria-hidden="{{showSplash}}">
+<view class="query-root" hidden="{{showSplash}}" aria-hidden="{{showSplash}}">
 <view class="nav" style="padding-top: {{statusBarHeight}}px;">
   <view class="nav-bar">
     <view class="nav-back" bindtap="back">‹</view>
@@ -43,26 +43,35 @@
     <view class="center-sub">{{head}}</view>
   </view>
 </view>
-<view class="body" wx:elif="{{running}}">
-  <view class="center-box">
-    <view class="center-title">正在查询</view>
-    <view class="center-sub">{{head}}</view>
+<view class="body" wx:elif="{{running || networkError}}">
+  <view class="q-ring-block">
+    <view class="q-ring {{ringSpin ? 'is-spin' : ''}} {{ringFull ? 'is-full' : ''}}">
+      <view class="q-ring-track"></view>
+      <view class="q-ring-progress">
+        <view class="q-ring-clip right">
+          <view class="q-ring-half right" style="transform: rotate({{ringRight}}deg);"></view>
+        </view>
+        <view class="q-ring-clip left">
+          <view class="q-ring-half left" style="transform: rotate({{ringLeft}}deg);"></view>
+        </view>
+      </view>
+      <view class="q-ring-spinner" wx:if="{{ringSpin}}">
+        <view class="q-ring-arc"></view>
+      </view>
+      <view class="q-ring-hole">
+        <view class="q-ring-ratio">{{ringText}}</view>
+      </view>
+    </view>
+    <view class="q-ring-label">已完成 {{ringDone}} / 共 {{ringTotal}}</view>
+    <view class="q-ring-wait" wx:if="{{running}}">{{ringWait}}</view>
   </view>
-  <view class="bar-track"><view class="bar-fill" style="width: {{percent}}%;"></view></view>
-</view>
-<view class="body" wx:elif="{{networkError}}">
-  <view class="center-box">
-    <view class="center-title">正在查询</view>
-    <view class="center-sub">{{head}}</view>
-  </view>
-  <view class="bar-track"><view class="bar-fill" style="width: {{percent}}%;"></view></view>
-  <view class="err-box" wx:if="{{failBanner}}">{{failBanner}}</view>
+  <view class="err-box" wx:if="{{networkError && failBanner}}">{{failBanner}}</view>
   <view class="btn block" wx:if="{{showNetworkRetry}}" bindtap="retry">重试</view>
 </view>
 <view class="body" wx:else>
   <view class="err-box" wx:if="{{showFailBanner && failBanner}}">{{failBanner}}</view>
   <view class="note" wx:if="{{!showFailBanner && head}}">{{head}}</view>
-  <view class="card" wx:for="{{items}}" wx:key="name" data-name="{{item.name}}" data-hit="{{item.hit}}" bindtap="openHit">
+  <view class="card" wx:for="{{rows}}" wx:key="name" data-name="{{item.name}}" data-hit="{{item.hit}}" bindtap="openHit">
     <view class="choice-top">
       <text class="row-title">{{item.name}}</text>
       <text class="tag {{item.badgeCls}}">{{item.badge}}</text>
