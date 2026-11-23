@@ -1,16 +1,25 @@
 import pytest
 from sqlalchemy import event
 
+from nadou.db import Database
+from nadou.main import create_app
 from nadou.models import IndexRecord
+from nadou.signed_url import FakeSignedUrlProvider
 from tests.test_search import add_hit, add_user, at_age
+from tests.user_helpers import UserClient
 
 BATCH = "/api/v1/programs/search/batch"
 
 
 @pytest.mark.parametrize("tier", [None, "vip", "regular", "program_30", "screenshot"])
-def test_batch_matches_single_responses_in_input_order(session, client, clock, tier, monkeypatch):
-    # Keep the test signer's expiry identical across HTTP requests.
-    monkeypatch.setattr("time.time", lambda: clock.timestamp())
+def test_batch_matches_single_responses_in_input_order(session, clock, tier):
+    # The signer captures its clock at construction; inject it before any HTTP requests.
+    app = create_app(
+        database=Database(engine=session.get_bind()),
+        now=lambda: clock,
+        urls=FakeSignedUrlProvider(now=clock.timestamp),
+    )
+    client = UserClient(app, session, clock)
     names = ["甲片", "其它片", "怪", "　甲片 ", "未收录片", "乙片"]
     for index, (name, age) in enumerate(
         [("甲片", 29), ("甲片", 30), ("其它片", 90), ("怪", 180), ("乙片", 200)]
