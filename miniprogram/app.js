@@ -1,3 +1,4 @@
+var splash = require('./api/splash')
 var api = require('./api/index')
 var privacy = require('./utils/privacy')
 
@@ -8,14 +9,16 @@ App({
   onLaunch: function () {
     api.bootstrap()
     this.identify()
-    this.globalData.splashShownThisLaunch = false
+    splash.cold(this.globalData)
     if (typeof wx.onNeedPrivacyAuthorization === 'function') {
       wx.onNeedPrivacyAuthorization(function (resolve) {
         privacy.notify(resolve)
       })
     }
   },
-  onShow: function () {
+  onHide: function () { splash.background() },
+  onShow: function (options) {
+    splash.foreground(this.globalData, options)
     this.identify()
   },
   identify: function () {

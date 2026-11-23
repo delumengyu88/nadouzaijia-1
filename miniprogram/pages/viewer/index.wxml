@@ -1,3 +1,4 @@
+<view hidden="{{showSplash}}" aria-hidden="{{showSplash}}">
 <view class="nav" style="padding-top: {{statusBarHeight}}px;">
   <view class="nav-bar">
     <view class="nav-back" bindtap="back">‹</view>
@@ -29,4 +30,6 @@
   <view class="btn slim" wx:if="{{downloadEntry}}" bindtap="save">下载到相册</view>
   <view class="btn reason" wx:if="{{!plainShot && blockedReason}}" bindtap="upgrade">{{blockedReason}}</view>
 </view>
+</view>
+<include src="../../components/launch-poster/view.wxml" />
 <privacy-popup />

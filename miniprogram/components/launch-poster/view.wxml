@@ -1,0 +1,11 @@
+<view class="splash-cover" catchtap="holdPosterTouch" catchtouchmove="holdPosterTouch" wx:if="{{showSplash}}">
+  <image class="splash-bg" src="/assets/p01-splash-bg.png" mode="scaleToFill" bindload="splashLoaded" binderror="finishSplash" style="top: {{splashImgTop}}px; width: {{splashImgW}}px; height: {{splashImgH}}px;" />
+  <view wx:if="{{posterReady}}" class="splash-copy" style="top: {{splashCopyTop}}px;">
+    <view class="splash-title" style="font-size: {{splashTitleSize}}px;">那豆在架</view>
+    <view class="splash-tagline" style="margin-top: {{splashTagGap}}px; font-size: {{splashTagSize}}px;"><text>全平台片单检索，</text><text class="splash-highlight">永久免费</text></view>
+  </view>
+  <image wx:if="{{posterReady}}" class="splash-logo" src="/assets/splash-mark.png" mode="aspectFit" />
+  <view aria-role="button" aria-label="跳过开屏海报" class="splash-skip-hit" style="top: {{splashSkipHitTop}}px; height: {{splashSkipHitHeight}}px; right: {{splashSkipRight}}px;" catchtap="finishSplash">
+    <view class="splash-skip" style="height: {{splashSkipHeight}}px;">跳过 {{seconds}}</view>
+  </view>
+</view>

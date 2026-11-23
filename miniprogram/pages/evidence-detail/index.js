@@ -23,7 +23,7 @@ var EMPTY = {
   message: ''
 }
 
-Page({
+Page(require('../../api/splash').page({
   data: { title: '取证进度', showBack: true, loading: true, acting: false },
   onLoad: function (query) {
     this.id = query.id || ''
@@ -122,4 +122,4 @@ Page({
     }
     done(result)
   }
-})
+}))

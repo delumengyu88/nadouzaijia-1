@@ -3,6 +3,12 @@ var assert = require('assert')
 var fs = require('fs')
 var path = require('path')
 
+var homeView = fs.readFileSync(path.join(__dirname, '../miniprogram/pages/home/index.wxml'), 'utf8')
+var homeStyle = fs.readFileSync(path.join(__dirname, '../miniprogram/pages/home/index.wxss'), 'utf8')
+assert.match(homeView, /class="guest-identity">免费用户/)
+assert.match(homeView, /class="login-link guest-retry" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">重试/)
+assert.match(homeStyle, /\.guest-banner button\.guest-retry\s*{[^}]*width: auto;[^}]*margin: 0 0 0 auto;[^}]*white-space: nowrap;/)
+
 var config = require('../miniprogram/config')
 config.mode = 'hybrid'
 config.calibrating = false
@@ -272,7 +278,7 @@ async function main() {
   assert.strictEqual(home.data.announcement, null)
   assert.strictEqual(JSON.stringify(home.data).indexOf('星河旧梦'), -1)
   assert.notStrictEqual(home.data.platformTotal, 26)
-  assert.strictEqual(calls.length, before + 2)
+  assert.strictEqual(calls.length, before + 1)
   settleHome(homeBody({
     platformTotal: 18,
     examples: [{ name: '海边来信', line: '涉及 0 个平台', sub: '命中 0 条记录' }],

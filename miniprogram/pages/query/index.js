@@ -2,7 +2,7 @@ var api = require('../../api/index')
 var nav = require('../../utils/nav')
 var config = require('../../config')
 
-Page({
+Page(require('../../api/splash').page({
   data: { title: '查询结果', showBack: true, calibrating: config.calibrating, items: [], head: '' },
   onLoad: function (query) {
     this.id = query.id || ''
@@ -197,4 +197,4 @@ Page({
     this.onShow()
     this.refresh()
   }
-})
+}))

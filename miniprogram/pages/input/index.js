@@ -14,7 +14,7 @@ var FAIL = {
 }
 var RESELECT = { xlsx: 1, col: 1, read: 1 }
 
-Page({
+Page(require('../../api/splash').page({
   data: { title: '输入片单', showBack: true, phase: 'edit', raw: '', items: [] },
   onLoad: function (query) {
     this.owner = api.accountKind()
@@ -220,7 +220,7 @@ Page({
   },
   upload: function () {
     var self = this
-    wx.chooseMessageFile({
+    require('../../api/splash').callNative(wx.chooseMessageFile, {
       count: 1,
       type: 'file',
       extension: ['xlsx'],
@@ -231,4 +231,4 @@ Page({
       }
     })
   }
-})
+}))

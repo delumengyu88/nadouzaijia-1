@@ -23,7 +23,7 @@ function showProfile(info) {
   return Object.assign({}, info, { heading: heading, detail: detail })
 }
 
-Page({
+Page(require('../../api/splash').page({
   data: {
     useMock: require('../../config').mode === 'mock',
     title: '我的',
@@ -143,4 +143,4 @@ Page({
     api.switchAccount(e.currentTarget.dataset.id)
     this.onShow()
   }
-})
+}))
