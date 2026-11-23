@@ -7,9 +7,8 @@ from sqlalchemy.orm import Session
 
 from nadou.config import get_settings
 from nadou.models import User
-from nadou.payments import xpay, xpay_push
-from nadou.payments.catalog import REGULAR, VIP
-from nadou.payments.config import load_pay_settings
+from nadou.payments.catalog import DIAMOND, REGULAR, VIP
+from nadou.payments.config import diamond_product_id, live_virtual_product_id, load_pay_settings
 from nadou.search import EmptyQuery, ProgramSearch
 
 
@@ -27,32 +26,13 @@ def membership_options(
         if not eligible.get(product.code):
             continue
         if virtual:
-            ready = virtual_product_ready(product.code)
+            ready = live_virtual_product_id(product.code) is not None
         else:
             ready = load_pay_settings(settings) is not None
         options.append({**product.public(), "purchasable": bool(user.wechat_openid) and ready})
+    if virtual and user.wechat_openid and eligible.get(VIP.code) and diamond_product_id():
+        options.append({**DIAMOND.public(), "purchasable": True, "unlock_product": VIP.code})
     return options
-
-
-def virtual_product_ready(code: str) -> bool:
-    settings = get_settings()
-    if (
-        settings.xpay_env != 0
-        or not settings.wx_appid
-        or not settings.wx_appsecret.get_secret_value()
-    ):
-        return False
-    product_id = settings.xpay_products.get(code)
-    if not product_id or product_id != product_id.strip() or len(product_id) > 128:
-        return False
-    if list(settings.xpay_products.values()).count(product_id) != 1:
-        return False
-    try:
-        xpay.configured()
-        xpay_push.configured_key()
-    except HTTPException:
-        return False
-    return True
 
 
 def require_context_product(

@@ -565,8 +565,9 @@ def test_diamond_unavailable_never_creates_order(virtual_setup, session, monkeyp
     assert not session.query(Order).count()
 
 
+@pytest.mark.parametrize("sku,price", [("membership_vip", 59900), ("membership_diamond", 100)])
 def test_paid_vip_from_summary_opens_text_once_without_granting_media(
-    session, clock, tmp_path, monkeypatch, request
+    session, clock, tmp_path, monkeypatch, request, sku, price
 ):
     from pydantic import SecretStr
 
@@ -585,11 +586,18 @@ def test_paid_vip_from_summary_opens_text_once_without_granting_media(
     params = {"channel": "virtual", "program_name": permit.program}
     options = client.get("/api/v1/pay/tiers", params=params).json()["tiers"]
     assert [(row["id"], row["purchasable"]) for row in options] == [("membership_vip", True)]
-    order_input = {"tier": "membership_vip", "program_name": permit.program, "code": "isolated"}
+    order_input = {"tier": sku, "program_name": permit.program, "code": "isolated"}
+    if sku == "membership_diamond":
+        assert client.post("/api/v1/xpay/orders", json=order_input).status_code == 409
+        configure_diamond(monkeypatch)
+        options = client.get("/api/v1/pay/tiers", params=params).json()["tiers"]
+        diamond = next(row for row in options if row["id"] == sku)
+        assert diamond["purchasable"] and diamond["unlock_product"] == "membership_vip"
+        assert diamond["duration_days"] == 5 and diamond["amount_fen"] == price
     response = client.post("/api/v1/xpay/orders", json=order_input)
-    assert response.status_code == 200 and response.json()["amount_fen"] == 59900
+    assert response.status_code == 200 and response.json()["amount_fen"] == price
     number = response.json()["order_number"]
-    monkeypatch.setattr(xpay, "query_order", lambda *args: payment(number))
+    monkeypatch.setattr(xpay, "query_order", lambda *args: payment(number, price=price))
     monkeypatch.setattr(xpay, "provider_call", lambda *args: {})
     for _ in range(2):
         assert client.post(f"/api/v1/xpay/orders/{number}/sync").json()["granted"]
