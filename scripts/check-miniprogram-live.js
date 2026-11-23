@@ -12,12 +12,20 @@ var querySeq = 0
 var withGenerated = false
 var pendingVerification = false
 var summaryReply = null
+var oldBackend = false
+var saved = []
 var store = {}
 global.wx = {
   getStorageSync: function (k) { return store[k] }, setStorageSync: function (k, v) { store[k] = v },
   getSystemInfoSync: function () { return { statusBarHeight: 20 } },
   request: function (opt) {
     var url = opt.url || ''
+    if (url.indexOf('/api/v1/queries') !== -1 && /\/results(\/failed)?$/.test(url)) saved.push(opt)
+    if (oldBackend && /\/programs\/search\/batch$/.test(url)) {
+      calls.push(opt)
+      opt.success({ statusCode: 404, data: { detail: 'Not Found' } })
+      return
+    }
     if (url.indexOf('/api/v1/queries') !== -1) {
       var creating = (opt.method || 'GET') === 'POST' && /\/api\/v1\/queries$/.test(url)
       querySeq += creating ? 1 : 0
@@ -80,6 +88,21 @@ async function main() {
   var results = api.getQuery(query.id)
   assert(results.done && results.items.every(function (row) { return row.hit }))
   assert.strictEqual(results.items[0].evidencePlatform, '真实测试平台')
+  // 旧后端没有批量接口（部署前或回滚后）：改回逐个检索并逐条保存结果，不能整批失败。
+  oldBackend = true
+  var before = calls.length
+  var oldQuery = await api.createQuery(['旧接口甲', '旧接口乙'])
+  api.advanceQuery(oldQuery.id)
+  for (var spin = 0; spin < 10; spin++) await drain()
+  var oldCalls = calls.slice(before).map(function (c) { return c.url })
+  assert.deepStrictEqual(oldCalls, ['/test-api/api/v1/programs/search/batch',
+    '/test-api/api/v1/programs/search', '/test-api/api/v1/programs/search'])
+  var oldResults = api.getQuery(oldQuery.id)
+  assert(oldResults.done && oldResults.items.every(function (row) { return row.hit }))
+  assert.deepStrictEqual(saved.filter(function (c) { return c.url.indexOf(oldQuery.id) >= 0 })
+    .map(function (c) { return [c.url.slice(-8), c.data.name, !!c.data.failed] }),
+    [['/results', '旧接口甲', false], ['/results', '旧接口乙', false]])
+  oldBackend = false
   state.setSession({ token: 'test-member-token', expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: 'member', tier: 'vip' } })
   var crossed = api.getQuery(query.id)
   assert(crossed && typeof crossed.then === 'function', 'another account must not read the in-memory job')

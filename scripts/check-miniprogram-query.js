@@ -64,27 +64,25 @@ async function main() {
   api.reset()
   state.setSession({ token: 'query-token', expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: 'q', tier: 'free' } })
 
-  // A lost callback retries only after the watchdog expires. Late callbacks must not win.
+  // A lost callback stops at the 60 s watchdog without an automatic resend. Late callbacks must not win.
   var page = await open(['不回片'])
   clock += 59000
   page.tick(); await drain()
   assert.strictEqual(pending.length, 1)
   assert(page.data.running && page.data.percent === 0)
-  for (var attempt = 0; attempt < 3; attempt++) {
-    clock += 60000
-    page.tick(); await drain()
-    assert.strictEqual(pending.length, Math.min(attempt + 2, 3))
-  }
+  clock += 1000
+  page.tick(); await drain()
+  assert.strictEqual(pending.length, 1, 'the watchdog must not resend by itself')
   assert(page.data.done && page.data.items[0].failed)
   assert.strictEqual(page.data.failBanner, '查询超时，请重试')
   assert.strictEqual(activeTimers(), 0)
   answer(pending[0], 'hit'); await drain()
   assert(api.getQuery(page.id).items[0].failed)
   page.retryAll(); page.retryAll(); await drain()
-  assert.strictEqual(pending.length, 4)
+  assert.strictEqual(pending.length, 2)
   page.onHide()
   assert.strictEqual(activeTimers(), 0)
-  answer(pending[3]); await drain()
+  answer(pending[1]); await drain()
   page.onShow()
   assert(page.data.done && page.data.items[0].missed)
   assert.strictEqual(activeTimers(), 0)

@@ -189,30 +189,74 @@ function view(job) {
     failBanner: network ? QueryGuard.networkText() : timedOut ? QueryGuard.timeoutText() : fails === rows.length ? '全部查询失败，请重试。' : '部分查询失败，请重试。',
     showRetryAll: done && fails > 0, itemRetry: true }
 }
+function postResult(job, name, failed) {
+  if (!job.id || knownQueries[job.id] !== state.userId()) return
+  var body = { name: name }
+  if (failed) body.failed = true
+  queryRequest('/api/v1/queries/' + encodeURIComponent(job.id) + '/results', body, 'POST').then(function () {}, function () {})
+}
 function finishFailure(job, batch, attempt, error) {
   if (batch.pending !== attempt) return
   batch.pending = null
   var sameSession = state.token() === attempt.token && !!attempt.token
-  if (sameSession && batch.attempts < MAX_ATTEMPTS &&
+  var timedOut = error.message === QueryGuard.timeoutText()
+  // The watchdog is terminal: a lost callback shows the timeout after 60 s, not after three rounds.
+  if (sameSession && !timedOut && batch.attempts < MAX_ATTEMPTS &&
       (!error.statusCode || error.statusCode >= 500 || error.statusCode === 429)) {
     sendBatch(job, batch)
     return
   }
   batch.finished = true
-  batch.items.forEach(function (item) {
+  var failed = batch.items.filter(function (item) { return !item.body })
+  failed.forEach(function (item) {
     item.error = error.message || '查询失败，请重试'
     item.timedOut = item.error === QueryGuard.timeoutText()
     item.network = item.error === QueryGuard.networkText()
   })
-  if (sameSession) {
-    queryRequest('/api/v1/queries/' + encodeURIComponent(job.id) + '/results/failed',
-      { names: batch.names }, 'POST').catch(function () {})
+  if (!sameSession || !failed.length) return
+  if (job.legacy) {
+    failed.forEach(function (item) { postResult(job, item.name, true) })
+    return
   }
+  queryRequest('/api/v1/queries/' + encodeURIComponent(job.id) + '/results/failed',
+    { names: failed.map(function (item) { return item.name }) }, 'POST').catch(function () {})
+}
+// A backend without the batch route (before the deploy, or after a rollback) still answers
+// the single-name search. Query one name at a time and save each result as the old client did.
+function sendLegacy(job, batch, attempt) {
+  job.legacy = true
+  var chain = Promise.resolve()
+  batch.items.forEach(function (item) {
+    chain = chain.then(function () {
+      if (batch.pending !== attempt || (item.body && !item.error)) return
+      attempt.sentAt = QueryGuard.now()
+      return Promise.resolve().then(function () { return http.searchProgram(item.name) }).then(function (body) {
+        if (batch.pending !== attempt) return
+        item.body = body
+        item.error = ''
+        item.network = false
+        item.timedOut = false
+        postResult(job, item.name, false)
+      }, function (error) {
+        if (batch.pending !== attempt) return
+        item.error = (error && error.message) || '查询失败，请重试'
+        item.network = item.error === QueryGuard.networkText()
+        item.timedOut = false
+        postResult(job, item.name, true)
+      })
+    })
+  })
+  chain.then(function () {
+    if (batch.pending !== attempt) return
+    batch.pending = null
+    batch.finished = true
+  })
 }
 function sendBatch(job, batch) {
   var attempt = { sentAt: QueryGuard.now(), token: state.token() }
   batch.pending = attempt
   batch.attempts++
+  if (job.legacy) { sendLegacy(job, batch, attempt); return }
   queryRequest('/api/v1/programs/search/batch', { names: batch.names, query_id: job.id }, 'POST')
     .then(function (rows) {
       if (batch.pending !== attempt) return
@@ -221,7 +265,13 @@ function sendBatch(job, batch) {
       results.forEach(function (body, index) { batch.items[index].body = body })
       batch.pending = null
       batch.finished = true
-    }).catch(function (error) { finishFailure(job, batch, attempt, error) })
+    }).catch(function (error) {
+      if (batch.pending === attempt && error && (error.statusCode === 404 || error.statusCode === 405)) {
+        sendLegacy(job, batch, attempt)
+        return
+      }
+      finishFailure(job, batch, attempt, error)
+    })
 }
 function advance(id) {
   var job = currentJobs()[id]
@@ -241,7 +291,8 @@ function retry(id, name) {
   var job = currentJobs()[id]
   if (!job) return null
   job.batches.forEach(function (batch) {
-    if (!batch.finished || !batch.items[0].error || (name && batch.names.indexOf(name) < 0)) return
+    if (!batch.finished || !batch.items.some(function (item) { return item.error }) ||
+        (name && batch.names.indexOf(name) < 0)) return
     batch.finished = false
     batch.attempts = 0
     batch.items.forEach(function (item) {

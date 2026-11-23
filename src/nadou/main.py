@@ -157,6 +157,8 @@ def create_app(
             return results
         except EmptyQuery:
             raise HTTPException(400, "name is required") from None
+        except UnknownUser:
+            raise HTTPException(status_code=404, detail="user not found") from None
         except QueryNotFound:
             raise HTTPException(404, "query not found") from None
         except QueryRejected as exc:
