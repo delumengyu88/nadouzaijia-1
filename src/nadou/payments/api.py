@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from nadou.auth import UserSessions
 from nadou.models import User
 from nadou.payments.service import PayError, PaymentService
+from nadou.payments.summary import membership_options, require_context_product
 from nadou.payments.xpay_api import register_virtual_orders
 from nadou.user_orders import UserOrders
 
@@ -23,6 +24,7 @@ class CreateOrderIn(BaseModel):
 
     tier: str | None = Field(default=None, max_length=32)
     amount: int | None = None
+    program_name: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class PaymentApi:
@@ -66,10 +68,18 @@ class PaymentApi:
         def list_tiers(
             response: Response,
             channel: str | None = None,
+            program_name: str | None = Query(default=None, min_length=1, max_length=200),
+            session: Session = Depends(get_session, scope="function"),
             user: User = Depends(payer),
             payments: PaymentService = Depends(service),
         ):
             response.headers["Cache-Control"] = "private, no-store"
+            if program_name is not None:
+                return {
+                    "tiers": membership_options(
+                        session, user, program_name, clock(), virtual=channel == "virtual"
+                    )
+                }
             return payments.list_tiers(user, virtual=channel == "virtual")
 
         @app.post("/api/v1/pay/orders")
@@ -79,6 +89,9 @@ class PaymentApi:
             session: Session = Depends(get_session, scope="function"),
             payments: PaymentService = Depends(service),
         ):
+            require_context_product(
+                session, user, payload.program_name, payload.tier, clock(), virtual=False
+            )
             # payload.amount is intentionally unused.
             return payments.create(session, user, payload.tier)
 

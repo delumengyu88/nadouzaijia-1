@@ -440,3 +440,46 @@ def test_live_one_yuan_discovery_and_authoritative_price(virtual_setup, session,
     assert sign_data["attach"] == tier and sign_data["productId"] == "official-product"
     stored = session.query(Order).one()
     assert stored.amount == 1 and stored.tier == "regular" and stored.amount_fen == 100
+
+
+def test_paid_vip_from_summary_opens_text_once_without_granting_media(
+    session, clock, tmp_path, monkeypatch, request
+):
+    from pydantic import SecretStr
+
+    from nadou.models import Entitlement
+    from nadou.payments import xpay
+    from nadou.summary_source import publish
+    from tests.test_single_summary import source
+
+    permit, w2, tasks, feedback = source(session, clock, tmp_path, monkeypatch)
+    publish(session, permit, w2, tasks, feedback)
+    session.commit()
+    client = request.getfixturevalue("virtual_setup")
+    cfg = get_settings()
+    monkeypatch.setattr(cfg, "wx_appid", "only-local-app")
+    monkeypatch.setattr(cfg, "wx_appsecret", SecretStr("only-local-secret"))
+    params = {"channel": "virtual", "program_name": permit.program}
+    options = client.get("/api/v1/pay/tiers", params=params).json()["tiers"]
+    assert [(row["id"], row["purchasable"]) for row in options] == [("membership_vip", True)]
+    order_input = {"tier": "membership_vip", "program_name": permit.program, "code": "isolated"}
+    response = client.post("/api/v1/xpay/orders", json=order_input)
+    assert response.status_code == 200 and response.json()["amount_fen"] == 59900
+    number = response.json()["order_number"]
+    monkeypatch.setattr(xpay, "query_order", lambda *args: payment(number))
+    monkeypatch.setattr(xpay, "provider_call", lambda *args: {})
+    for _ in range(2):
+        assert client.post(f"/api/v1/xpay/orders/{number}/sync").json()["granted"]
+    assert (
+        session.query(Entitlement).filter_by(user_id="test-default-free", kind="vip").count() == 1
+    )
+    assert client.get("/api/v1/pay/tiers", params=params).json()["tiers"] == []
+    assert client.post("/api/v1/xpay/orders", json=order_input).status_code == 409
+    result = client.get("/api/v1/programs/search", params={"name": permit.program}).json()
+    row = result["platform_groups"][0]["records"][0]
+    assert (
+        row["summary_only"]
+        and not row["can_download_report"]
+        and not row["can_download_screenshot"]
+    )
+    assert not (set(row) & {"hd_url", "thumbnail_url", "timestamps", "checked_at"})

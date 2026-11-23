@@ -98,7 +98,8 @@ class ProgramSearch:
         evidence_platforms: list[str] = []
         locked_records: list[LockedRecordOut] = []
         locked_ages: list[int] = []
-        summary_hidden = 0
+        hidden_summary_ages: list[int] = []
+        program_grants = self._grants_for(grants, canonical, "")
         any_old = False
         any_recent = False
         for age, record, task in kept:
@@ -109,8 +110,8 @@ class ProgramSearch:
                 any_old = True
             else:
                 any_recent = True
-            decision = EntitlementPolicy.decide(age, self._grants_for(grants, canonical, record.id))
             if record.id in summary_ids:
+                decision = EntitlementPolicy.decide(age, program_grants)
                 if not decision.locked and decision.reveal_fields:
                     open_records.append(
                         OpenRecordOut(
@@ -129,8 +130,9 @@ class ProgramSearch:
                         )
                     )
                 else:
-                    summary_hidden += 1
+                    hidden_summary_ages.append(age)
                 continue
+            decision = EntitlementPolicy.decide(age, self._grants_for(grants, canonical, record.id))
             presented = self._present(record, task, decision, user_id)
             if isinstance(presented, LockedRecordOut):
                 if decision.locked:
@@ -153,10 +155,11 @@ class ProgramSearch:
             outcome = "recent_only"
         else:
             outcome = self.empty_outcome()
-        summary = EntitlementPolicy.summarize_locked(
-            locked_ages,
-            self._grants_for(grants, canonical, ""),
-        )
+        summary = EntitlementPolicy.summarize_locked(locked_ages, program_grants)
+        summary_offers = EntitlementPolicy.summarize_locked(
+            hidden_summary_ages, program_grants
+        ).unlocks_by_product
+        summary_offers.pop(EntitlementPolicy.PRODUCT_SCREENSHOT, None)
         return SearchOut(
             program_name=canonical,
             outcome=outcome,
@@ -164,7 +167,8 @@ class ProgramSearch:
             unverified_source_count=unverified,
             locked_summary=self._summary_out(summary),
             summary_only_count=len(summary_ids) or None,
-            summary_hidden_count=summary_hidden if summary_ids else None,
+            summary_hidden_count=len(hidden_summary_ages) if summary_ids else None,
+            summary_unlocks_by_product=summary_offers if summary_ids else None,
             platform_groups=self._group_by_platform(open_records),
             locked_records=locked_records,
             evidence_platforms=evidence_platforms,
@@ -197,7 +201,7 @@ class ProgramSearch:
                 program_30 = True
             elif row.kind == "program_90" and row.program_name == program:
                 program_90 = True
-            elif row.kind == "screenshot" and row.record_id == record_id:
+            elif row.kind == "screenshot" and record_id and row.record_id == record_id:
                 screenshot = True
         return AccessGrants(
             vip=vip,

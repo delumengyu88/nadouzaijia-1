@@ -18,12 +18,14 @@ from nadou.payments import xpay, xpay_push
 from nadou.payments.catalog import LIVE_TEST, product_by_code, product_for_sale
 from nadou.payments.config import live_test_product_id, user_may_use_test_tier
 from nadou.payments.service import _view
+from nadou.payments.summary import require_context_product
 from nadou.user_orders import UserOrders
 
 
 class CreateVirtualOrder(BaseModel):
     tier: str = Field(min_length=1, max_length=32)
     code: str = Field(min_length=1, max_length=256, repr=False)
+    program_name: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 def virtual_row(session, number, user_id=None):
@@ -153,6 +155,9 @@ def register_virtual_orders(app: FastAPI, get_session, payer, clock, notifier, w
         user: User = Depends(payer),
         session: Session = Depends(get_session, scope="function"),
     ):
+        require_context_product(
+            session, user, payload.program_name, payload.tier, clock(), virtual=True
+        )
         gateway = xpay.configured()
         xpay_push.configured_key()
         test_allowed = user_may_use_test_tier(user.id)
