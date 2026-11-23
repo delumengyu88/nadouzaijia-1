@@ -15,15 +15,39 @@ function copyText(rec, key) {
   return String(rec[key])
 }
 
+// Accept only the authorized image fields of an unlocked response; never interpret storage locators.
+function imageUrl(value) {
+  if (typeof value !== 'string' || !/^https:\/\/[a-z0-9.-]+(?::[0-9]+)?\/[^\s\\#]+$/i.test(value)) return ''
+  return value
+}
 function safeUrl(value) {
-  if (!value) return undefined
-  var text = String(value)
-  if (text.indexOf('signed://derived/') !== 0) return undefined
-  return text
+  if (require('../config').mode === 'mock' && typeof value === 'string' && value.indexOf('signed://derived/') === 0) return value
+  return imageUrl(value)
+}
+
+function count(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0
+}
+
+// Visible summaries are already in records. Restricted summaries contribute only a count.
+function summaryHitLine(search) {
+  if (!search.summary_only_count) return ''
+  var normal = (search.records || []).filter(function (rec) { return !rec.summary_only }).length
+  var line = '命中 ' + (normal + search.summary_only_count) + ' 条'
+  return search.platform_count > 0 ? line + ' · 涉及 ' + search.platform_count + ' 个平台' : line
 }
 
 function sanitizeSearch(body) {
   var src = body || {}
+  var unresolved = src.outcome === 'unverified' || (src.outcome === 'miss' && src.unverified_source_count > 0)
+  if (unresolved) {
+    return {
+      program_name: String(src.program_name || ''), outcome: 'unverified',
+      platform_count: 0, unverified_source_count: Number(src.unverified_source_count) || 0,
+      records: [], evidence_platforms: [], evidence_program_name: '',
+      locked_summary: emptySummary(), locked_window: { count: 0, start: '', end: '' }, example: false
+    }
+  }
   var records = []
   var list = src.records || []
   if (!src.records) {
@@ -43,13 +67,23 @@ function sanitizeSearch(body) {
       })
       return
     }
+    if (rec.summary_only === true || rec.access === 'summary') {
+      var item = { record_id: String(rec.record_id || ''), locked: false, access: 'summary', summary_only: true,
+        can_download_report: false, can_download_screenshot: false }
+      if (typeof rec.platform === 'string' && rec.platform) item.platform = rec.platform
+      if (typeof rec.network_type === 'string' && rec.network_type) item.network_type = rec.network_type
+      if (typeof rec.checked_on === 'string' && DATE.test(rec.checked_on)) item.checked_on = rec.checked_on
+      if (Number.isSafeInteger(rec.frame_count) && rec.frame_count >= 0) item.frame_count = rec.frame_count
+      records.push(item)
+      return
+    }
     var open = {
       record_id: String(rec.record_id || ''),
-      age_bucket: String(rec.age_bucket || 'ge_180'),
+      age_bucket: String(rec.age_bucket || 'unknown'),
       locked: false,
-      access: rec.access || 'lowres',
-      can_download_report: !!rec.can_download_report,
-      can_download_screenshot: !!rec.can_download_screenshot
+      access: rec.access === 'full' ? 'full' : 'lowres',
+      can_download_report: rec.can_download_report === true,
+      can_download_screenshot: rec.access === 'full' && rec.can_download_screenshot === true
     }
     var category = copyText(rec, 'category')
     var subtype = copyText(rec, 'platform_subtype')
@@ -59,7 +93,7 @@ function sanitizeSearch(body) {
     var network = copyText(rec, 'network_type')
     var checked = copyText(rec, 'checked_at')
     var thumb = safeUrl(rec.thumbnail_url)
-    var hd = safeUrl(rec.hd_url)
+    var hd = open.access === 'full' ? safeUrl(rec.hd_url) : ''
     if (platform) open.platform = platform
     if (network) open.network_type = network
     if (typeof rec.frame_count === 'number') open.frame_count = rec.frame_count
@@ -84,6 +118,8 @@ function sanitizeSearch(body) {
   return {
     program_name: String(src.program_name || ''),
     outcome: src.outcome || 'miss',
+    summary_only_count: count(src.summary_only_count),
+    summary_hidden_count: Math.min(count(src.summary_only_count), count(src.summary_hidden_count)),
     platform_count: typeof src.platform_count === 'number' ? src.platform_count : 0,
     unverified_source_count: typeof src.unverified_source_count === 'number' ? src.unverified_source_count : 0,
     locked_summary: {
@@ -108,6 +144,8 @@ function sanitizeSearch(body) {
 }
 
 module.exports = {
+  imageUrl: imageUrl,
+  summaryHitLine: summaryHitLine,
   emptySummary: emptySummary,
   sanitizeSearch: sanitizeSearch
 }

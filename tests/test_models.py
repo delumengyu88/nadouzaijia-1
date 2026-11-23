@@ -19,6 +19,7 @@ def test_schema_has_no_zip_or_download_tables():
         "evidence_requests",
         "evidence_notes",
         "orders",
+        "virtual_orders",
         "order_issuances",
         "index_runs",
         "index_run_locks",

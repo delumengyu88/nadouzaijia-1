@@ -1,6 +1,7 @@
 var assert = require('assert')
 var config = require('../miniprogram/config')
 config.calibrating = false
+config.mode = 'hybrid' // Exercise the development checkout in trialMode.
 var trial = require('../miniprogram/utils/trial')
 assert.strictEqual(config.trialMode, true)
 var modals = 0
@@ -18,6 +19,16 @@ Object.keys(pages).forEach(function (name) {
   global.Page = function (p) { def = p }
   require('../miniprogram/pages/' + name + '/index')
   var page = Object.assign({}, def, { data: {}, setData: function (v) { Object.assign(this.data, v) } })
+  if (name === 'member') {
+    page.onShow()
+    page.pick({ currentTarget: { dataset: { id: 'membership_vip' } } })
+    assert.strictEqual(page.data.showPay, true)
+    assert.strictEqual(page.data.payLabel, '确认开通')
+    assert.strictEqual(page.data.selected, 'membership_vip')
+    // Hybrid mode does not switch the demo account, so onShow stays a guest.
+    // The payment guard is what a signed-in confirm must hit.
+    page.setData({ guest: false })
+  }
   pages[name].forEach(function (handler) { page[handler]() })
   if (name === 'pay') { page.onLoad({ product: 'membership_vip' }); assert.strictEqual(page.data.phase, 'trial') }
 })

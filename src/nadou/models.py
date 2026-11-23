@@ -4,6 +4,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -144,6 +145,7 @@ class Task(Base):
     platform_subtype: Mapped[str | None] = mapped_column(String(32))
     source_unverified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    approved_hitlist_sha256: Mapped[str | None] = mapped_column(String(64))
 
 
 class ReviewProgramTitle(Base):
@@ -174,6 +176,8 @@ class IndexRecord(Base):
     program_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     program_name_raw: Mapped[str] = mapped_column(String(200), nullable=False)
     hit_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    summary_grant: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    hitlist_sha256: Mapped[str | None] = mapped_column(String(64))
     category: Mapped[str | None] = mapped_column(String(64))
     frame_count: Mapped[int] = mapped_column(Integer, nullable=False)
     timestamps: Mapped[list[str]] = mapped_column(JSON, nullable=False)
@@ -286,6 +290,7 @@ class EvidenceRequest(Base):
     platform_label: Mapped[str | None] = mapped_column(String(200))
     record_ref: Mapped[str | None] = mapped_column(String(64))
     contact_name: Mapped[str | None] = mapped_column(String(64))
+    contact_phone: Mapped[str | None] = mapped_column(String(32))
     organization: Mapped[str | None] = mapped_column(String(200))
     requirement: Mapped[str | None] = mapped_column(String(500))
     notes: Mapped[list["EvidenceNote"]] = relationship(back_populates="request")
@@ -317,6 +322,17 @@ class Order(Base):
         CheckConstraint("tier IN ('regular', 'vip')", name="ck_orders_tier"),
         CheckConstraint("duration_days > 0", name="ck_orders_duration"),
         CheckConstraint("amount >= 0", name="ck_orders_amount"),
+        CheckConstraint(
+            "amount_fen IS NULL OR amount_fen >= 0",
+            name="ck_orders_amount_fen",
+        ),
+        CheckConstraint(
+            "product IS NULL OR product IN "
+            "('membership_regular', 'membership_vip', 'membership_test', 'membership_dev', "
+            "'membership_test_live', 'membership_diamond')",
+            name="ck_orders_product",
+        ),
+        UniqueConstraint("wechat_transaction_id", name="uq_orders_wechat_transaction_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -325,6 +341,7 @@ class Order(Base):
     user: Mapped[User] = relationship()
     tier: Mapped[str] = mapped_column(String(16), nullable=False)
     duration_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Yuan shown in the workbench. WeChat Pay compares amount_fen (分), not this column.
     amount: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
@@ -332,6 +349,22 @@ class Order(Base):
     paid_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
     refunded_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
     refund_reason: Mapped[str | None] = mapped_column(String(500))
+    product: Mapped[str | None] = mapped_column(String(32))
+    amount_fen: Mapped[int | None] = mapped_column(Integer)
+    prepay_id: Mapped[str | None] = mapped_column(String(64))
+    wechat_transaction_id: Mapped[str | None] = mapped_column(String(64))
+
+
+class VirtualOrder(Base):
+    """Immutable catalog/environment snapshot for the WeChat virtual channel."""
+
+    __tablename__ = "virtual_orders"
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), primary_key=True)
+    env: Mapped[int] = mapped_column(Integer, nullable=False)
+    product_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    delivery_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    refund_no: Mapped[str | None] = mapped_column(String(64), unique=True)
+    wx_refund_no: Mapped[str | None] = mapped_column(String(64), unique=True)
 
 
 class OrderIssuance(Base):
@@ -360,12 +393,25 @@ class OrderIssuance(Base):
 
 
 class MemberQuery(Base):
-    """One member lookup. The id is the 查询编号 on the exported workbook."""
+    """One member lookup. The id is the 查询编号 on the exported workbook.
+
+    ``user_id`` stays nullable so rows written before this column existed
+    still load. A row with no owner cannot be listed, opened, or exported.
+    ``seen_at`` is when that user opened a finished query.
+    ``ix_member_queries_user_id_created_at`` supports the scheduled retention job.
+    """
 
     __tablename__ = "member_queries"
+    __table_args__ = (Index("ix_member_queries_user_id_created_at", "user_id", "created_at"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("users.id", name="fk_member_queries_user_id"),
+    )
+    seen_at: Mapped[datetime | None] = mapped_column(AwareDateTime)
+    user: Mapped[User | None] = relationship()
     programs: Mapped[list["QueryProgram"]] = relationship(
         back_populates="query",
         order_by="QueryProgram.position",
@@ -379,7 +425,7 @@ class QueryProgram(Base):
     __table_args__ = (
         UniqueConstraint("query_id", "position", name="uq_query_program_position"),
         CheckConstraint(
-            "resolution IN ('exact', 'alias', 'manual', 'miss', 'pending', 'failed')",
+            "resolution IN ('exact', 'alias', 'manual', 'miss', 'pending', 'failed', 'unverified')",
             name="ck_query_program_resolution",
         ),
     )

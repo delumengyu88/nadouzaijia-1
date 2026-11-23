@@ -16,7 +16,7 @@ class DemoCommand:
         from nadou.text import RecordAge
 
         settings = get_settings()
-        if not settings.allow_dev_seed:
+        if not settings.allow_dev_seed or settings.app_env not in {"local", "test"}:
             print("Refusing to seed demo data. Set NADOU_ALLOW_DEV_SEED=1 for a local database.")
             return 2
         command.upgrade(Config("alembic.ini"), "head")
@@ -28,10 +28,10 @@ class DemoCommand:
         session = database.session()
         now = datetime.now(RecordAge.TZ)
         try:
-            if settings.data_source == "export":
+            if not settings.demo_data:
                 DemoData.ensure_admin(session, now)
                 session.commit()
-                print("export mode: demo business rows were not loaded")
+                print("Demo business rows were not loaded for this data source")
                 return 0
             if DemoData.already_loaded(session):
                 print("demo data already present")
@@ -52,6 +52,18 @@ class NadouCommand:
     @staticmethod
     def main(argv: list[str] | None = None) -> None:
         args = list(sys.argv[1:] if argv is None else argv)
+        if args[:1] == ["query-retention"]:
+            from nadou.query_retention import run
+
+            raise SystemExit(run(args[1:]))
+        if args[:1] == ["publish-reviewed-summary"]:
+            from nadou.summary_source import run
+
+            raise SystemExit(run(args[1:]))
+        if args[:1] == ["import-approved-hitlist"]:
+            from nadou.hitlist import import_approved
+
+            raise SystemExit(import_approved(args[1:]))
         if args == ["index-run"]:
             raise SystemExit(IndexRunCommand.run())
         if args == ["seed-demo"]:
@@ -62,7 +74,10 @@ class NadouCommand:
             raise SystemExit(CreateAdminCommand.run(args[1:]))
         raise SystemExit(
             "usage: python -m nadou index-run | python -m nadou seed-demo | "
-            "python -m nadou export-review | python -m nadou create-admin USERNAME"
+            "python -m nadou export-review | python -m nadou query-retention [--apply] [--daily] | "
+            "python -m nadou import-approved-hitlist --manifest CSV --workbook XLSX --task-id ID "
+            "| "
+            "python -m nadou create-admin USERNAME"
         )
 
 

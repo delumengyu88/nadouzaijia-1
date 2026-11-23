@@ -1,3 +1,4 @@
+<view hidden="{{showSplash}}" aria-hidden="{{showSplash}}">
 <view class="nav" style="padding-top: {{statusBarHeight}}px;">
   <view class="nav-bar">
     <view class="nav-back" bindtap="back">‹</view>
@@ -6,16 +7,31 @@
 </view>
 <view style="height: {{navHeight}}px;"></view>
 <view class="body">
-  <view class="center-box" wx:if="{{empty}}">
-    <view class="center-title">暂无取证申请</view>
+  <block wx:if="{{loading}}">
+    <view class="sk"></view>
+    <view class="sk"></view>
+    <view class="center-sub">加载中</view>
+  </block>
+  <view class="center-box" wx:elif="{{loadError}}">
+    <view class="center-title">网络异常，请重试</view>
+    <view class="btn slim" bindtap="retry">重试</view>
   </view>
-  <view class="row" wx:for="{{rows}}" wx:key="id" data-id="{{item.id}}" bindtap="open">
-    <view class="row-main">
-      <view class="row-title">{{item.name}}</view>
-      <view class="row-sub">{{item.line}}</view>
+  <view class="center-box" wx:elif="{{empty}}">
+    <view class="center-title">还没有取证工单</view>
+    <view class="btn slim" bindtap="create">提交申请</view>
+  </view>
+  <block wx:else>
+    <view class="row" wx:for="{{rows}}" wx:key="id" data-id="{{item.id}}" bindtap="open">
+      <view class="row-main">
+        <view class="row-title name-ellipsis">{{item.name}}</view>
+        <view class="row-sub" wx:if="{{item.platform}}">{{item.platform}}</view>
+        <view class="row-sub">{{item.line}}</view>
+      </view>
+      <text class="tag {{item.badgeCls}}">{{item.badge}}</text>
+      <text class="chev">›</text>
     </view>
-    <text class="tag {{item.badgeCls}}">{{item.badge}}</text>
-    <text class="chev">›</text>
-  </view>
-  <view class="btn block" bindtap="create">新建申请</view>
+    <view class="btn block" bindtap="create">新建申请</view>
+  </block>
 </view>
+</view>
+<include src="../../components/launch-poster/view.wxml" />

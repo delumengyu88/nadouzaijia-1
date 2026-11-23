@@ -1,3 +1,4 @@
+<view hidden="{{showSplash}}" aria-hidden="{{showSplash}}">
 <view class="nav" style="padding-top: {{statusBarHeight}}px;">
   <view class="nav-bar">
     <view class="nav-back" bindtap="back">‹</view>
@@ -6,14 +7,60 @@
 </view>
 <view style="height: {{navHeight}}px;"></view>
 <view class="body">
-  <view class="center-box" wx:if="{{empty}}">
+  <block wx:if="{{loading}}">
+    <view class="row">
+      <view class="row-main">
+        <view class="order-sk-line"></view>
+        <view class="order-sk-line short"></view>
+      </view>
+    </view>
+    <view class="row">
+      <view class="row-main">
+        <view class="order-sk-line"></view>
+        <view class="order-sk-line short"></view>
+      </view>
+    </view>
+    <view class="row">
+      <view class="row-main">
+        <view class="order-sk-line"></view>
+        <view class="order-sk-line short"></view>
+      </view>
+    </view>
+  </block>
+  <view class="center-box" wx:elif="{{failed}}">
+    <view class="center-title">网络异常，请重试</view>
+    <button class="btn slim" bindtap="retry">重试</button>
+  </view>
+  <view class="center-box" wx:elif="{{empty && live}}">
+    <view class="center-title">还没有订单</view>
+    <button class="btn slim" bindtap="member">去开通会员</button>
+  </view>
+  <view class="center-box" wx:elif="{{empty}}">
     <view class="center-title">暂无订单</view>
   </view>
-  <view class="row" wx:for="{{rows}}" wx:key="orderNo" data-id="{{item.orderNo}}" bindtap="open">
-    <view class="row-main">
-      <view class="row-title">{{item.title}}</view>
-      <view class="row-sub">{{item.line}}</view>
+  <block wx:else>
+    <view class="row" wx:for="{{rows}}" wx:key="orderNo" data-id="{{item.orderNo}}" bindtap="open">
+      <view class="row-main">
+        <view class="order-head">
+          <view class="row-title order-title">{{item.title}}</view>
+          <text class="order-test" wx:if="{{item.isTest}}">测试</text>
+        </view>
+        <view class="row-sub">{{item.line}}</view>
+      </view>
+      <view class="order-side" wx:if="{{item.statusText}}">
+        <text class="order-status {{item.statusKind}}">{{item.statusText}}</text>
+        <button wx:if="{{item.service}}" class="order-service" open-type="contact" session-from="order:{{item.orderNo}}" catchtap="markNativeTap">联系客服</button>
+      </view>
+      <text class="chev" wx:if="{{!live}}">›</text>
     </view>
-    <text class="chev">›</text>
+  </block>
+</view>
+<view class="mask" wx:if="{{needLogin}}">
+  <view class="dialog">
+    <view class="dialog-title">暂时无法读取账户信息</view>
+    <button class="btn" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">重试</button>
+    <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
   </view>
 </view>
+</view>
+<include src="../../components/launch-poster/view.wxml" />

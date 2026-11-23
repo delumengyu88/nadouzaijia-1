@@ -1,65 +1,114 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
+var config = require('../../config')
+var httpApi = require('../../api/http')
 
-Page({
-  data: { showBrand: true, title: '', examples: [], taps: 0, showSplash: false, seconds: 5 },
+var seenAnnounce = Object.create(null)
+var MOCK_ANNOUNCE = {
+  title: '公告',
+  body: '每月 2 日和 16 日更新片单索引。免费用户可看 ≥180 天低清记录。',
+  buttonText: '我知道了'
+}
+
+function mockMode() {
+  return (config.mode || 'mock') === 'mock'
+}
+
+function announceKey(item) {
+  return String(item.id || '') + '\n' + String(item.title || '') + '\n' + String(item.body || '')
+}
+
+Page(require('../../api/splash').page({
+  data: { showBrand: true, title: '', examples: [], taps: 0, showPlatformTotal: false, announcement: null },
   onShow: function () {
+    require('../../utils/login').onShow(this)
+    if (api.entryFailed && api.accountKind() === 'guest') this.onIdentityError()
     this.paint()
-    if (!api.splashSeen()) this.armSplash()
-  },
-  onUnload: function () {
-    if (this.splashTimer) clearInterval(this.splashTimer)
-    if (this.splashLoadTimer) clearTimeout(this.splashLoadTimer)
+    if (!mockMode()) this.loadHome()
   },
   paint: function () {
     var data = nav.layout('home', this.query)
     var home = api.homeState()
+    data.identifying = !!(typeof getApp === 'function' && getApp().identifying)
     data.showBrand = true
     data.title = ''
     data.showBack = false
-    data.showSplash = !api.splashSeen()
-    data.seconds = this.data.seconds || 5
     Object.keys(home).forEach(function (key) { data[key] = home[key] })
+    if (mockMode()) {
+      data.showPlatformTotal = typeof home.platformTotal === 'number' && home.platformTotal > 0
+      data.announcement = home.showAnnounce ? MOCK_ANNOUNCE : null
+    } else {
+      var pub = this._public
+      data.examplesError = !!(pub && pub.examplesError)
+      data.announcement = null
+      data.showAnnounce = false
+      if (!pub) {
+        data.examples = []
+        data.showPlatformTotal = false
+        data.platformTotal = ''
+      } else {
+        data.examples = pub.examples || []
+        data.showPlatformTotal = !!pub.showPlatformTotal
+        data.platformTotal = pub.showPlatformTotal ? pub.platformTotal : ''
+        var first = (pub.announcements || [])[0]
+        if (first && !seenAnnounce[announceKey(first)]) {
+          data.announcement = first
+          data.showAnnounce = true
+        }
+      }
+    }
     this.setData(data)
     nav.selectTab(this, 0)
   },
-  armSplash: function () {
-    if (this.splashTimer) return
+  loadHome: function () {
     var self = this
-    var sys = wx.getSystemInfoSync()
-    var menu = wx.getMenuButtonBoundingClientRect && wx.getMenuButtonBoundingClientRect()
-    var width = sys.windowWidth || 375
-    this.setData({ showSplash: true, seconds: 5, splashFailed: false,
-      splashSkipTop: menu && menu.top ? menu.top : (sys.statusBarHeight || 20) + 8,
-      splashSkipRight: menu && menu.left ? width - menu.left + 8 : 102 })
-    this.splashLoadTimer = setTimeout(function () { self.splashFailed() }, 1000)
-    this.splashTimer = setInterval(function () {
-      var next = self.data.seconds - 1
-      if (next <= 0) {
-        self.finishSplash()
+    var seq = (this._homeSeq || 0) + 1
+    this._homeSeq = seq
+    httpApi.homeContent().then(function (content) {
+      if (self._homeSeq !== seq) return
+      var cards = content.examples || []
+      if (!cards.length) {
+        self._public = content
+        self.paint()
         return
       }
-      self.setData({ seconds: next })
-    }, 1000)
+      var failed = false
+      var factsOf = require('../../utils/present').exampleFacts
+      Promise.all(cards.map(function (card) {
+        return httpApi.exampleReport(card.name).then(function (report) {
+          var facts = factsOf(report && report.records)
+          if (!facts.hit) return null
+          return { name: card.name, line: facts.line, sub: facts.sub, image: facts.image, illustrated: false }
+        }, function () { failed = true; return null })
+      })).then(function (ready) {
+        if (self._homeSeq !== seq) return
+        content.examplesError = failed
+        content.examples = ready.filter(Boolean)
+        self._public = content
+        self.paint()
+      })
+    }, function () {
+      if (self._homeSeq !== seq) return
+      self._public = { examplesError: true, examples: [], announcements: [], showPlatformTotal: false, platformTotal: null }
+      self.paint()
+    })
   },
-  splashLoaded: function () {
-    if (this.splashLoadTimer) clearTimeout(this.splashLoadTimer)
-    this.splashLoadTimer = 0
-  },
-  splashFailed: function () {
-    this.setData({ splashFailed: true })
-    this.finishSplash()
-  },
-  finishSplash: function () {
-    if (this.splashTimer) clearInterval(this.splashTimer)
-    if (this.splashLoadTimer) clearTimeout(this.splashLoadTimer)
-    this.splashTimer = 0
-    api.markSplashSeen()
-    this.paint()
+  exampleImageFailed: function (event) {
+    var data = event.currentTarget.dataset
+    var cards = this._public && this._public.examples
+    var card = cards && cards.find(function (item) { return item.name === data.name && item.image === data.src })
+    if (!card) return
+    card.image = ''
+    this.setData({ examples: cards })
   },
   closeAnnounce: function () {
-    api.markAnnounceSeen()
-    this.onShow()
+    if (mockMode()) {
+      api.markAnnounceSeen()
+      this.onShow()
+      return
+    }
+    if (this.data.announcement) seenAnnounce[announceKey(this.data.announcement)] = true
+    this.setData({ announcement: null, showAnnounce: false })
   },
   openDone: function () {
     var id = this.data.doneQueryId
@@ -83,19 +132,17 @@ Page({
       wx.showToast({ title: '请先输入节目名', icon: 'none' })
       return
     }
-    if (!api.profile || api.accountKind() === 'guest') {
-      this.setData({ needLogin: true })
-      return
-    }
     api.setDraft(text)
     wx.navigateTo({ url: '/pages/input/index?auto=1' })
   },
+  onIdentityReady: function () { this.setData({ loginError: '' }); this.paint() },
+  onIdentityError: function () { this.setData({ identifying: false, loginError: '网络异常，可重试' }) },
   login: function () {
     return require('../../utils/login')(this, this.onShow)
   },
   upload: function () {
     var self = this
-    wx.chooseMessageFile({
+    require('../../api/splash').callNative(wx.chooseMessageFile, {
       count: 1,
       type: 'file',
       extension: ['xlsx'],
@@ -115,6 +162,7 @@ Page({
     wx.navigateTo({ url: '/pages/report/index?example=1&name=' + encodeURIComponent(name) })
   },
   tapExamples: function () {
+    if (!mockMode()) return
     var n = (this.data.taps || 0) + 1
     if (n >= 5) {
       api.toggleExamples()
@@ -124,4 +172,4 @@ Page({
     }
     this.setData({ taps: n })
   }
-})
+}))

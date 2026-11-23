@@ -1,3 +1,4 @@
+<view hidden="{{showSplash}}" aria-hidden="{{showSplash}}">
 <view class="nav" style="padding-top: {{statusBarHeight}}px;">
   <view class="nav-bar">
     <view class="nav-back" bindtap="back">‹</view>
@@ -6,23 +7,29 @@
 </view>
 <view style="height: {{navHeight}}px;"></view>
 <view class="body" wx:if="{{loading}}"><view class="center-box"><view class="center-title">加载中</view></view></view>
+<view class="body" wx:elif="{{failed}}"><view class="center-box"><view class="center-title">截图暂时无法加载</view><view class="btn slim" bindtap="read">重试</view></view></view>
 <view class="body" wx:elif="{{missing}}"><view class="center-box"><view class="center-title">无记录</view></view></view>
 <view class="body" wx:else>
-  <view class="thumb shot {{low ? 'low' : ''}}">
-    <image wx:if="{{image}}" src="{{image}}" mode="aspectFit" style="width:100%;height:100%;" />
+  <view class="thumb shot {{low ? 'low' : ''}} {{plainShot ? 'shot-plain' : ''}}">
+    <image wx:if="{{image}}" src="{{image}}" data-src="{{image}}" binderror="imageFailed" mode="aspectFit" style="width:100%;height:100%;" />
     <block wx:elif="{{mock}}"><view class="moon"></view><view class="hill"></view></block>
     <text wx:else>截图暂不可用</text>
-    <text class="thumb-badge">{{low ? '低清' : '高清'}}</text>
-    <text class="thumb-wm">那豆在架</text>
-    <text class="thumb-time">{{time}}</text>
+    <block wx:if="{{!plainShot}}">
+      <text wx:if="{{quality}}" class="thumb-badge">{{quality}}</text>
+      <text class="thumb-wm">那豆在架</text>
+      <text class="thumb-time">{{time}}</text>
+    </block>
   </view>
   <view class="pad" style="margin-top:24rpx;">
     <view class="row-title {{unknown ? 'unknown' : ''}}" style="{{unknown ? 'color:#9aa3af;' : ''}}">{{platform}}</view>
     <view class="sub" wx:if="{{category}}">{{category}}</view>
-    <view class="sub">排查时间 {{date}}</view>
+    <view class="sub" wx:if="{{date}}">排查时间 {{date}}</view>
   </view>
-  <view class="warn-box" wx:if="{{low}}">当前为普通分辨率低清水印图，不可放大到高清。</view>
-  <view class="center-sub" wx:if="{{programOnly}}">单节目权益可查看高清，不提供下载。</view>
-  <view class="btn slim" wx:if="{{canSave}}" bindtap="save">下载到相册</view>
-  <view class="btn slim" wx:if="{{low}}" bindtap="upgrade">开通会员看高清</view>
+  <view class="warn-box" wx:if="{{!plainShot && low}}">当前为低清水印图，开通会员可看高清</view>
+  <view class="center-sub" wx:if="{{!plainShot && programOnly}}">单节目权益可查看高清，不提供下载。</view>
+  <view class="btn slim" wx:if="{{downloadEntry}}" bindtap="save">下载到相册</view>
+  <view class="btn reason" wx:if="{{!plainShot && blockedReason}}" bindtap="upgrade">{{blockedReason}}</view>
 </view>
+</view>
+<include src="../../components/launch-poster/view.wxml" />
+<privacy-popup />

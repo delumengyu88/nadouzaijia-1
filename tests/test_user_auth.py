@@ -146,6 +146,11 @@ def test_missing_configuration_fails_closed(anonymous, monkeypatch):
     [
         ("/api/v1/programs/search?name=测试节目", "GET", None),
         ("/api/v1/queries/any/export", "GET", None),
+        ("/api/v1/queries", "GET", None),
+        ("/api/v1/queries", "POST", {"name": "测试节目"}),
+        ("/api/v1/queries/any", "GET", None),
+        ("/api/v1/queries/any/results", "POST", {"name": "测试节目"}),
+        ("/api/v1/queries/any/seen", "POST", None),
         ("/api/v1/invite-codes/redeem", "POST", {"code": "A8K3N2P7"}),
         ("/api/v1/auth/me", "GET", None),
     ],
@@ -243,3 +248,12 @@ def test_profile_reports_current_server_memberships(anonymous, session, clock, m
 def test_staff_token_cannot_authenticate_user_routes(workbench):
     response = workbench.client.get("/api/v1/auth/me", headers=bearer(workbench.admin_token))
     assert response.status_code == 401
+
+
+def test_missing_wechat_login_credentials_return_chinese_message(anonymous, monkeypatch):
+    from pydantic import SecretStr
+
+    monkeypatch.setattr(get_settings(), "wx_appsecret", SecretStr(""))
+    response = login(anonymous)
+    assert response.status_code == 503
+    assert response.json()["detail"] == "微信登录未配置"

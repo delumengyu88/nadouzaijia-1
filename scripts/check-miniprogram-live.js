@@ -1,19 +1,43 @@
 var assert = require('assert')
 var config = require('../miniprogram/config')
 config.calibrating = false
-assert.strictEqual(config.mode, 'hybrid')
-assert.strictEqual(config.apiBase, '')
+assert.strictEqual(config.mode, 'live')
+// Exercise the explicitly selected development hybrid configuration.
+config.mode = 'hybrid'
+assert.strictEqual(config.apiBase, 'https://nadou.youroem.cn')
 config.apiBase = '/test-api'
 var calls = []
 var nextError = false
+var querySeq = 0
 var withGenerated = false
+var pendingVerification = false
+var summaryReply = null
 var store = {}
 global.wx = {
   getStorageSync: function (k) { return store[k] }, setStorageSync: function (k, v) { store[k] = v },
   getSystemInfoSync: function () { return { statusBarHeight: 20 } },
   request: function (opt) {
+    var url = opt.url || ''
+    if (url.indexOf('/api/v1/queries') !== -1) {
+      var creating = (opt.method || 'GET') === 'POST' && /\/api\/v1\/queries$/.test(url)
+      querySeq += creating ? 1 : 0
+      var id = creating ? 'live-query-' + querySeq : 'live-query'
+      var found = url.match(/\/api\/v1\/queries\/([^/?]+)/)
+      if (found) id = decodeURIComponent(found[1])
+      opt.success({ statusCode: creating ? 201 : 200, data: {
+        id: id, queued: true, running: false, done: false, head: '', percent: 0, items: [],
+        networkError: null, showNetworkRetry: null, failBanner: null, seen_at: null
+      } })
+      return
+    }
     calls.push(opt)
     if (nextError) { nextError = false; opt.fail(); return }
+    if (summaryReply) { opt.success({ statusCode: 200, data: summaryReply }); return }
+    if (pendingVerification) {
+      opt.success({ statusCode: 200, data: { program_name: opt.data.name, outcome: 'unverified',
+        platform_groups: [], locked_records: [], unverified_source_count: 1 } })
+      return
+    }
     if (withGenerated) {
       // Server shape after generated dates: 其他平台 group arrives first here on purpose,
       // the generated-date row cannot be exported, and evidence_platforms omits it.
@@ -46,7 +70,8 @@ async function main() {
   api.reset(); state.setSession({ token: 'test-free-token', expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: 'free', tier: 'free' } })
   assert.strictEqual(api.isLive, true)
   assert.strictEqual(api.listEvidence().length, 0)
-  var query = api.createQuery(['真实测试片', '失败测试片'])
+  var query = await api.createQuery(['真实测试片', '失败测试片'])
+  assert(query.ok)
   api.advanceQuery(query.id); await drain()
   assert.strictEqual(calls[0].url, '/test-api/api/v1/programs/search')
   assert.strictEqual(calls[0].header.Authorization, 'Bearer test-free-token')
@@ -62,7 +87,36 @@ async function main() {
   api.retryItem(query.id, '失败测试片'); await drain()
   assert(api.getQuery(query.id).items[1].hit)
   state.setSession({ token: 'test-member-token', expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: 'member', tier: 'vip' } })
-  assert.strictEqual(api.getQuery(query.id), null)
+  var crossed = api.getQuery(query.id)
+  assert(crossed && typeof crossed.then === 'function', 'another account must not read the in-memory job')
+  var shape = require('../miniprogram/api/shape')
+  var beijingTime = require('../miniprogram/utils/date').beijingTime
+  assert.strictEqual(beijingTime('2026-11-20T17:15:10Z'), '2026-11-21 01:15')
+  assert.strictEqual(beijingTime('2026-11-21T01:15:10+08:00'), '2026-11-21 01:15')
+  assert.strictEqual(beijingTime(null), '')
+  assert.strictEqual(beijingTime('2026-11-21'), '2026-11-21')
+  var source = {
+    outcome: 'hit', program_name: '真实测试片', records: [
+      { record_id: 'xh1', platform: '实际平台', access: 'lowres', hd_url: 'https://img.invalid/full', thumbnail_url: 'https://img.invalid/low' },
+      { record_id: 'xh2', access: 'full', thumbnail_url: 'signed://derived/unusable', hd_url: 'https://img.invalid/HD' },
+      { record_id: 'xh3', access: 'full', original_url: 'https://img.invalid/original', thumbnail_url: 'http://img.invalid/unsafe', can_download_report: 'false', can_download_screenshot: 'false' },
+      { record_id: 'closed', locked: true, hd_url: 'https://img.invalid/private' }
+    ]
+  }
+  var clean = shape.sanitizeSearch(source)
+  assert.strictEqual(clean.records[0].thumbnail_url, source.records[0].thumbnail_url)
+  assert.strictEqual(clean.records[0].hd_url, undefined)
+  assert.strictEqual(clean.records[1].hd_url, source.records[1].hd_url)
+  assert.strictEqual(clean.records[1].thumbnail_url, undefined)
+  assert.strictEqual(clean.records[2].thumbnail_url, undefined)
+  assert.strictEqual(clean.records[2].can_download_screenshot, false)
+  assert.strictEqual(clean.records[2].can_download_report, false)
+  assert.strictEqual(clean.records[2].age_bucket, 'unknown')
+  assert.strictEqual(clean.records[3].hd_url, undefined)
+  var pendingOld = shape.sanitizeSearch(Object.assign({}, source, { outcome: 'miss', unverified_source_count: 1 }))
+  assert.strictEqual(pendingOld.outcome, 'unverified')
+  assert.deepStrictEqual(pendingOld.records, [])
+  assert.deepStrictEqual(pendingOld.evidence_platforms, [])
   var body = await api.searchProgram('真实测试片')
   assert.strictEqual(calls[calls.length - 1].header.Authorization, 'Bearer test-member-token')
   assert.strictEqual(body.records[1].platform, undefined)
@@ -91,9 +145,10 @@ async function main() {
   wx.env = { USER_DATA_PATH: '/tmp' }
   wx.openDocument = function (opt) { opened.push(opt) }
   wx.getFileSystemManager = function () {
-    return { writeFile: function (opt) { if (opt && opt.success) opt.success() } }
+    return { mkdir: function (opt) { opt.success() }, readdir: function (opt) { opt.success({ files: [] }) }, writeFile: function (opt) { if (opt && opt.success) opt.success() } }
   }
   var reportWxml = require('fs').readFileSync(require('path').join(__dirname, '../miniprogram/pages/report/index.wxml'), 'utf8')
+  assert(/<button[^>]*wx:if="{{showDownload}}"[^>]*bindtap="download"[^>]*>下载报告<\/button>/.test(reportWxml))
   assert(/<button\b[^>]*class="btn block plain"[^>]*bindtap="download"[^>]*loading="\{\{downloadLoading\}\}"[^>]*disabled="\{\{downloadLoading\}\}"/.test(reportWxml),
     'download button binds loading and disabled')
   function cssBlock(css, selector) {
@@ -232,7 +287,11 @@ async function main() {
   assert.strictEqual(shot.data.missing, false)
   await drain()
   assert.strictEqual(shot.data.loading, false)
-  assert.strictEqual(shot.data.missing, true)
+  assert.strictEqual(shot.data.missing, false)
+  assert.strictEqual(shot.data.failed, true)
+  shot.read(); await drain()
+  assert.strictEqual(shot.data.failed, false)
+  assert.strictEqual(shot.data.missing, false)
   shot = viewer(); shot.onLoad({ name: '真实测试片', id: 'absent' })
   await drain()
   assert.strictEqual(shot.data.loading, false)
@@ -253,10 +312,65 @@ async function main() {
   assert.strictEqual(mixedBook.filename, '汇总-共导出2条.xlsx')
   assert(mixedText.includes('那豆在架 命中结果（共导出 2 条）'))
   assert(!mixedText.includes('2026-07-01'), 'generated-date row is not exported')
-  var listed = api.createQuery(['真实测试片'])
+  var listed = await api.createQuery(['真实测试片'])
+  assert(listed.ok)
   api.advanceQuery(listed.id); await drain()
   assert.strictEqual(api.getQuery(listed.id).items[0].evidencePlatform, '真实测试平台')
   withGenerated = false
+  summaryReply = { program_name: '摘要节目', outcome: 'hit', platform_count: 1,
+    summary_only_count: 1, summary_hidden_count: 1, platform_groups: [], locked_records: [], evidence_platforms: [] }
+  var summaryJob = await api.createQuery(['摘要节目'])
+  api.advanceQuery(summaryJob.id); await drain()
+  assert.strictEqual(api.getQuery(summaryJob.id).items[0].line, '命中 1 条 · 涉及 1 个平台')
+  sheet.query = { name: '摘要节目' }
+  sheet.load(); await drain()
+  assert.strictEqual(sheet.data.header, '命中 1 条 · 涉及 1 个平台')
+  assert(sheet.data.note.includes('1 条仅显示命中数量'))
+  assert(!sheet.data.showOpen && !sheet.data.showLocked && !sheet.data.showDownload)
+
+  var declaredSummary = { record_id: 'summary1', summary_only: true, access: 'summary', platform: '测试平台',
+    network_type: 'IPTV', frame_count: 3, checked_on: '2026-08-01', checked_at: '2026-08-01T01:00:00Z',
+    timestamps: ['00:02:14'], thumbnail_url: 'https://img.invalid/restricted', hd_url: 'https://img.invalid/restricted',
+    can_download_report: true, can_download_screenshot: true }
+  summaryReply.summary_hidden_count = 0
+  summaryReply.platform_groups = [{ records: [declaredSummary] }]
+  var safe = (await api.searchProgram('摘要节目')).records[0]
+  assert.deepStrictEqual(safe, { record_id: 'summary1', access: 'summary', locked: false, summary_only: true,
+    platform: '测试平台', network_type: 'IPTV', frame_count: 3, checked_on: '2026-08-01',
+    can_download_report: false, can_download_screenshot: false })
+  sheet.load(); await drain()
+  var summaryRow = sheet.data.groups[0].rows[0]
+  assert(sheet.data.showOpen && !sheet.data.showLocked && !sheet.data.showDownload && sheet.data.summaryOnlyReport)
+  assert.strictEqual(summaryRow.date, '2026-08-01')
+  assert.strictEqual(summaryRow.network, 'IPTV')
+  assert.strictEqual(summaryRow.frames, '命中 3 帧')
+  assert.deepStrictEqual(sheet.data.evidencePlatforms, [])
+  var summaryRequests = calls.length
+  sheet.openShot({ currentTarget: { dataset: { id: 'summary1' } } })
+  sheet.download()
+  assert.strictEqual(calls.length, summaryRequests)
+  shot = viewer(); shot.onLoad({ name: '摘要节目', id: 'summary1' }); await drain()
+  assert(shot.data.missing && !shot.data.canSave && !shot.data.image && !shot.data.downloadEntry)
+  summaryReply.platform_groups[0].records.push({ record_id: 'normal', access: 'full', can_download_report: true })
+  sheet.load(); await drain()
+  assert.strictEqual(sheet.data.header, '命中 2 条 · 涉及 1 个平台')
+  assert(sheet.data.showDownload && !sheet.data.summaryOnlyReport)
+  summaryReply = null
+  pendingVerification = true
+  var pendingJob = await api.createQuery(['待核验测试'])
+  api.advanceQuery(pendingJob.id); await drain()
+  var pending = api.getQuery(pendingJob.id)
+  assert.strictEqual(pending.items[0].badge, '待核验')
+  assert(!pending.items[0].hit && !pending.items[0].missed && !pending.items[0].failed)
+  assert(pending.head.includes('命中 0｜未命中 0') && pending.head.includes('待核验 1'))
+  sheet.query = { name: '待核验测试' }
+  sheet.load(); await drain()
+  assert.strictEqual(sheet.data.phase, 'unverified')
+  assert(!sheet.data.showDownload && !sheet.data.showLocked && !sheet.data.showEvidenceLink)
+  var initialRequests = calls.length
+  sheet.download(); sheet.buySingle(); sheet.buyMember(); sheet.applyEvidence()
+  assert.strictEqual(calls.length, initialRequests)
+  assert.deepStrictEqual(await api.exportBook('待核验测试'), { ok: false, message: '数据待核验' })
   config.apiBase = ''
   await assert.rejects(api.searchProgram('真实测试片'), /未配置服务地址/)
   assert.strictEqual(state.userId(), 'member')

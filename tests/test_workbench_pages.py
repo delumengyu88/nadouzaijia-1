@@ -49,7 +49,6 @@ def test_demo_pages_and_api_hide_banned_labels(workbench):
         "/api/v1/admin/orders",
         "/api/v1/admin/audit-logs?limit=200",
         "/api/v1/admin/index/status",
-        "/api/v1/admin/content/splash",
         "/api/v1/admin/content/announcements",
         "/api/v1/admin/content/examples",
         "/api/v1/admin/staff/locks",
@@ -326,7 +325,7 @@ def test_invite_clock_stays_beside_vip(workbench):
     assert again.json()["detail"] == "bound"
 
 
-def test_content_is_admin_only_and_examples_stop_at_five(workbench):
+def test_legacy_splash_admin_api_keeps_permissions_and_audit(workbench):
     saved = call(
         workbench,
         "PUT",
@@ -361,6 +360,11 @@ def test_content_is_admin_only_and_examples_stop_at_five(workbench):
         workbench.support_token,
         expected=403,
     )
+    actions = set(workbench.session.scalars(select(AuditLog.action)).all())
+    assert "update_splash" in actions
+
+
+def test_examples_stop_at_five(workbench):
     for index in range(5):
         call(
             workbench,
@@ -380,7 +384,6 @@ def test_content_is_admin_only_and_examples_stop_at_five(workbench):
     )
     workbench.session.expire_all()
     actions = set(workbench.session.scalars(select(AuditLog.action)).all())
-    assert "update_splash" in actions
     assert "add_example" in actions
 
 

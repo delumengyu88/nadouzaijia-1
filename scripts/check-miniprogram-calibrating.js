@@ -19,7 +19,19 @@ global.wx = {
   getStorageSync: function (key) { return storage[key] },
   setStorageSync: function (key, value) { storage[key] = value },
   getSystemInfoSync: function () { return { statusBarHeight: 20 } },
-  request: function (opts) { calls.push(opts); pending.push(opts) },
+  request: function (opts) {
+    var url = opts.url || ''
+    if (url.indexOf('/api/v1/queries') !== -1) {
+      var creating = (opts.method || 'GET') === 'POST' && /\/api\/v1\/queries$/.test(url)
+      opts.success({ statusCode: creating ? 201 : 200, data: {
+        id: 'cal-query', queued: true, running: false, done: false, head: '', percent: 0, items: [],
+        networkError: null, showNetworkRetry: null, failBanner: null, seen_at: null
+      } })
+      return
+    }
+    calls.push(opts)
+    pending.push(opts)
+  },
   redirectTo: function (opts) { redirects.push(opts.url) },
   switchTab: function (opts) { tabs.push(opts.url) },
   navigateTo: function () { throw new Error('calibrating must not open report or checkout') },
@@ -38,6 +50,27 @@ function page(name) {
   } })
 }
 function drain() { return new Promise(function (resolve) { setImmediate(resolve) }) }
+function forgetIdentity() {
+  var keptCalls = calls.filter(function (item) { return item.url.indexOf('/auth/me') === -1 })
+  var keptPending = pending.filter(function (item) { return item.url.indexOf('/auth/me') === -1 })
+  calls.length = 0
+  pending.length = 0
+  keptCalls.forEach(function (item) { calls.push(item) })
+  keptPending.forEach(function (item) { pending.push(item) })
+}
+function isOrderListRequest(item) {
+  return (item.method || 'GET') === 'GET' && /\/api\/v1\/pay\/orders$/.test(item.url || '')
+}
+function forgetOrderRequests() {
+  for (var i = pending.length - 1; i >= 0; i--) {
+    if (isOrderListRequest(pending[i])) pending.splice(i, 1)
+  }
+}
+function callsExceptOrders() {
+  return calls.filter(function (item) {
+    return !isOrderListRequest(item)
+  }).length
+}
 function respond(outcome) {
   var req = pending.shift()
   if (outcome === 'fail') { req.fail(); return }
@@ -52,12 +85,17 @@ async function main() {
   else require('../miniprogram/api/state').setSession({ token: 'test-member-token',
     expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: 'member', tier: 'vip' } })
   config.calibrating = false
-  var existing = await api.checkout('membership_vip')
+  var existingPromise = api.checkout('membership_vip')
+  while (pending.length && String(pending[0].url || '').indexOf('/api/v1/pay/') !== -1) {
+    pending.shift().success({ statusCode: 200, data: { detail: '支付未配置' } })
+  }
+  var existing = await existingPromise
   var orderNo = existing.ok ? existing.order.orderNo : 'unavailable'
   config.calibrating = true
   var input = page('input')
   input.data.items = ['真实测试片', '无结果测试片', '失败测试片'].map(function (name) { return { name: name } })
   input.confirm()
+  if (api.isLive) await drain()
   var id = redirects.pop().split('id=')[1]
   assert(id, 'input still creates a query')
   var result = page('query')
@@ -71,11 +109,15 @@ async function main() {
     assert.deepStrictEqual(result.data.items, [])
   }
   assert(api.getQuery(id).done, 'queries still finish during calibration')
-  if (api.isLive) assert.strictEqual(calls.length, 3, 'every title still reaches the real search endpoint')
+  if (api.isLive) {
+    var searches = calls.filter(function (item) { return String(item.url || '').indexOf('/api/v1/programs/search') !== -1 })
+    assert.strictEqual(searches.length, 3, 'every title still reaches the real search endpoint')
+  }
   result.updates.forEach(function (update) {
     assert(!update.head && !(update.items || []).length, 'no results or counts enter P07 data')
   })
   result.openHit({ currentTarget: { dataset: { hit: true, name: '真实测试片' } } })
+  var nonListCount = callsExceptOrders()
   var requestCount = calls.length
   var book = await api.exportBook('真实测试片')
   assert.strictEqual(book.ok, false)
@@ -92,13 +134,15 @@ async function main() {
   assert.strictEqual(modals.length, 3)
   assert(modals.every(function (message) { return message.indexOf('数据校准中') !== -1 }))
   assert.strictEqual(JSON.stringify(api.listOrders()), orders)
+  forgetOrderRequests()
   assert.strictEqual(JSON.stringify(api.profile()), profile)
+  forgetIdentity()
   ;['report', 'viewer'].forEach(function (name) {
     var blocked = page(name)
     blocked.onLoad({ id: 'old-id', name: '真实测试片', example: '1' })
     assert(redirects.pop().indexOf('/pages/query/index') === 0, 'old and example report routes return to P07')
   })
-  assert.strictEqual(calls.length, requestCount)
+  assert.strictEqual(callsExceptOrders(), nonListCount)
   result.home()
   assert.strictEqual(tabs.pop(), '/pages/home/index')
   assert.strictEqual(Object.keys(timers).length, 0)
