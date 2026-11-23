@@ -1,4 +1,16 @@
-# 微信支付（JSAPI / 小程序，APIv3）
+# 小程序支付
+
+## 钻石会员虚拟支付
+
+钻石会员 `membership_diamond` 的服务端定价是 100 分，开通 5 天，查询权限同 VIP。小程序通过 `wx.requestVirtualPayment` 调起支付。服务端向微信核实交易后发放权益。
+
+在微信公众平台「消息推送」里，把服务器地址设为项目线上 HTTPS 域名加 `/api/v1/xpay/notify`，数据格式选 **JSON**，消息加密方式选 **安全模式**。服务端从私有环境读取 `NADOU_XPAY_PUSH_TOKEN` 和 `NADOU_XPAY_PUSH_AES`。提交配置时会验证签名并回显 `echostr`。收到发货或退款通知时，还会验证签名、解密消息并核对订单。地址校验和真实交易分别验收。
+
+正式商品使用现网 OfferID、AppKey 和已发布道具 ID 的服务器端映射。开启 `NADOU_XPAY_DIAMOND_REFUND_ROUTE_VERIFIED` 前，确认同一小程序的退款通知能送达此入口。退款成功后只收回该笔订单发放的权益。
+
+体验版验收按同一笔订单记录 ¥1 实付、自动开通 5 天、全额退款以及对应权益扣回。记录实测结果时只保留核验所需的订单状态和时间。
+
+## 微信支付 JSAPI（APIv3）
 
 服务端下单、验签和解密。小程序只负责拿签名参数调 `wx.requestPayment`。`wx.requestPayment` 的 success **不是**开通依据。会员只在微信支付通知验签通过，或服务端主动向微信查单确认后开通。
 

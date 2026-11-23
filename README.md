@@ -72,7 +72,7 @@ docker compose up --build -d
 
 - 正式小程序 AppID
 - 备案
-- 微信支付正式商户联调（服务端 JSAPI 已接，见 [docs/PAYMENTS.md](docs/PAYMENTS.md)；0.01 元测试档默认关闭）
+- 微信支付真机联调。钻石会员走微信虚拟支付，回调路径为 `/api/v1/xpay/notify`，使用 JSON 安全模式。付款、发货和退款需要在体验版验证。[支付配置与验收](docs/PAYMENTS.md)
 - 大刀的只读索引账号
 - CDN 签名（现在是本地假签名）
 - 一台服务器和已备案的 https 域名
