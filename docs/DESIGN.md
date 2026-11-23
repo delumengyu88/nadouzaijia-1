@@ -104,7 +104,7 @@ Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is loc
 
 ### 小程序首页
 
-`GET /api/v1/app/home` 和 `GET /api/v1/app/examples/{name}` 都不需要 `Authorization`，未登录也可以读。只做查询，不插入、不更新。不要复用 `SplashBook.get()`，也不要走会写审计的工作台保存方法。响应不带用户、权益或签名地址。两个接口都带 `Cache-Control: public, max-age=60`。平台数是一次查询后在进程里按平台键去重，没有另做超时缓存。
+`GET /api/v1/app/home` 和 `GET /api/v1/app/examples/{name}` 都不需要 `Authorization`，未登录也可以读。只做查询，不插入、不更新。不要复用 `SplashBook.get()`，也不要走会写审计的工作台保存方法。响应不带用户、权益或签名地址。两个接口都带 `Cache-Control: no-store`。平台数是一次查询后在进程里按平台键去重，没有另做超时缓存。
 
 首页对应小程序现在的 `platformTotal`、`examples[{name,line,sub}]`，以及首页公告弹窗（文案目前写在 `miniprogram/pages/home/index.wxml`）。示例详情对应 `exampleReport(name)`。
 
