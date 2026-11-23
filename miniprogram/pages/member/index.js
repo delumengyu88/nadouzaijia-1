@@ -2,6 +2,7 @@ var api = require('../../api/index')
 var nav = require('../../utils/nav')
 var member = require('../../utils/member')
 var testOffer = require('../../api/live-test-offer')
+var diamond = require('../../api/diamond')
 var state = require('../../api/state')
 
 function defaultPlanId(tier) {
@@ -45,7 +46,7 @@ Page(require('../../api/splash').page({
   onShow: function () {
     require('../../utils/login').onShow(this)
     this.setData({ testBuild: testOffer.dedicated() })
-    this.refreshTestOffer()
+    this.refreshSpecialOffer()
     var info = this.readCenter()
     var self = this
     this._seq = (this._seq || 0) + 1
@@ -125,19 +126,27 @@ Page(require('../../api/splash').page({
   clearTestOffer: function () {
     this._offerSeq = (this._offerSeq || 0) + 1
     this._offerSession = ''
-    if (this.data.showTestOffer) this.setData({ showTestOffer: false })
+    if (this.data.showTestOffer || this.data.showDiamondOffer) this.setData({ showTestOffer: false, showDiamondOffer: false })
   },
-  refreshTestOffer: function () {
+  refreshSpecialOffer: function () {
     this.clearTestOffer()
-    if (!testOffer.enabled() || !state.token()) return
+    var offer = diamond.enabled() ? diamond : testOffer
+    if (!offer.enabled() || !state.token()) return
     var token = state.token()
     var seq = this._offerSeq
     var self = this
-    testOffer.discover().then(function (productId) {
+    offer.discover().then(function (productId) {
       if (!productId || seq !== self._offerSeq || state.token() !== token) return
       self._offerSession = token
-      self.setData({ showTestOffer: true })
+      self.setData({ showTestOffer: offer === testOffer, showDiamondOffer: offer === diamond })
     })
+  },
+  openDiamond: function () {
+    if (!this.data.showDiamondOffer || !diamond.enabled() || !this._offerSession || this._offerSession !== state.token()) {
+      this.clearTestOffer()
+      return
+    }
+    wx.navigateTo({ url: '/pages/pay/index?product=' + diamond.id })
   },
   openTestOffer: function () {
     if (!this.data.showTestOffer || !testOffer.enabled() || !this._offerSession || this._offerSession !== state.token()) {

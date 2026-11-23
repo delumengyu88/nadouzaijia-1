@@ -1,11 +1,13 @@
 var config = require('../config')
 var testOffer = require('./live-test-offer')
+var diamond = require('./diamond')
 var mode = config.mode || (config.useMock === false ? 'live' : 'mock')
 var api = mode === 'live' ? require('./http') : require('./mock')
 var client = Object.assign({}, api, mode === 'mock' ? {} : require('./live'))
 ;['checkout', 'startPay', 'repay', 'settle', 'setOrderStatus', 'exportBook'].forEach(function (method) {
   var original = client[method]
   client[method] = function () {
+    if (method === 'checkout' && arguments[0] === diamond.id && !diamond.enabled()) return Promise.resolve(diamond.unavailable())
     if (method === 'checkout' && (arguments[0] === testOffer.id ? !testOffer.enabled() : testOffer.dedicated())) {
       return Promise.resolve(testOffer.unavailable())
     }
