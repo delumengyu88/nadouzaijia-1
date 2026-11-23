@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     xpay_products: dict[str, str] = Field(
         default_factory=dict, validation_alias="NADOU_XPAY_PRODUCTS"
     )
+    # Enable sales only after the existing receiver's authenticated refund route is verified.
+    diamond_refund_route_verified: bool = Field(
+        default=False, validation_alias="NADOU_XPAY_DIAMOND_REFUND_ROUTE_VERIFIED"
+    )
     xpay_push_token: SecretStr = Field(
         default=SecretStr(""), validation_alias="NADOU_XPAY_PUSH_TOKEN"
     )

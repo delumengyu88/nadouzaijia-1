@@ -154,13 +154,13 @@ def register_virtual_orders(app: FastAPI, get_session, payer, clock, notifier, w
         session: Session = Depends(get_session, scope="function"),
     ):
         gateway = xpay.configured()
-        # The formal diamond order can confirm and acknowledge delivery through trusted polling.
-        if payload.tier != DIAMOND.code:
-            xpay_push.configured_key()
+        xpay_push.configured_key()
         test_allowed = user_may_use_test_tier(user.id)
         if payload.tier == DIAMOND.code:
             product = DIAMOND
             product_id = diamond_product_id()
+            if not product_id:
+                raise HTTPException(503, "钻石会员暂未开放支付")
         elif payload.tier == LIVE_TEST.code:
             product = LIVE_TEST
             product_id = live_test_product_id(user.id)

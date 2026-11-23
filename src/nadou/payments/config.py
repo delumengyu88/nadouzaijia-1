@@ -113,13 +113,15 @@ def live_test_product_id(user_id: str) -> str | None:
 def diamond_product_id() -> str | None:
     settings = get_settings()
     if (
-        settings.xpay_env != 0
+        not settings.diamond_refund_route_verified
+        or settings.xpay_env != 0
         or not settings.wx_appid
         or not settings.wx_appsecret.get_secret_value()
     ):
         return None
     try:
         xpay.configured()
+        xpay_push.configured_key()
     except HTTPException:
         return None
     return _unique_product_id(DIAMOND.code)

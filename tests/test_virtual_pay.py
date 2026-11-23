@@ -184,6 +184,12 @@ def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
     }
     assert signed_event(client, {**delivered, "Env": 1}, monkeypatch).status_code == 409
     assert session.query(Entitlement).count() == 0
+    if tier == "membership_diamond":
+        from nadou.models import VirtualOrder
+
+        monkeypatch.setattr(xpay, "provider_call", lambda *_: {})
+        assert client.post("/api/v1/xpay/orders/" + number + "/sync").json()["status"] == "已发放"
+        assert session.query(VirtualOrder).one().delivery_confirmed
     for _ in range(2):
         response = signed_event(client, delivered, monkeypatch)
         assert response.status_code == 200 and response.text == "success"
@@ -453,6 +459,7 @@ def configure_diamond(monkeypatch):
     cfg = get_settings()
     monkeypatch.setattr(cfg, "wx_appid", "test-app")
     monkeypatch.setattr(cfg, "wx_appsecret", SecretStr(secrets.token_hex(16)))
+    monkeypatch.setattr(cfg, "diamond_refund_route_verified", True)
     monkeypatch.setattr(cfg, "xpay_products", {"membership_diamond": "official-product"})
     monkeypatch.setattr(cfg, "wechat_pay_test_tier", False)
     monkeypatch.setattr(cfg, "wechat_pay_test_users", "")
@@ -463,15 +470,11 @@ def test_formal_diamond_catalog_and_poll(virtual_setup, session, monkeypatch, cl
     import json
     from datetime import timedelta
 
-    from pydantic import SecretStr
-
     from nadou.models import Entitlement, OrderIssuance
     from nadou.payments import xpay
     from nadou.payments.catalog import excluded_from_workbench_stats
 
-    cfg = configure_diamond(monkeypatch)
-    monkeypatch.setattr(cfg, "xpay_push_token", SecretStr(""))
-    monkeypatch.setattr(cfg, "xpay_push_aes", SecretStr(""))
+    configure_diamond(monkeypatch)
     tier = "membership_diamond"
     client = virtual_setup
     path = "/api/v1/pay/tiers"
@@ -519,7 +522,10 @@ def test_formal_diamond_catalog_and_poll(virtual_setup, session, monkeypatch, cl
     assert session.query(OrderIssuance).filter_by(order_id=saved.id).count() == 1
 
 
-@pytest.mark.parametrize("missing", ["env", "offer", "key", "login", "map", "duplicate"])
+@pytest.mark.parametrize(
+    "missing",
+    ["env", "offer", "key", "login", "map", "duplicate", "push-token", "push-aes", "route"],
+)
 def test_diamond_unavailable_never_creates_order(virtual_setup, session, monkeypatch, missing):
     from pydantic import SecretStr
 
@@ -527,6 +533,12 @@ def test_diamond_unavailable_never_creates_order(virtual_setup, session, monkeyp
     tier = "membership_diamond"
     if missing == "env":
         monkeypatch.setattr(cfg, "xpay_env", 1)
+    elif missing == "route":
+        monkeypatch.setattr(cfg, "diamond_refund_route_verified", False)
+    elif missing == "push-token":
+        monkeypatch.setattr(cfg, "xpay_push_token", SecretStr(""))
+    elif missing == "push-aes":
+        monkeypatch.setattr(cfg, "xpay_push_aes", SecretStr("invalid"))
     elif missing == "offer":
         monkeypatch.setattr(cfg, "xpay_offer", "")
     elif missing == "key":
