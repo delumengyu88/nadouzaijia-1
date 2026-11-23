@@ -14,7 +14,7 @@
 <view class="body" wx:elif="{{phase == 'recognizing'}}">
   <view class="card"><view class="dialog-body">{{box}}</view></view>
 </view>
-<view class="body" wx:elif="{{phase == 'preview'}}">
+<view class="body preview-body" wx:elif="{{phase == 'preview'}}">
   <view class="pad">
     <view class="card-title">识别结果预览</view>
     <view class="sub">{{summary}}</view>
@@ -26,14 +26,14 @@
       <text class="link" style="margin:0 0 0 16rpx;" data-index="{{index}}" bindtap="remove">删除</text>
     </view>
   </view>
-  <button class="btn block" bindtap="confirm" loading="{{loginLoading}}" disabled="{{loginLoading}}">确认查询</button>
+  <button class="btn block input-confirm" bindtap="confirm" loading="{{loginLoading}}" disabled="{{loginLoading}}">确认查询</button>
   <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
 </view>
 <view class="body" wx:elif="{{phase == 'limit'}}">
   <view class="err-box">{{failText}}</view>
   <textarea class="area" style="margin:24rpx 32rpx 0;width:auto;display:block;min-height:280rpx;" value="{{raw}}" disabled maxlength="-1" />
   <view class="hint">{{count}}/500</view>
-  <button class="btn block" bindtap="confirm" loading="{{loginLoading}}" disabled="{{loginLoading}}">开始查询</button>
+  <button class="btn block input-confirm" bindtap="confirm" loading="{{loginLoading}}" disabled="{{loginLoading}}">开始查询</button>
   <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
 </view>
 <view class="body" wx:else>

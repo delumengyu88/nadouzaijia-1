@@ -367,8 +367,9 @@ global.Component = function (def) { global.__component = def }
 global.getCurrentPages = function () { return [{}, {}] }
 
 var defaults = require(path.join(root, 'config'))
-if (defaults.mode !== 'live' || defaults.trialMode !== true || defaults.calibrating !== true) {
-  fail('trial defaults must enable live mode, trialMode and calibrating')
+if (defaults.mode !== 'live' || defaults.trialMode !== false || defaults.calibrating !== false ||
+  defaults.virtualPayment !== true || defaults.diamondPayment !== true || defaults.liveOneYuanTest !== false) {
+  fail('release defaults must be live, real virtual payment on, ¥1 tier on, calibrating and test SKU off')
 }
 if (defaults.apiBase !== 'https://nadou.youroem.cn') fail('production apiBase is ' + defaults.apiBase)
 if (defaults.apiUrl('/api/healthz') !== 'https://nadou.youroem.cn/api/healthz') {

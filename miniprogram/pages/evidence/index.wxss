@@ -18,7 +18,6 @@ button.btn.evidence-submit {
   margin: 24rpx 32rpx 0;
   padding: 0;
 }
-.field.type-field .chev { margin-left: 0; }
 .req { color: #d64545; margin-left: 6rpx; }
 .field-error { margin: 12rpx 32rpx 0; color: #d64545; font-size: 26rpx; line-height: 1.5; }
 .field.field-bad { border: 2rpx solid #d64545; }
