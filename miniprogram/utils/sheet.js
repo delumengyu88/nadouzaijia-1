@@ -5,8 +5,7 @@ var DIST_BASE = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257,
   4097, 6145, 8193, 12289, 16385, 24577]
 var DIST_EXTRA = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13]
 var CL_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
-var NAME_HEADERS = ['节目名称', '节目名']
-var OWNER_HEADERS = ['版权方']
+var NAME_HEADERS = ['节目名称', '上传节目名', '节目名', '片名', '剧名', '作品名称', '作品名', '名称']
 var MAX_ROWS = 500
 
 class SheetReader {
@@ -215,14 +214,14 @@ class SheetReader {
     while ((m = si.exec(sst))) shared.push(SheetReader.texts(m[1] || ''))
     var xml = SheetReader.entry(files, name)
     var rows = []
-    var rowRe = /<row\b[^>]*?(?:\/>|>([\s\S]*?)<\/row>)/g
+    var rowRe = /<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g
     var r
     while ((r = rowRe.exec(xml))) {
       var cells = []
       var cellRe = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g
       var c
       var next = 0
-      while ((c = cellRe.exec(r[1] || ''))) {
+      while ((c = cellRe.exec(r[2] || ''))) {
         var col = SheetReader.column(SheetReader.attr(c[1], 'r'))
         if (col < 0) col = next
         next = col + 1
@@ -235,7 +234,10 @@ class SheetReader {
         else value = v ? SheetReader.unescape(v[1]) : ''
         cells[col] = value
       }
-      rows.push(cells)
+      // Excel can omit empty rows from the XML. Keep the actual worksheet row number.
+      var rowNumber = Number(SheetReader.attr(r[1], 'r')) || rows.length + 1
+      if (!Number.isInteger(rowNumber) || rowNumber < 1 || rowNumber > 1048576) throw new Error('xlsx: invalid row')
+      rows[rowNumber - 1] = cells
     }
     return rows
   }
@@ -244,29 +246,41 @@ class SheetReader {
   static clean(value) {
     return String(value == null ? '' : value).replace(/[\s\u3000\ufeff]+/g, ' ').trim()
   }
-  static findColumn(row, names) {
-    for (var i = 0; i < row.length; i++) {
-      if (names.indexOf(SheetReader.clean(row[i]).replace(/\s/g, '')) !== -1) return i
+  // 前 10 行里优先取排位靠前的表头（「节目名称」胜过「名称」），同级取靠上的一行。
+  static header(rows) {
+    var best = null
+    for (var h = 0; h < Math.min(rows.length, 10); h++) {
+      var labels = (rows[h] || []).map(function (cell) {
+        return SheetReader.clean(cell).normalize('NFKC').replace(/\s/g, '')
+      })
+      var uploaded = labels.indexOf('上传节目名')
+      var hitExport = uploaded >= 0 && labels.includes('匹配节目名') && labels.includes('命中画面截图')
+      var owner = labels.indexOf('版权方')
+      if (hitExport) return { row: h, name: uploaded, owner: owner, hitExport: true }
+      for (var rank = 0; rank < NAME_HEADERS.length && (!best || rank < best.rank); rank++) {
+        var column = labels.indexOf(NAME_HEADERS[rank])
+        if (column < 0) continue
+        best = { row: h, name: column, owner: owner, hitExport: false, rank: rank }
+        break
+      }
     }
-    return -1
+    return best
   }
   // 返回 { ok: true, items: [{ name, owner }] } 或 { ok: false, code }。
   static titles(rows) {
-    for (var h = 0; h < Math.min(rows.length, 10); h++) {
-      var nameCol = SheetReader.findColumn(rows[h] || [], NAME_HEADERS)
-      if (nameCol < 0) continue
-      var ownerCol = SheetReader.findColumn(rows[h], OWNER_HEADERS)
-      var items = []
-      rows.slice(h + 1).forEach(function (row) {
-        var name = SheetReader.clean((row || [])[nameCol])
-        if (!name) return
-        items.push({ name: name, owner: ownerCol < 0 ? '' : SheetReader.clean(row[ownerCol]) })
-      })
-      if (!items.length) return { ok: false, code: 'empty' }
-      if (items.length > MAX_ROWS) return { ok: false, code: 'rows' }
-      return { ok: true, items: items }
-    }
-    return { ok: false, code: 'col' }
+    var header = SheetReader.header(rows)
+    if (!header) return { ok: false, code: 'col' }
+    var items = []
+    var seen = header.hitExport ? new Set() : null
+    rows.slice(header.row + 1).forEach(function (row) {
+      var name = SheetReader.clean(row[header.name])
+      if (!name || (seen && seen.has(name))) return
+      if (seen) seen.add(name)
+      items.push({ name: name, owner: SheetReader.clean(row[header.owner]) })
+    })
+    if (!items.length) return { ok: false, code: 'empty' }
+    if (items.length > MAX_ROWS) return { ok: false, code: 'rows' }
+    return { ok: true, items: items }
   }
   static precheck(name, size) {
     if (String(name || '').toLowerCase().slice(-5) !== '.xlsx') return 'xlsx'

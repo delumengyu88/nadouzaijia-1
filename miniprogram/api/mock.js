@@ -706,7 +706,7 @@ module.exports = {
     if (lower.slice(-5) !== '.xlsx') return { ok: false, code: 'xlsx', message: '仅支持 .xlsx，请另存后再上传。' }
     if (!size) return { ok: false, code: 'empty', message: '文件为空，请重新选择。' }
     if (size > 5 * 1024 * 1024) return { ok: false, code: 'size', message: '文件超过 5MB，请拆分后再上传。' }
-    if (lower.indexOf('nocol') >= 0) return { ok: false, code: 'col', message: '未找到「节目名」列，请检查表头后重试。' }
+    if (lower.indexOf('nocol') >= 0) return { ok: false, code: 'col', message: '没找到节目名那一列，请把节目名所在列的表头改成『节目名称』，或改用粘贴。' }
     if (lower.indexOf('manyrows') >= 0) return { ok: false, code: 'rows', message: '超过 500 行，请删减后再上传。' }
     return { ok: false, code: 'read', message: '文件读取失败，请稍后重试。' }
   },
