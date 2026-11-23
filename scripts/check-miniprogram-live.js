@@ -149,8 +149,62 @@ async function main() {
   }
   var reportWxml = require('fs').readFileSync(require('path').join(__dirname, '../miniprogram/pages/report/index.wxml'), 'utf8')
   assert(/<button[^>]*wx:if="{{showDownload}}"[^>]*bindtap="download"[^>]*>下载报告<\/button>/.test(reportWxml))
-  assert(/<button\b[^>]*bindtap="download"[^>]*loading="\{\{downloadLoading\}\}"[^>]*disabled="\{\{downloadLoading\}\}"/.test(reportWxml),
+  assert(/<button\b[^>]*class="btn block plain"[^>]*bindtap="download"[^>]*loading="\{\{downloadLoading\}\}"[^>]*disabled="\{\{downloadLoading\}\}"/.test(reportWxml),
     'download button binds loading and disabled')
+  function cssBlock(css, selector) {
+    var source = css.replace(/\/\*[\s\S]*?\*\//g, '')
+    var at = 0
+    while (at < source.length) {
+      var open = source.indexOf('{', at)
+      if (open < 0) break
+      var close = source.indexOf('}', open)
+      if (close < 0) break
+      var selectors = source.slice(at, open).split(',').map(function (item) { return item.trim() })
+      if (selectors.indexOf(selector) !== -1) return source.slice(open + 1, close)
+      at = close + 1
+    }
+    return ''
+  }
+  function cssValue(body, property) {
+    var found = ''
+    body.split(';').forEach(function (part) {
+      var bits = part.split(':')
+      if (bits.length < 2) return
+      if (bits[0].trim() === property) found = bits.slice(1).join(':').trim()
+    })
+    return found
+  }
+  function horizontalRpx(margin) {
+    var parts = margin.split(/\s+/)
+    function num(token) {
+      var match = /^(-?\d+(?:\.\d+)?)rpx$/.exec(token)
+      assert(match, 'horizontal margin must stay in rpx: ' + margin)
+      return Number(match[1])
+    }
+    if (parts.length === 1) return num(parts[0]) * 2
+    if (parts.length === 2 || parts.length === 3) return num(parts[1]) * 2
+    return num(parts[1]) + num(parts[3])
+  }
+  var appWxss = require('fs').readFileSync(require('path').join(__dirname, '../miniprogram/app.wxss'), 'utf8')
+  var reportWxss = require('fs').readFileSync(require('path').join(__dirname, '../miniprogram/pages/report/index.wxss'), 'utf8')
+  var viewBtn = cssBlock(appWxss, '.btn')
+  var viewBlock = cssBlock(appWxss, '.btn.block')
+  var viewPlain = cssBlock(appWxss, '.btn.plain')
+  var downloadBtn = cssBlock(reportWxss, 'button.btn.block.plain')
+  var downloadAfter = cssBlock(reportWxss, 'button.btn.block.plain::after')
+  assert(downloadBtn && downloadAfter, 'download button box is explicit')
+  assert.strictEqual(cssValue(downloadBtn, 'margin'), cssValue(viewBlock, 'margin'), 'download margin matches the view button')
+  assert.strictEqual(cssValue(downloadBtn, 'padding'), '0', 'download padding stays 0')
+  assert.strictEqual(cssValue(downloadBtn, 'line-height'), cssValue(viewPlain, 'line-height'), 'download line-height matches the plain view button')
+  assert.strictEqual(cssValue(downloadBtn, 'height'), cssValue(viewBtn, 'height'), 'download height matches the view button')
+  assert.strictEqual(cssValue(downloadBtn, 'border-radius'), cssValue(viewBtn, 'border-radius'), 'download radius matches the view button')
+  assert.strictEqual(cssValue(downloadBtn, 'display'), 'block')
+  assert.strictEqual(cssValue(downloadBtn, 'min-width'), '0', 'loading content must not stretch the button')
+  assert.strictEqual(cssValue(downloadBtn, 'width'), 'calc(100% - ' + horizontalRpx(cssValue(viewBlock, 'margin')) + 'rpx)',
+    'download width subtracts the view button horizontal margin')
+  assert.strictEqual(cssValue(downloadAfter, 'border'), 'none', 'native button::after border is removed')
+  assert(!/button\.btn\.block\.plain\[[^\]]+\]\s*\{[^}]*width\s*:/.test(reportWxss),
+    'loading and disabled states keep the same width')
   var sheet = Object.assign({}, def, {
     data: Object.assign({}, def.data),
     setData: function (v) { Object.assign(this.data, v) }

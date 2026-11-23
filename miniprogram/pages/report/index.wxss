@@ -7,3 +7,22 @@
 .thumb.thumb-plain { background: #d5dde8; }
 .age-tag { margin-left: 12rpx; color: #1D4E9E; background: #e7f0ff; border-radius: 6rpx; padding: 0 8rpx; font-size: 20rpx; }
 .example-empty { color: #9aa3af; font-size: 26rpx; line-height: 1.6; }
+
+/* Lock the native button to the view.btn.block.plain box it replaced. */
+button.btn.block.plain {
+  display: block;
+  box-sizing: border-box;
+  width: calc(100% - 64rpx);
+  min-width: 0;
+  margin: 24rpx 32rpx 0;
+  padding: 0;
+  height: 88rpx;
+  line-height: 84rpx;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  text-align: center;
+}
+button.btn.block.plain::after {
+  border: none;
+}
