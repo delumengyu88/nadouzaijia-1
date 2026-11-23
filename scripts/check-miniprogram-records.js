@@ -127,7 +127,7 @@ async function main() {
   assert.strictEqual(many.id, 'many-id')
   assert.deepStrictEqual(calls[0].data, { names: ['星河旧梦', '雾港来信'] })
 
-  // 2. 检索成功上报 {name}；失败上报 {name, failed:true}。写记录失败不打断检索、不弹错、不重复提交。
+  // 成功结果随批次保存；重试耗尽才上报失败。
   var failWrites = true
   route = function (opt) {
     var url = opt.url || ''
@@ -137,7 +137,7 @@ async function main() {
     }
     if (url.indexOf('/programs/search') !== -1) {
       if (opt.data.name === '失败片') { opt.fail(); return }
-      opt.success({ statusCode: 200, data: hitBody(opt.data.name) })
+      opt.success({ statusCode: 200, data: opt.data.names ? opt.data.names.map(hitBody) : hitBody(opt.data.name) })
       return
     }
     if (url.indexOf('/results') !== -1 || url.indexOf('/seen') !== -1) {
@@ -156,11 +156,11 @@ async function main() {
   assert.strictEqual(hitView.networkError, false)
   assert.strictEqual(toasts.length, 0)
   var resultPosts = urls('/results')
-  assert.strictEqual(resultPosts.length, 1)
-  assert.deepStrictEqual(resultPosts[0].data, { name: '星河旧梦' })
+  assert.strictEqual(resultPosts.length, 0)
+  assert.strictEqual(urls('/programs/search/batch')[0].data.query_id, hit.id)
   api.getQuery(hit.id)
   await drain()
-  assert.strictEqual(urls('/results').length, 1, 'a failed result write is not sent again')
+  assert.strictEqual(urls('/results').length, 0, 'viewing a saved result sends no per-name report')
 
   resetTraffic()
   route = function (opt) {
@@ -179,7 +179,7 @@ async function main() {
   var failedView = api.getQuery(failed.id)
   assert(failedView.networkError && failedView.showNetworkRetry && failedView.items[0].failed)
   assert.strictEqual(failedView.failBanner, '网络异常，请重试')
-  assert.deepStrictEqual(urls('/results')[0].data, { name: '失败片', failed: true })
+  assert.deepStrictEqual(urls('/results')[0].data, { names: ['失败片'] })
   assert.strictEqual(toasts.length, 0)
   api.getQuery(failed.id)
   await drain()
@@ -191,7 +191,7 @@ async function main() {
   // 直接检索（报告页、导出刷新）不写查询记录。
   route = function (opt) {
     if ((opt.url || '').indexOf('/programs/search') !== -1) {
-      opt.success({ statusCode: 200, data: hitBody(opt.data.name) })
+      opt.success({ statusCode: 200, data: opt.data.names ? opt.data.names.map(hitBody) : hitBody(opt.data.name) })
       return
     }
     if ((opt.url || '').indexOf('/results') !== -1) throw new Error('plain search must not record a result')
@@ -209,7 +209,7 @@ async function main() {
       return
     }
     if (url.indexOf('/programs/search') !== -1) {
-      opt.success({ statusCode: 200, data: hitBody(opt.data.name) })
+      opt.success({ statusCode: 200, data: opt.data.names ? opt.data.names.map(hitBody) : hitBody(opt.data.name) })
       return
     }
     if (url.indexOf('/seen') !== -1) {

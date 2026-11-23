@@ -37,8 +37,9 @@ global.setInterval = function () { timerSeq += 1; timers[timerSeq] = true; retur
 global.clearInterval = function (id) { delete timers[id] }
 function activeTimers() { return Object.keys(timers).length }
 function answer(opt, outcome) {
-  opt.success({ statusCode: 200, data: { program_name: opt.data.name, outcome: outcome || 'miss', platform_count: 0,
-    platform_groups: [], locked_records: [] } })
+  opt.success({ statusCode: 200, data: opt.data.names.map(function (name) {
+    return { program_name: name, outcome: outcome || 'miss', platform_count: 0, platform_groups: [], locked_records: [] }
+  }) })
 }
 function drain() { return new Promise(function (resolve) { setImmediate(resolve) }) }
 
@@ -63,146 +64,73 @@ async function main() {
   api.reset()
   state.setSession({ token: 'query-token', expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: 'q', tier: 'free' } })
 
-  // 1. 请求一直不回：59 秒仍在查询，进度只按真实完成数走；60 秒停下并提示超时、清掉轮询。
+  // A lost callback retries only after the watchdog expires. Late callbacks must not win.
   var page = await open(['不回片'])
-  await drain()
+  clock += 59000
+  page.tick(); await drain()
   assert.strictEqual(pending.length, 1)
-  assert.strictEqual(activeTimers(), 1)
-  clock += 59000; page.tick(); await drain()
-  assert(page.data.running && page.data.percent === 0 && page.data.head === '已完成 0 / 1')
-  assert.strictEqual(pending.length, 1, 'polling must not resend while a request is in flight')
-  clock += 1000; page.tick(); await drain()
-  assert(page.data.done && !page.data.running)
+  assert(page.data.running && page.data.percent === 0)
+  for (var attempt = 0; attempt < 3; attempt++) {
+    clock += 60000
+    page.tick(); await drain()
+    assert.strictEqual(pending.length, Math.min(attempt + 2, 3))
+  }
+  assert(page.data.done && page.data.items[0].failed)
   assert.strictEqual(page.data.failBanner, '查询超时，请重试')
-  assert(page.data.items[0].failed && page.data.itemRetry)
-  assert.strictEqual(page.data.items[0].line, '查询超时，请重试')
-  assert.strictEqual(activeTimers(), 0, 'timeout must clear polling')
-
-  // 2. 迟到的旧回包不覆盖；连点重试只发一次新请求。
+  assert.strictEqual(activeTimers(), 0)
   answer(pending[0], 'hit'); await drain()
-  assert(api.getQuery(page.id).items[0].failed, 'late answer from a timed-out attempt is ignored')
-  page.retry({ currentTarget: { dataset: { name: '不回片' } } })
-  page.retry({ currentTarget: { dataset: { name: '不回片' } } })
-  page.retryAll()
-  await drain()
-  assert.strictEqual(pending.length, 2, 'retry must not start duplicate requests')
-  assert.strictEqual(activeTimers(), 1, 'retry keeps a single polling timer')
-  assert(page.data.running)
-  answer(pending[1]); await drain(); page.tick()
+  assert(api.getQuery(page.id).items[0].failed)
+  page.retryAll(); page.retryAll(); await drain()
+  assert.strictEqual(pending.length, 4)
+  page.onHide()
+  assert.strictEqual(activeTimers(), 0)
+  answer(pending[3]); await drain()
+  page.onShow()
   assert(page.data.done && page.data.items[0].missed)
   assert.strictEqual(activeTimers(), 0)
 
-  // 3. wx.request 同步抛错：停在原进度，提示可重试，不卡住也不改计成已完成。
+  // 500 names launch exactly three requests. The middle batch fails independently.
+  var names = Array.from({length:500}, function (_, i) { return '合成节目' + i })
+  var start = pending.length
+  page = await open(names); await drain()
+  var sent = pending.slice(start)
+  assert.deepStrictEqual(sent.map(req => req.data.names.length), [200, 200, 100])
+  assert.deepStrictEqual([].concat(...sent.map(req => req.data.names)), names)
+  assert(sent.every(req => req.method === 'POST' && req.url.endsWith('/programs/search/batch')))
+  page.onHide(); page.onShow(); page.onShow()
+  assert.strictEqual(activeTimers(), 1)
+  assert.strictEqual(pending.length, start + 3)
+  answer(sent[2]); await drain(); page.tick()
+  assert.strictEqual(page.data.percent, 20)
+  sent[1].fail(); await drain()
+  pending[start + 3].fail(); await drain()
+  pending[start + 4].fail(); await drain(); page.tick()
+  assert(page.data.running && !page.data.done)
+  answer(sent[0], 'hit'); await drain(); page.tick()
+  assert.strictEqual(pending.length, start + 5)
+  assert(page.data.done && page.data.showFailBanner && page.data.showRetryAll)
+  assert(!page.data.networkError, 'successful rows remain visible in the results list')
+  assert.deepStrictEqual(page.data.items.map(row => row.name), names)
+  assert(page.data.items.slice(0,200).every(row => row.hit))
+  assert(page.data.items.slice(200,400).every(row => row.failed))
+  assert(page.data.items.slice(400).every(row => row.missed))
+  assert.strictEqual(page.data.percent, 60)
+  assert.strictEqual(activeTimers(), 0)
+  page.retry({currentTarget:{dataset:{name:names[255]}}}); page.retryAll(); await drain()
+  assert.strictEqual(pending.length, start + 6)
+  assert(pending.slice(start + 3).every(req => JSON.stringify(req.data.names) === JSON.stringify(sent[1].data.names)))
+  answer(pending[start + 5]); await drain(); page.tick()
+  assert(page.data.done && !page.data.showFailBanner && page.data.percent === 100)
+  assert.strictEqual(activeTimers(), 0)
+
+  // A synchronous transport exception is retried. A permission error is terminal.
   throwNext = true
-  page = await open(['抛错片']); await drain(); page.tick()
-  assert(page.data.done && !page.data.running && page.data.networkError && page.data.showNetworkRetry)
-  assert.strictEqual(page.data.failBanner, '网络异常，请重试')
-  assert.strictEqual(page.data.items[0].line, '网络异常，请重试')
-  assert.strictEqual(page.data.head, '已完成 0 / 1')
-  assert.strictEqual(page.data.percent, 0)
-  assert.strictEqual(activeTimers(), 0)
-  var thrown = pending.length
-  page.retry({ currentTarget: { dataset: {} } })
-  page.retry({ currentTarget: { dataset: {} } })
-  await drain()
-  assert.strictEqual(pending.length, thrown + 1, 'network retry must not start duplicate requests')
-  assert.strictEqual(activeTimers(), 1)
+  page = await open(['抛错片']); await drain()
+  var request = pending[pending.length - 1]
+  assert.deepStrictEqual(request.data.names, ['抛错片'])
+  request.success({statusCode:403, data:{}}); await drain(); page.tick()
+  assert(page.data.done && page.data.items[0].failed && page.data.itemRetry)
   page.onUnload()
-  assert.strictEqual(activeTimers(), 0)
-
-  // 4. 多个节目：进度只随真实返回变化，时间流逝不推进度。
-  var before = pending.length
-  page = await open(['甲片', '乙片']); await drain()
-  clock += 30000; page.tick(); await drain()
-  assert.strictEqual(page.data.percent, 0)
-  answer(pending[before]); await drain(); page.tick(); await drain()
-  assert.strictEqual(page.data.head, '已完成 1 / 2')
-  assert.strictEqual(page.data.percent, 50)
-
-  // 5. 离开页面清掉计时器；回来只恢复一个，且不重发进行中的请求。
-  var inflight = pending.length
-  page.onHide()
-  assert.strictEqual(activeTimers(), 0)
-  page.onShow(); page.onShow()
-  assert.strictEqual(pending.length, inflight, 'onShow must not resend an in-flight request')
-  assert.strictEqual(activeTimers(), 1)
-  page.onUnload()
-  assert.strictEqual(activeTimers(), 0)
-
-  // 6. 切到后台期间回包：回来直接展示结果，不再发请求。
-  page = await open(['回来片']); await drain()
-  var hidden = pending.length
-  page.onHide()
-  answer(pending[hidden - 1], 'hit'); await drain()
-  page.onShow()
-  assert.strictEqual(pending.length, hidden)
-  assert(page.data.done && page.data.items[0].hit && !page.data.running)
-  assert.strictEqual(activeTimers(), 0)
-
-  // 7. 回调在后台丢失：满 60 秒再回来，停下并提示超时，不另发请求。
-  page = await open(['后台片']); await drain()
-  var lost = pending.length
-  page.onHide()
-  clock += 60000
-  page.onShow(); await drain()
-  assert.strictEqual(pending.length, lost, 'returning after the timeout must not resend')
-  assert(page.data.done && !page.data.running)
-  assert.strictEqual(page.data.failBanner, '查询超时，请重试')
-  assert.strictEqual(activeTimers(), 0)
-
-  // 8. 多条查询超时：停掉尚未发出的下一条，不能接着查。
-  var batch = pending.length
-  page = await open(['一片', '二片', '三片']); await drain()
-  answer(pending[batch], 'hit'); await drain(); page.tick(); await drain()
-  assert.strictEqual(page.data.head, '已完成 1 / 3')
-  var sent = pending.length
-  clock += 60000; page.tick(); await drain()
-  assert.strictEqual(pending.length, sent, 'timeout must not start the next title')
-  assert(page.data.done && !page.data.running)
-  assert.strictEqual(page.data.failBanner, '查询超时，请重试')
-  assert(page.data.items[0].hit && page.data.items[1].failed && page.data.items[2].failed)
-  assert.strictEqual(page.data.items[1].line, '查询超时，请重试')
-  assert.strictEqual(page.data.items[2].line, '查询超时，请重试')
-  assert.strictEqual(activeTimers(), 0)
-  answer(pending[sent - 1], 'hit'); await drain(); page.tick()
-  assert(page.data.items[1].failed, 'late answer after a multi-item timeout is ignored')
-
-  // 9. 网络失败：进度停在原位，下面是「网络异常，请重试」和重试按钮。
-  var netAt = pending.length
-  page = await open(['甲网', '乙网']); await drain()
-  answer(pending[netAt], 'hit'); await drain(); page.tick(); await drain()
-  assert.strictEqual(page.data.head, '已完成 1 / 2')
-  assert.strictEqual(page.data.percent, 50)
-  var netSent = pending.length
-  pending[netSent - 1].fail(); await drain(); page.tick()
-  assert(page.data.networkError && page.data.showNetworkRetry && !page.data.running && page.data.done)
-  assert.strictEqual(page.data.failBanner, '网络异常，请重试')
-  assert.strictEqual(page.data.head, '已完成 1 / 2')
-  assert.strictEqual(page.data.percent, 50)
-  assert.strictEqual(pending.length, netSent, 'network failure must not start the next title')
-  assert.strictEqual(activeTimers(), 0)
-  page.onHide(); page.onShow()
-  assert.strictEqual(pending.length, netSent, 'showing the network error again must not resend')
-  assert.strictEqual(activeTimers(), 0)
-  assert.strictEqual(page.data.head, '已完成 1 / 2')
-  page.retry({ currentTarget: { dataset: {} } })
-  page.retry({ currentTarget: { dataset: {} } })
-  page.retryAll()
-  await drain()
-  assert.strictEqual(pending.length, netSent + 1, 'retry after a network error sends one request')
-  assert(page.data.running && !page.data.networkError)
-  assert.strictEqual(page.data.head, '已完成 1 / 2')
-  assert.strictEqual(page.data.percent, 50)
-  assert.strictEqual(activeTimers(), 1)
-  page.onUnload()
-  assert.strictEqual(activeTimers(), 0)
-
-  // 10. 服务端错误不是网络异常，进入可重试的失败结果，不占用「停在原进度」。
-  page = await open(['服务片']); await drain()
-  pending[pending.length - 1].success({ statusCode: 503, data: {} })
-  await drain(); page.tick()
-  assert(page.data.done && !page.data.networkError && page.data.items[0].failed && page.data.itemRetry)
-  assert.strictEqual(page.data.items[0].line, '服务暂不可用')
   assert.strictEqual(activeTimers(), 0)
   console.log('query page timeout, retry, progress and timer cleanup checks ok')
 }

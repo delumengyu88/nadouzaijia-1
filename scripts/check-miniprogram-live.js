@@ -32,35 +32,36 @@ global.wx = {
     }
     calls.push(opt)
     if (nextError) { nextError = false; opt.fail(); return }
-    if (summaryReply) { opt.success({ statusCode: 200, data: summaryReply }); return }
-    if (pendingVerification) {
-      opt.success({ statusCode: 200, data: { program_name: opt.data.name, outcome: 'unverified',
-        platform_groups: [], locked_records: [], unverified_source_count: 1 } })
-      return
-    }
-    if (withGenerated) {
-      // Server shape after generated dates: 其他平台 group arrives first here on purpose,
-      // the generated-date row cannot be exported, and evidence_platforms omits it.
-      opt.success({ statusCode: 200, data: { program_name: opt.data.name, outcome: 'hit', platform_count: 1,
-        evidence_platforms: ['真实测试平台'], evidence_program_name: opt.data.name,
-        platform_groups: [
-          { platform: '其他平台', records: [{ record_id: 'gen1', locked: false, platform: '其他平台', access: 'full',
-            checked_at: '2026-07-01T12:00:00+08:00', can_download_report: false }] },
-          { platform: '真实测试平台', records: [{ record_id: 'xh1', locked: false, platform: '真实测试平台', access: 'full',
-            checked_at: '2026-01-02T03:04:05+08:00', can_download_report: true },
-          { record_id: 'xh2', locked: false, platform: '真实测试平台', access: 'full',
-            checked_at: '2026-01-03T03:04:05+08:00', can_download_report: true }] }],
-        locked_records: [{ record_id: 'locked', locked: true, age_bucket: 'd30_89' }],
-        locked_summary: { locked_total: 1, unlockable_total: 1, by_required_tier: { vip: 1 }, cheapest_full_unlock: 'single_program_30d' }
-      } })
-      return
-    }
-    opt.success({ statusCode: 200, data: { program_name: opt.data.name, outcome: 'hit', platform_count: 1, evidence_platforms: ['真实测试平台'], evidence_program_name: opt.data.name,
-      platform_groups: [{ records: [{ record_id: 'xh1', locked: false, platform: '真实测试平台', category: '测试类别',
-        access: 'full', checked_at: '2026-01-02T03:04:05+08:00', can_download_report: true }] }],
-      locked_records: [{ record_id: 'locked', locked: true, age_bucket: 'd30_89', platform: '禁止泄露' }],
+    opt.success({ statusCode: 200, data: opt.data.names ? opt.data.names.map(searchResult) : searchResult(opt.data.name) })
+  }
+}
+function searchResult(name) {
+  if (summaryReply) return summaryReply
+  if (pendingVerification) {
+    return { program_name: name, outcome: 'unverified',
+      platform_groups: [], locked_records: [], unverified_source_count: 1 }
+  }
+  if (withGenerated) {
+    // Server shape after generated dates: 其他平台 group arrives first here on purpose,
+    // the generated-date row cannot be exported, and evidence_platforms omits it.
+    return { program_name: name, outcome: 'hit', platform_count: 1,
+      evidence_platforms: ['真实测试平台'], evidence_program_name: name,
+      platform_groups: [
+        { platform: '其他平台', records: [{ record_id: 'gen1', locked: false, platform: '其他平台', access: 'full',
+          checked_at: '2026-07-01T12:00:00+08:00', can_download_report: false }] },
+        { platform: '真实测试平台', records: [{ record_id: 'xh1', locked: false, platform: '真实测试平台', access: 'full',
+          checked_at: '2026-01-02T03:04:05+08:00', can_download_report: true },
+        { record_id: 'xh2', locked: false, platform: '真实测试平台', access: 'full',
+          checked_at: '2026-01-03T03:04:05+08:00', can_download_report: true }] }],
+      locked_records: [{ record_id: 'locked', locked: true, age_bucket: 'd30_89' }],
       locked_summary: { locked_total: 1, unlockable_total: 1, by_required_tier: { vip: 1 }, cheapest_full_unlock: 'single_program_30d' }
-    } })
+    }
+  }
+  return { program_name: name, outcome: 'hit', platform_count: 1, evidence_platforms: ['真实测试平台'], evidence_program_name: name,
+    platform_groups: [{ records: [{ record_id: 'xh1', locked: false, platform: '真实测试平台', category: '测试类别',
+      access: 'full', checked_at: '2026-01-02T03:04:05+08:00', can_download_report: true }] }],
+    locked_records: [{ record_id: 'locked', locked: true, age_bucket: 'd30_89', platform: '禁止泄露' }],
+    locked_summary: { locked_total: 1, unlockable_total: 1, by_required_tier: { vip: 1 }, cheapest_full_unlock: 'single_program_30d' }
   }
 }
 var api = require('../miniprogram/api')
@@ -73,19 +74,12 @@ async function main() {
   var query = await api.createQuery(['真实测试片', '失败测试片'])
   assert(query.ok)
   api.advanceQuery(query.id); await drain()
-  assert.strictEqual(calls[0].url, '/test-api/api/v1/programs/search')
+  assert.strictEqual(calls[0].url, '/test-api/api/v1/programs/search/batch')
   assert.strictEqual(calls[0].header.Authorization, 'Bearer test-free-token')
-  nextError = true; api.advanceQuery(query.id); await drain()
+  assert.deepStrictEqual(calls[0].data.names, ['真实测试片', '失败测试片'])
   var results = api.getQuery(query.id)
-  assert(results.networkError && results.done && results.items[0].hit && results.items[1].failed)
-  assert.strictEqual(results.failBanner, '网络异常，请重试')
-  assert.strictEqual(results.head, '已完成 1 / 2')
-  assert.strictEqual(results.percent, 50)
-  assert(results.showNetworkRetry)
-  assert.strictEqual(calls.length, 2, 'network failure must not start another search')
+  assert(results.done && results.items.every(function (row) { return row.hit }))
   assert.strictEqual(results.items[0].evidencePlatform, '真实测试平台')
-  api.retryItem(query.id, '失败测试片'); await drain()
-  assert(api.getQuery(query.id).items[1].hit)
   state.setSession({ token: 'test-member-token', expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: 'member', tier: 'vip' } })
   var crossed = api.getQuery(query.id)
   assert(crossed && typeof crossed.then === 'function', 'another account must not read the in-memory job')
