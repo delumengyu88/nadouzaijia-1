@@ -4,7 +4,7 @@ config.calibrating = false
 assert.strictEqual(config.mode, 'live')
 // Exercise the explicitly selected development hybrid configuration.
 config.mode = 'hybrid'
-assert.strictEqual(config.apiBase, '')
+assert.strictEqual(config.apiBase, 'https://nadou.youroem.cn')
 config.apiBase = '/test-api'
 var calls = []
 var nextError = false

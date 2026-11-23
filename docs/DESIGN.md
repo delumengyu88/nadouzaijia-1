@@ -31,7 +31,7 @@ This PR is the smallest backend later PRs can build on: import the hourly task e
 | `nadou.user_orders` | `UserOrders`, the signed-in mini-program order list |
 | `nadou.seed` | Synthetic CSV + index rows through the importer |
 
-Normalization and parsing are classes. `SignedUrlProvider` is the seam the real CDN signer will replace; the API calls only that.
+Normalization and parsing are classes. `SignedUrlProvider` is the seam the real CDN signer will replace; the API calls only that. The current signer returns `signed://derived/` and includes no host, so the mini program does not request it. The server does not build absolute URLs for the mini program, and there is no separate public-origin environment variable. The mini program production root is `https://nadou.youroem.cn`. `inadol.com` 在备案下来之前不可用于小程序。
 
 ## Data model
 

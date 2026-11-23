@@ -3,8 +3,8 @@ var state = require('./state')
 
 module.exports = function (path, data, options) {
   options = options || {}
-  var base = String(config.apiBase || '').replace(/\/$/, '')
-  if (!base) return Promise.reject(new Error('未配置服务地址'))
+  var url = config.apiUrl(path)
+  if (!url) return Promise.reject(new Error('未配置服务地址'))
   var token = options.public ? '' : state.token()
   // optionalAuth sends a session when one exists, and still runs when it does not.
   // Invite state is 200 for a missing token. Other calls still require a session.
@@ -13,7 +13,7 @@ module.exports = function (path, data, options) {
     // A synchronous throw must still settle the promise, or callers wait forever.
     try {
       wx.request({
-        url: base + path,
+        url: url,
         method: options.method || 'GET',
         timeout: options.timeout || 15000,
         data: data || {},

@@ -115,14 +115,14 @@ class PayClient {
   static request(method, path, data) {
     var config = require('../config')
     var tokenState = require('./state')
-    var base = String(config.apiBase || '').replace(/\/$/, '')
-    if (!base) return Promise.resolve({ ok: false, code: 'offline', message: '未配置服务地址' })
+    var url = config.apiUrl(path)
+    if (!url) return Promise.resolve({ ok: false, code: 'offline', message: '未配置服务地址' })
     var token = tokenState.token()
     if (!token) return Promise.resolve({ ok: false, code: 'login', message: '请先登录' })
     return new Promise(function (resolve) {
       try {
         wx.request({
-          url: base + path,
+          url: url,
           method: method,
           timeout: 15000,
           data: data === undefined ? {} : data,

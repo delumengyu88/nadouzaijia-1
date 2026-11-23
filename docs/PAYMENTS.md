@@ -2,7 +2,9 @@
 
 服务端下单、验签和解密。小程序只负责拿签名参数调 `wx.requestPayment`。`wx.requestPayment` 的 success **不是**开通依据。会员只在微信支付通知验签通过，或服务端主动向微信查单确认后开通。
 
-正式商户联调仍待验。下面没有商户号、密钥、回调域名或 IP。
+正式商户联调仍待验。下面没有商户号、密钥或 IP。
+
+小程序访问的生产根地址是 `https://nadou.youroem.cn`，只写在 `miniprogram/config.js`。`inadol.com` 在备案下来之前不可用于小程序。`NADOU_WECHAT_NOTIFY_URL` 仍只在服务器环境里设置，本仓库不写它的值。回调要给微信支付访问时，主机名用已备案域名。
 
 ## 环境变量
 

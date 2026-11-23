@@ -45,9 +45,9 @@ docker compose up --build -d
 4. AppID 填 `touristappid`，用测试号或游客模式。不要把正式 AppID 写回仓库。
 5. 点「导入」，然后编译。入口是首页。每次冷启动都会看到开屏，右上角「跳过」后进入首页。从后台或分享卡片回到已经在运行的小程序不会再放一次。底部只有三项：首页、会员中心、个人中心。
 
-默认 `miniprogram/config.js` 里 `useMock` 为 `true`，走本地假数据，不访问网络。验收和演示用这个。
+默认 `miniprogram/config.js` 的 `mode` 是 `live`。体验版和正式版请求 `https://nadou.youroem.cn`。这个生产根地址只写在该文件的 `PRODUCTION_API_BASE`。`inadol.com` 在备案下来之前不可用于小程序。
 
-要改连本机后端：把 `useMock` 改成 `false`，把 `apiBase` 写成 `http://localhost:8000`。然后在开发者工具的「详情 → 本地设置」里勾选「不校验合法域名」。不勾的话，工具会拦截发到本机的请求。这个地址只留在本机，不要提交。
+要改连本机后端：复制 `miniprogram/config.local.example.js` 为 `config.local.js`，把 `apiBase` 写成 `http://localhost:8000`。然后在开发者工具的「详情 → 本地设置」里勾选「不校验合法域名」。不勾的话，工具会拦截发到本机的请求。这个覆盖只对开发版生效，不要提交。
 
 更细的查询样例和邀请码见 [miniprogram/README.md](miniprogram/README.md)。
 
@@ -71,11 +71,11 @@ docker compose up --build -d
 这些没有接上，演示也不假装已经接上：
 
 - 正式小程序 AppID
-- 备案
+- `inadol.com` 的 ICP 备案。备案下来之前，该域名不可用于小程序；小程序生产根地址是 `https://nadou.youroem.cn`
 - 微信支付正式商户联调（服务端 JSAPI 已接，见 [docs/PAYMENTS.md](docs/PAYMENTS.md)；0.01 元测试档默认关闭）
 - 大刀的只读索引账号
-- CDN 签名（现在是本地假签名）
-- 一台服务器和已备案的 https 域名
+- CDN 签名（现在是本地假签名，不返回小程序可访问的绝对地址）
+- 一台服务器和已备案的 https 域名（小程序当前使用 `https://nadou.youroem.cn`）
 
 ## Local workbench
 
@@ -160,7 +160,7 @@ The mini program sends `POST /api/v1/auth/wechat/login` with `{ "code": "<wx.log
 
 Send `Authorization: Bearer <token>` for search/report data, query exports, invite redemption and `/auth/me`. Sessions last seven days; only their SHA-256 digest is stored in the database. Missing, invalid or expired sessions return 401; banned accounts return 403. An invalid/used WeChat code returns 401, malformed input 422, and missing server configuration or upstream failure 503. Staff sessions remain separate and cannot be substituted with a user session.
 
-Keep `touristappid` and an empty `apiBase` in source control. Real WeChat login testing requires the matching mini program identity in local developer settings and a locally configured reachable API; no real credentials or deployment addresses belong in the repository. Python tests mock the WeChat network call, while `node scripts/check-miniprogram.js` includes login state checks for all three adapters. Test identities are minted only by `tests/user_helpers.py`, without a development authentication route.
+Keep `touristappid` in source control. The mini program production API root is `https://nadou.youroem.cn`, written once as `PRODUCTION_API_BASE` in `miniprogram/config.js`. Experience and release builds ignore a local `apiBase`. `inadol.com` 在备案下来之前不可用于小程序。The server does not build absolute URLs for the mini program: report downloads return bytes on the request host, and derived image locators stay `signed://derived/` with no host. No new environment variable is required for that. Real WeChat login testing still needs the matching mini program identity in local developer settings. Python tests mock the WeChat network call, while `node scripts/check-miniprogram.js` includes login state checks for all three adapters. Test identities are minted only by `tests/user_helpers.py`, without a development authentication route.
 
 ## 体验版会员档位（正式版提交审核前必须拆除）
 
