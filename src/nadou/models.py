@@ -176,6 +176,7 @@ class IndexRecord(Base):
     program_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     program_name_raw: Mapped[str] = mapped_column(String(200), nullable=False)
     hit_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    summary_grant: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     hitlist_sha256: Mapped[str | None] = mapped_column(String(64))
     category: Mapped[str | None] = mapped_column(String(64))
     frame_count: Mapped[int] = mapped_column(Integer, nullable=False)
