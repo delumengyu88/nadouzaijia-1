@@ -107,8 +107,8 @@ def test_mixed_review_is_excluded_from_summary_and_user_export(session, clock, r
     visible = put(session, "家庭", "counted", when=clock - timedelta(days=100))
     # Represents an explicitly counted record; no review UI or action API is added.
     visible.hit_type = "consensus"
-    visible.category = "已计入记录"
-    hidden.category = "不应导出的字段"
+    visible.frame_count = 4321
+    hidden.frame_count = 8765
     add_query(
         session,
         clock,
@@ -128,14 +128,14 @@ def test_mixed_review_is_excluded_from_summary_and_user_export(session, clock, r
     assert result.status_code == 200
     book = load_workbook(io.BytesIO(result.content))
     values = [cell.value for sheet in book for row in sheet for cell in row]
-    assert "已计入记录" in values and "不应导出的字段" not in values
+    assert 4321 in values and 8765 not in values
     # Pending-only titles also stay out of user hit rows.
     visible.hit_type = "review"
     session.commit()
     result = export(client, "review-query", "review-vip")
     book = load_workbook(io.BytesIO(result.content))
     values = [cell.value for sheet in book for row in sheet for cell in row]
-    assert "已计入记录" not in values and "未命中" in values
+    assert 4321 not in values and "未命中" in values
 
 
 def test_review_does_not_change_mixed_locked_prices(session, clock, review_titles):

@@ -11,6 +11,7 @@ from nadou.admin.errors import WorkbenchError
 from nadou.admin.members import EntitlementBook
 from nadou.admin.notify import Notifier
 from nadou.admin.phone import PhoneMask
+from nadou.bands import BAND_KINDS
 from nadou.models import Entitlement, Order, OrderIssuance, User
 
 
@@ -66,6 +67,7 @@ class OrderView:
             "product": order.product,
             "amount_fen": order.amount_fen,
             "wechat_transaction_id": order.wechat_transaction_id,
+            "program_name": order.program_name,
             "attempts": None if issuance is None else issuance.attempts,
             "last_error": None if issuance is None else issuance.last_error,
             "issuance_status": None if issuance is None else issuance.status,
@@ -192,13 +194,18 @@ class EntitlementIssuer:
             issuance.attempts += 1
             issuance.updated_at = self.now
             try:
-                entitlement = self.writer.write(
-                    self.session,
-                    order.user_id,
-                    issuance.tier,
-                    issuance.duration_days,
-                    self.now,
-                )
+                if issuance.tier in BAND_KINDS:
+                    from nadou.payments.unlock import write_unlock
+
+                    entitlement = write_unlock(self.session, order, None, self.now)
+                else:
+                    entitlement = self.writer.write(
+                        self.session,
+                        order.user_id,
+                        issuance.tier,
+                        issuance.duration_days,
+                        self.now,
+                    )
             except Exception as exc:
                 last_error = str(exc)[:500] or exc.__class__.__name__
                 issuance.last_error = last_error
@@ -284,7 +291,18 @@ class OrderRefund:
                 and issuance.duration_days > 0
                 and entitlement.expires_at > self.now
             ):
-                adjustments = self._revoke_remaining(entitlement, issuance)
+                if entitlement.kind in BAND_KINDS:
+                    # A band unlock is one program's permanent row; nothing renews on top of it.
+                    adjustments = [
+                        {
+                            "entitlement_id": entitlement.id,
+                            "before": entitlement.expires_at,
+                            "after": self.now,
+                        }
+                    ]
+                    entitlement.expires_at = self.now
+                else:
+                    adjustments = self._revoke_remaining(entitlement, issuance)
         order.status = "已退款"
         order.refunded_at = self.now
         order.refund_reason = text

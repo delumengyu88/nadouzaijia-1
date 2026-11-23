@@ -29,15 +29,18 @@ from nadou.text import RecordAge
 from tests.user_helpers import UserClient
 
 COLUMNS = (
+    "序号",
     "平台",
-    "子类型",
-    "类别",
+    "网络类型",
     "节目类型",
     "上传节目名",
     "匹配节目名",
+    "匹配度",
     "检测日期",
+    "命中帧数",
     "命中画面截图",
 )
+TITLE_CELL = "A2"
 
 
 def assert_no_match_labels(sheet):
@@ -56,7 +59,6 @@ def assert_no_match_labels(sheet):
             if isinstance(cell.value, str):
                 assert "名称相近" not in cell.value
                 assert "疑似命中" not in cell.value
-            assert cell.fill.fill_type is None
 
 
 SCHEMA_HOSTS = (
@@ -180,31 +182,55 @@ def export(client, query_id, user_id=None):
 
 
 def meta_block(sheet):
+    """「查询编号：x」 style cells in rows 3–4, plus the part label in the note row."""
     found = {}
-    for row in sheet.iter_rows(max_row=8, max_col=2):
-        label = row[0].value
-        if label in {"查询编号", "查询范围", "生成日期", "部分"}:
-            found[label] = row[1].value
+    for row in sheet.iter_rows(min_row=3, max_row=5):
+        for cell in row:
+            value = cell.value
+            if not isinstance(value, str) or "：" not in value:
+                continue
+            label, _, rest = value.partition("：")
+            if label in {"查询编号", "查询范围", "生成日期", "客户"}:
+                found[label] = rest
+            elif label == "结果说明" and "部分" in rest:
+                found["部分"] = rest[rest.rindex("（") + 1 : -1]
     return found
 
 
-def hit_table(sheet):
+def table_rows(sheet):
     header_at = None
     headers = None
     for row in sheet.iter_rows(max_col=len(COLUMNS)):
-        if row[0].value == "平台":
+        if row[0].value == "序号":
             header_at = row[0].row
             headers = tuple(cell.value for cell in row)
             break
     assert header_at is not None
+    rows = []
+    for row in sheet.iter_rows(min_row=header_at + 1, max_col=len(COLUMNS)):
+        if row[0].value is None and row[4].value is None:
+            break
+        rows.append(row)
+    return headers, rows
+
+
+def hit_table(sheet):
+    """Visible hit rows only. Band rows (no 序号) are returned by band_rows."""
+    headers, rows = table_rows(sheet)
     records = []
     styled = []
-    for row in sheet.iter_rows(min_row=header_at + 1, max_col=len(COLUMNS)):
+    for row in rows:
         if row[0].value is None:
-            break
+            continue
         records.append(tuple(cell.value for cell in row))
         styled.append(row)
     return headers, records, styled
+
+
+def band_rows(sheet):
+    """(上传节目名, band text, note) for every locked or 30天内 band line."""
+    _headers, rows = table_rows(sheet)
+    return [(row[4].value, row[1].value, row[6].value) for row in rows if row[0].value is None]
 
 
 def rest_table(sheet):
@@ -308,8 +334,12 @@ def test_rejects_callers_who_cannot_export(session, clock, client):
     )
     session.commit()
 
-    denied = (
-        None,
+    anonymous = export(client, "q-auth", None)
+    assert anonymous.status_code == 401
+    assert not anonymous.content.startswith(b"PK")
+    # Everyone may download a report now; the tier decides which rows it holds.
+    # Other users' queries stay private whatever their tier.
+    for user_id in (
         "user-free",
         "user-p90",
         "user-p30",
@@ -317,12 +347,10 @@ def test_rejects_callers_who_cannot_export(session, clock, client):
         "user-expired",
         "user-expired-regular",
         "user-both-expired",
-    )
-    for user_id in denied:
+    ):
         response = export(client, "q-auth", user_id)
-        assert response.status_code == (401 if user_id is None else 403), user_id
+        assert response.status_code == 404, user_id
         assert not response.content.startswith(b"PK")
-        assert "命中结果" not in response.text
 
     missing_user = export(client, "q-auth", "missing-user")
     assert missing_user.status_code == 401
@@ -413,7 +441,7 @@ def test_header_columns_and_exact_strings(session, clock):
     workbook = load_workbook(BytesIO(response.content))
     assert workbook.sheetnames == ["命中结果", "未命中与待处理"]
     sheet = workbook["命中结果"]
-    assert sheet["A1"].value == "那豆在架 命中结果（共导出 3 条）"
+    assert sheet[TITLE_CELL].value == "那豆在架 命中结果（共导出 3 条）"
     block = meta_block(sheet)
     assert block["查询编号"] == "q-layout"
     assert block["查询范围"] == "3 个节目 · 已收录平台 · ≥30 天记录"
@@ -422,14 +450,20 @@ def test_header_columns_and_exact_strings(session, clock):
     headers, records, _styled = hit_table(sheet)
     assert headers == COLUMNS
     assert "命中类型" not in headers
-    assert [row[1] for row in records] == ["专网", "公网", "专网"]
+    assert [row[0] for row in records] == [1, 2, 3]
+    assert [row[2] for row in records] == ["专网", "公网", "专网"]
     assert [row[3] for row in records] == ["电视剧", None, "电影"]
     assert [row[4] for row in records] == ["海边故事", "规范化故事", "手工剧"]
     assert records[1][5] == "规范化故事"
+    # Search matches the normalized title exactly, so 匹配度 is always 100%.
+    assert [row[6] for row in records] == [1.0, 1.0, 1.0]
+    assert all(row[6].number_format == "0%" for row in _styled)
+    assert [row[8] for row in records] == [1, 1, 1]
+    # No nickname or phone on file: the 客户 cell falls back to a neutral label.
+    assert block["客户"] == "微信用户"
     joined = " ".join("" if value is None else str(value) for row in records for value in row)
-    assert "客户" not in joined
-    assert "%" not in joined
     assert "相似度" not in joined
+    assert band_rows(sheet) == []
     assert_no_match_labels(sheet)
     assert rest_table(workbook["未命中与待处理"]) == []
     workbook.close()
@@ -523,11 +557,11 @@ def test_two_records_of_the_same_platform_and_program(session, clock):
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
     assert len(records) == 2
-    assert records[0][0] == records[1][0] == "示例视频"
-    assert records[0][1] == records[1][1] == "专网"
+    assert records[0][1] == records[1][1] == "示例视频"
+    assert records[0][2] == records[1][2] == "专网"
     assert records[0][4] == records[1][4] == "重复节目"
     assert records[0][5] == records[1][5] == "重复节目"
-    assert records[0][6] != records[1][6]
+    assert records[0][7] != records[1][7]
     images = embedded_images(response.content)
     assert len(images) == 2
     assert images[0] != images[1]
@@ -626,8 +660,12 @@ def test_excludes_test_prefix_and_non_done(session, clock):
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
     assert len(records) == 2
-    assert {row[0] for row in records} == {"示例视频", PlatformNames.OTHER}
-    assert rest_table(workbook["未命中与待处理"]) == [("只有新记录", RestStatus.MISS, None)]
+    assert {row[1] for row in records} == {"示例视频", PlatformNames.OTHER}
+    # 30天内 records never show details; the report points to 委托取证 instead.
+    assert band_rows(workbook["命中结果"]) == [
+        ("只有新记录", "30 天内 · 1 条 · 可委托取证", "不在线展示，可在小程序「委托取证」申请取证")
+    ]
+    assert rest_table(workbook["未命中与待处理"]) == []
     text = " ".join(str(value) for row in records for value in row if value)
     assert "TEST_台" not in text
     assert "Test_clip" not in text
@@ -657,8 +695,8 @@ def test_detection_date_is_beijing_calendar_day(session, clock):
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
     assert len(records) == 1
-    assert records[0][6] == "2026-08-21"
-    assert records[0][6] != "2026-08-20"
+    assert records[0][7] == "2026-08-21"
+    assert records[0][7] != "2026-08-20"
     workbook.close()
 
 
@@ -733,7 +771,7 @@ def test_screenshot_is_embedded_watermarked_and_has_no_hyperlink(session, clock)
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
     assert len(records) == 3
-    assert records[2][7] == "暂无截图"
+    assert records[2][9] == "暂无截图"
     assert all(call[1] != "rec-open" for call in signer.calls)
     assert signer.calls
     assert {call[0] for call in signer.calls} == {"card"}
@@ -790,12 +828,14 @@ def test_sheet2_matches_the_unresolved_summary(session, clock):
         ("没有这场", RestStatus.MISS, None),
         ("待确认剧", "检索中", "候选甲、候选乙"),
         ("失败剧", RestStatus.FAILED, "名称无法解析"),
-        ("太新了", RestStatus.MISS, None),
+    ]
+    assert [row[:2] for row in band_rows(workbook["命中结果"])] == [
+        ("太新了", "30–90 天 · 1 条 · 待解锁")
     ]
     counts = {}
     for _name, status, _detail in summary:
         counts[status] = counts.get(status, 0) + 1
-    assert counts == {RestStatus.MISS: 2, "检索中": 1, RestStatus.FAILED: 1}
+    assert counts == {RestStatus.MISS: 1, "检索中": 1, RestStatus.FAILED: 1}
     workbook.close()
 
 
@@ -851,8 +891,14 @@ def test_membership_age_floor_changes_rows_and_scope(session, clock):
         _headers, regular_rows, _styled = hit_table(regular["命中结果"])
         assert len(vip_rows) == 3
         assert [row[4] for row in regular_rows] == ["跨档节目"]
-        assert rest_table(regular["未命中与待处理"]) == [("仅四十天", RestStatus.MISS, None)]
+        # 普通会员 see the 30–90天 program as one locked band line, priced for a single unlock.
+        assert band_rows(regular["命中结果"]) == [
+            ("跨档节目", "30–90 天 · 1 条 · 待解锁", "本节目单次解锁 ¥39.9，或升级 VIP 后查看"),
+            ("仅四十天", "30–90 天 · 1 条 · 待解锁", "本节目单次解锁 ¥39.9，或升级 VIP 后查看"),
+        ]
+        assert rest_table(regular["未命中与待处理"]) == []
         assert rest_table(vip["未命中与待处理"]) == []
+        assert band_rows(vip["命中结果"]) == []
     finally:
         vip.close()
         regular.close()
@@ -913,12 +959,13 @@ def test_unrecognized_platform_is_still_a_hit(session, clock):
     response = export(make_client(session, clock), "q-platform", "user-vip")
     workbook = load_workbook(BytesIO(response.content))
     _headers, records, _styled = hit_table(workbook["命中结果"])
-    by_name = {row[4]: (row[0], row[1]) for row in records}
+    by_name = {row[4]: (row[1], row[2]) for row in records}
+    # 网络类型 has its own column; the platform subtype stays next to the platform.
     assert by_name == {
-        "多解节目": (PlatformNames.OTHER, None),
-        "无解节目": (PlatformNames.OTHER, None),
-        "已知节目": ("示例视频", "专网 OTT"),
-        "山东节目": ("山东移动", "专网 OTT"),
+        "多解节目": (PlatformNames.OTHER, "专网"),
+        "无解节目": (PlatformNames.OTHER, "公网"),
+        "已知节目": ("示例视频 OTT", "专网"),
+        "山东节目": ("山东移动 OTT", "专网"),
     }
     assert len(records) == 4
     assert PlatformNames.OTHER == "其他平台"
@@ -1028,7 +1075,8 @@ def _assert_parts(blob: bytes, expected_rows: int):
             assert block["生成日期"] == "2026-11-21"
             assert block["部分"] == PartNames.label(index, len(payloads))
             _headers, rows, _styled = hit_table(workbook["命中结果"])
-            assert workbook["命中结果"]["A1"].value == f"那豆在架 命中结果（共导出 {len(rows)} 条）"
+            title = workbook["命中结果"][TITLE_CELL].value
+            assert title == f"那豆在架 命中结果（共导出 {len(rows)} 条）"
             total_rows += len(rows)
             assert len(rows) >= 1
             last = index == len(payloads)
@@ -1056,7 +1104,7 @@ def test_synthetic_frames_are_not_customer_images():
     assert_watermark(prepared.jpeg)
 
 
-def test_category_is_from_each_visible_index_record(session, clock):
+def test_template_has_no_category_column_and_keeps_program_type(session, clock):
     add_user(session, "category-member", clock, "regular")
     for record_id, age, category in (
         ("cat-open", 100, "共识类别"),
@@ -1085,8 +1133,11 @@ def test_category_is_from_each_visible_index_record(session, clock):
     headers, rows, _ = hit_table(workbook["命中结果"])
     assert headers == COLUMNS
     assert len(rows) == 2
-    assert {row[2] for row in rows} == {None, "共识类别"}
+    assert "类别" not in headers
     assert {row[3] for row in rows} == {"节目类型值"}
+    assert band_rows(workbook["命中结果"]) == [
+        ("类别节目", "30–90 天 · 1 条 · 待解锁", "本节目单次解锁 ¥39.9，或升级 VIP 后查看")
+    ]
     workbook.close()
 
 

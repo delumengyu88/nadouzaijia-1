@@ -229,6 +229,10 @@ def _view(order: Order, product: PayProduct | None, pay: dict | None = None) -> 
         "paid_at": order.paid_at.isoformat() if order.paid_at else None,
         "granted": order.status == "已发放",
     }
+    if order.program_name:
+        # One-program band unlock: permanent, so the day count is not shown.
+        body["program_name"] = order.program_name
+        body["permanent"] = True
     # Mini-program names. Keys above stay as they are, including Chinese status.
     body.update(UserOrders.detail_fields(order))
     if pay is not None:

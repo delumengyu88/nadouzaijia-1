@@ -77,6 +77,10 @@
     <view class="btn ghost item-retry" wx:if="{{item.failed && itemRetry}}" data-name="{{item.name}}" bindtap="retry">重试</view>
   </view>
   <view class="btn block" wx:if="{{showRetryAll}}" bindtap="retryAll">全部重试</view>
+  <block wx:if="{{showReport}}">
+    <button class="btn block plain page-wide" bindtap="downloadReport" loading="{{reportLoading}}" disabled="{{reportLoading}}">下载报告</button>
+    <view class="hint">报告包含本次查询全部节目，按时间分档汇总</view>
+  </block>
 </view>
 </view>
 <include src="../../components/launch-poster/view.wxml" />

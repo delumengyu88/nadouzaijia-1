@@ -456,7 +456,9 @@ def test_export_is_limited_to_the_owner(session, clock):
     assert owned.content.startswith(b"PK")
     assert export(client, query_id, "other-vip").status_code == 404
     free_id = create(client, "free-owner", {"name": "导出节目"}).json()["id"]
-    assert export(client, free_id, "free-owner").status_code == 403
+    # Free users download too: 180天以上 rows only, the 90–180天 band as one locked line.
+    free = export(client, free_id, "free-owner")
+    assert free.status_code == 200 and free.content.startswith(b"PK")
     assert export(client, "legacy-q", "owner").status_code == 404
 
 

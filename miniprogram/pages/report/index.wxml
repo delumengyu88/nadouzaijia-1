@@ -43,6 +43,47 @@
   <view class="card" wx:if="{{exampleEmpty}}">
     <view class="example-empty">暂无可展示的示例记录</view>
   </view>
+  <view class="tline" wx:if="{{useTimeline}}">
+    <view class="tl-band" wx:for="{{timeline.bands}}" wx:for-item="band" wx:for-index="bi" wx:key="key">
+      <view class="tl-axis"><view class="tl-node {{band.open && !band.empty ? 'on' : ''}}"></view></view>
+      <view class="tl-card {{band.open && !band.empty ? 'open' : ''}}">
+        <view class="tl-head">
+          <view class="tl-title"><text wx:if="{{band.locked}}" class="tl-lock">🔒</text>{{band.title}}</view>
+          <text class="tl-state" wx:if="{{band.open && !band.empty}}">{{band.status}}</text>
+          <view class="tl-buy" wx:elif="{{band.locked && !band.empty && band.buyText}}" data-index="{{bi}}" bindtap="unlockBand">{{band.buyText}}</view>
+          <view class="tl-buy" wx:elif="{{band.evidence && !band.empty}}" bindtap="evidence">去委托取证</view>
+        </view>
+        <view class="tl-hint" wx:if="{{band.hint && !band.empty}}">{{band.hint}}</view>
+        <view class="tl-hint" wx:if="{{band.empty}}">暂无记录</view>
+        <block wx:if="{{band.open && !band.empty}}">
+          <view class="tl-rec" wx:for="{{band.rows}}" wx:for-item="row" wx:for-index="ri" wx:key="id">
+            <view class="tl-rec-top" data-band="{{bi}}" data-row="{{ri}}" bindtap="toggleRow">
+              <text class="tl-platform">{{row.platform}}<text class="tl-subtype" wx:if="{{row.sub}}"> {{row.sub}}</text></text>
+              <text class="tl-meta" wx:if="{{row.expanded}}">{{row.network}}</text>
+              <text class="tl-meta" wx:else>{{row.network}}{{row.network && row.frames ? ' · ' : ''}}{{row.frames}}{{row.date ? ' · ' + row.date : ''}}</text>
+            </view>
+            <block wx:if="{{row.expanded}}">
+              <view class="tl-rec-sub"><text>{{row.frames}}</text><text>{{row.date}}</text></view>
+              <view class="tl-shots">
+                <view class="tl-shot {{row.blur ? 'blur' : ''}}" data-band="{{bi}}" data-row="{{ri}}" bindtap="openFrame">
+                  <image wx:if="{{row.src}}" class="tl-img" src="{{row.src}}" mode="aspectFill" />
+                  <view wx:else class="tl-ph"></view>
+                  <text class="tl-wm" wx:if="{{!row.src}}">那豆在架</text>
+                </view>
+                <view class="tl-times">
+                  <view class="tl-times-label">命中时间点</view>
+                  <view class="tl-time" wx:for="{{row.times}}" wx:for-item="time" wx:key="*this">{{time}}</view>
+                </view>
+              </view>
+            </block>
+          </view>
+          <view class="tl-note" wx:if="{{band.blur}}">模糊预览 · <text class="tl-link" bindtap="buyTimelineMember">开通会员看清晰图 ›</text></view>
+          <view class="tl-note" wx:elif="{{band.clear}}">清晰截图 · 点击图片放大</view>
+        </block>
+      </view>
+    </view>
+    <view class="tl-foot" wx:if="{{timeline.memberCta}}">或 <text class="tl-link" bindtap="buyTimelineMember">{{timeline.memberCta}}</text> · 30天以上全部可看</view>
+  </view>
   <view class="card" wx:if="{{showOpen}}" style="padding-top:8rpx;">
     <block wx:for="{{groups}}" wx:for-item="group" wx:key="platform">
       <block wx:for="{{group.rows}}" wx:for-item="row" wx:key="id">
@@ -125,6 +166,10 @@
   <button class="btn block plain page-wide" wx:if="{{showDownload}}" bindtap="download" loading="{{downloadLoading}}" disabled="{{downloadLoading}}">下载报告</button>
   <button class="btn block plain page-wide" wx:for="{{reportParts}}" wx:key="*this" data-name="{{item}}" bindtap="openPart">打开 {{item}}</button>
   <view class="foot-gap"></view>
+</view>
+<view class="tl-zoom" wx:if="{{zoomSrc}}" bindtap="closeZoom">
+  <image class="tl-zoom-img" src="{{zoomSrc}}" mode="aspectFit" />
+  <view class="tl-zoom-close">点击任意处关闭</view>
 </view>
 </view>
 <include src="../../components/launch-poster/view.wxml" />

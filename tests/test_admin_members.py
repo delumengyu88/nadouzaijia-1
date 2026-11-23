@@ -179,6 +179,7 @@ def test_ban_unban_and_manual_grant_are_audited(workbench):
         == 1
     )
 
+
 def test_lists_recent_users_without_query(workbench):
     earlier = workbench.clock.now - timedelta(days=2)
     later = workbench.clock.now - timedelta(hours=1)
@@ -325,6 +326,7 @@ def test_user_list_includes_active_membership(workbench):
     workbench.session.commit()
     listed = call(workbench, "GET", "/api/v1/admin/users", workbench.admin_token).json()
     rows = {row["id"]: row for row in listed["items"]}
+
     def expiry(row):
         return datetime.fromisoformat(row["membership_expires_at"])
 

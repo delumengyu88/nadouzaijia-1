@@ -4,7 +4,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Protocol
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from nadou.signed_url import SignedUrlProvider
 
@@ -115,6 +115,23 @@ class FrameImage:
     def prepare(raw: bytes) -> PreparedFrame:
         image = Image.open(BytesIO(raw)).convert("RGB")
         image = FrameImage._resize(image)
+        FrameImage._watermark(image)
+        jpeg = FrameImage._encode(image)
+        return PreparedFrame(jpeg=jpeg, width=image.width, height=image.height)
+
+    # Free-tier preview: shapes and colors only, no readable detail.
+    BLUR_GRID = 24
+    BLUR_RADIUS = 6
+
+    @staticmethod
+    def blurred(raw: bytes) -> PreparedFrame:
+        """Pixelate and blur before encoding, so the clear frame never leaves the server."""
+        image = Image.open(BytesIO(raw)).convert("RGB")
+        image = FrameImage._resize(image)
+        grid_h = max(1, round(image.height * FrameImage.BLUR_GRID / image.width))
+        small = image.resize((FrameImage.BLUR_GRID, grid_h), Image.Resampling.BOX)
+        image = small.resize(image.size, Image.Resampling.BILINEAR)
+        image = image.filter(ImageFilter.GaussianBlur(FrameImage.BLUR_RADIUS))
         FrameImage._watermark(image)
         jpeg = FrameImage._encode(image)
         return PreparedFrame(jpeg=jpeg, width=image.width, height=image.height)

@@ -32,7 +32,10 @@
     <view class="row-main">
       <view class="row-title record-name">{{item.name}}</view>
       <view class="row-sub" wx:if="{{item.line}}">{{item.line}}</view>
-      <text class="evidence-link" data-index="{{index}}" catchtap="requestEvidence">维权取证</text>
+      <view class="record-actions">
+        <text class="evidence-link" data-index="{{index}}" catchtap="requestEvidence">维权取证</text>
+        <text class="evidence-link report-link" wx:if="{{item.hit}}" data-index="{{index}}" catchtap="downloadReport">{{downloading === item.key ? '正在生成…' : '下载报告'}}</text>
+      </view>
     </view>
     <text class="tag {{item.badgeCls}}">{{item.badge}}</text>
     <text class="chev">›</text>

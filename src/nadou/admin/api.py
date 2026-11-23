@@ -497,9 +497,7 @@ class AdminApi:
                 reveal = account.role == "admin"
                 return {
                     "items": [
-                        UserView.list_item(
-                            row, reveal_phone=reveal, membership=grants.get(row.id)
-                        )
+                        UserView.list_item(row, reveal_phone=reveal, membership=grants.get(row.id))
                         for row in rows
                     ],
                     "total": total,

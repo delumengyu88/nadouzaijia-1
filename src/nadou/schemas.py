@@ -35,6 +35,8 @@ class OpenRecordOut(BaseModel):
     thumbnail_url: str | None = None
     hd_url: str | None = None
     category: str | None = None
+    # What GET /api/v1/records/{id}/frame returns for this caller: clear or blurred.
+    frame_view: Literal["clear", "blur"] | None = None
 
 
 class TierCounts(BaseModel):
@@ -74,6 +76,30 @@ class PlatformGroupOut(BaseModel):
     records: list[OpenRecordOut]
 
 
+class BandUnlockOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    product: Literal["unlock_band_90_180", "unlock_band_30_90"]
+    amount_fen: int
+    price_text: str
+    purchasable: bool
+
+
+class BandOut(BaseModel):
+    """One age band on the result page. Counts cover normal (non-summary) records."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    band: Literal["ge_180", "d90_179", "d30_89", "lt_30"]
+    label: str
+    count: int
+    state: Literal["open", "locked", "evidence"]
+    frame_view: Literal["clear", "blur"] | None = None
+    unlocked_by: Literal["membership", "unlock", "free"] | None = None
+    unlock: BandUnlockOut | None = None
+    upgrade_hint: str | None = None
+
+
 class SearchOut(BaseModel):
     program_name: str
     outcome: Literal["hit", "miss", "recent_only", "unverified"]
@@ -89,3 +115,8 @@ class SearchOut(BaseModel):
     # Rows with a generated date are never included.
     evidence_platforms: list[str] = []
     evidence_program_name: str = ""
+    # Result-page bands. Absent on older servers; clients fall back to the flat list.
+    viewer_tier: Literal["free", "regular", "vip"] | None = None
+    bands: list[BandOut] | None = None
+    frames_ready: bool | None = None
+    report_ready: bool | None = None

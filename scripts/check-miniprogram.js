@@ -1256,6 +1256,10 @@ var entryCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-min
 console.log(entryCheck.stdout || '')
 if (entryCheck.status !== 0) fail(entryCheck.stderr || entryCheck.stdout || 'automatic free entry check failed')
 
+var bandsCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-bands.js')], { encoding: 'utf8' })
+console.log(bandsCheck.stdout || '')
+if (bandsCheck.status !== 0) fail(bandsCheck.stderr || bandsCheck.stdout || 'result bands check failed')
+
 var recordsCheck = cp.spawnSync(process.execPath, [path.join(__dirname, 'check-miniprogram-records.js')], { encoding: 'utf8' })
 console.log(recordsCheck.stdout || '')
 if (recordsCheck.status !== 0) fail(recordsCheck.stderr || recordsCheck.stdout || 'records check failed')

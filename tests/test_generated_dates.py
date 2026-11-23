@@ -108,8 +108,8 @@ def test_export_excludes_generated_date_records(session, clock):
     sheet = book["命中结果"]
     _headers, rows, _styled = hit_table(sheet)
     assert len(rows) == 1
-    assert rows[0][0] == "示例视频"
-    dates = {row[6] for row in rows}
+    assert rows[0][1] == "示例视频"
+    dates = {row[7] for row in rows}
     assert at_age(clock, 120).strftime("%Y-%m-%d") not in dates
     assert at_age(clock, 150).strftime("%Y-%m-%d") not in dates
     rest = [r[0].value for r in book["未命中与待处理"].iter_rows(min_row=2) if r[0].value]
@@ -143,8 +143,8 @@ def test_export_count_in_first_row_and_filename_matches_rows(session, clock):
     sheet = load_workbook(BytesIO(response.content))["命中结果"]
     _headers, rows, _styled = hit_table(sheet)
     assert len(rows) == 3
-    assert sheet["A1"].value == HitWorkbook.first_row(len(rows))
-    assert sheet["A1"].value.endswith(f"（{ExportCount.label(len(rows))}）")
+    assert sheet["A2"].value == HitWorkbook.first_row(len(rows))
+    assert sheet["A2"].value.endswith(f"（{ExportCount.label(len(rows))}）")
     assert ExportCount.label(3) == "共导出 3 条"
     disposition = response.headers["content-disposition"]
     assert quote(PartNames.single(len(rows))) in disposition
@@ -264,7 +264,7 @@ def test_other_platform_sorts_last(session, client, clock):
 
     response = export(make_client(session, clock), "q-order", "user-vip")
     _headers, rows, _styled = hit_table(load_workbook(BytesIO(response.content))["命中结果"])
-    assert [row[0] for row in rows] == ["示例视频", PlatformNames.OTHER]
+    assert [row[1] for row in rows] == ["示例视频", PlatformNames.OTHER]
 
 
 def test_generated_flag_requires_null_uploaded_at(session, clock):
@@ -420,5 +420,5 @@ def test_backfill_then_task_import_restores_export_and_evidence(
     after = export(make_client(session, clock), "q-recovered", "user-vip")
     rows = hit_table(load_workbook(BytesIO(after.content))["命中结果"])[1]
     assert len(rows) == 1
-    assert rows[0][0] == "山东移动"
-    assert rows[0][6] == real_time.strftime("%Y-%m-%d")
+    assert rows[0][1] == "山东移动"
+    assert rows[0][7] == real_time.strftime("%Y-%m-%d")

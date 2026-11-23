@@ -114,6 +114,20 @@ function money(amount) {
   return `¥${amount}`;
 }
 
+// Orders carry the exact price in fen; single unlocks are not whole yuan (¥19.9).
+function orderMoney(row) {
+  if (row && Number.isInteger(row.amount_fen)) {
+    const yuan = row.amount_fen / 100;
+    return `¥${Number.isInteger(yuan) ? yuan : yuan.toFixed(2).replace(/0$/, "")}`;
+  }
+  return money(row ? row.amount : null);
+}
+
+function orderGoods(row) {
+  if (row && row.program_name) return `${tierName(row.tier)} · ${row.program_name}`;
+  return `${tierName(row ? row.tier : "")} ${row ? row.duration_days : ""} 天`;
+}
+
 function roleName(role) {
   return role === "admin" ? "管理员" : "客服";
 }
@@ -124,6 +138,8 @@ function tierName(kind) {
   if (kind === "program_30") return "单节目 30 天";
   if (kind === "program_90") return "单节目 90 天";
   if (kind === "screenshot") return "单张截图";
+  if (kind === "band_90_180") return "单节目解锁 90–180天";
+  if (kind === "band_30_90") return "单节目解锁 30–90天";
   return "权益";
 }
 
@@ -687,8 +703,8 @@ async function renderOrders() {
       return `<tr class="${selected} ${late}" data-act="open-order" data-id="${escapeHtml(row.id)}">
         <td class="mono nowrap">${escapeHtml(row.order_number)}</td>
         <td>${userCell}</td>
-        <td>${tierName(row.tier)} ${row.duration_days} 天</td>
-        <td class="money">${money(row.amount)}</td>
+        <td>${escapeHtml(orderGoods(row))}</td>
+        <td class="money">${orderMoney(row)}</td>
         <td>${escapeHtml(row.client || "—")}</td>
         <td class="nowrap">${orderLabel(row.status)}</td>
         <td class="nowrap">${escapeHtml(fmt(row.paid_at || row.created_at))}</td>
@@ -741,7 +757,7 @@ function orderDrawer(row, admin) {
     <p class="cs-hint"><a href="https://mpkf.weixin.qq.com/" target="_blank" rel="noopener noreferrer">回复请到微信小程序客服 ↗</a></p>
     <div class="drawer-bd"><div class="kv">
       <div class="k">用户</div><div class="v">${row.user_id ? `<button class="link" type="button" data-act="open-user" data-id="${escapeHtml(row.user_id)}">${escapeHtml(row.phone || "查看")}</button>` : escapeHtml(row.phone || "—")}</div>
-      <div class="k">商品</div><div class="v">${tierName(row.tier)} ${row.duration_days} 天 · <span class="money">${money(row.amount)}</span></div>
+      <div class="k">商品</div><div class="v">${escapeHtml(orderGoods(row))} · <span class="money">${orderMoney(row)}</span></div>
       <div class="k">端</div><div class="v">${escapeHtml(row.client || "—")}</div>
       <div class="k">自动重试</div><div class="v">${row.attempts == null ? "—" : `${row.attempts} 次`}</div>
       <div class="k">处理</div><div class="v">补发沿用订单上的档位和时长，不能改。退款后收回这笔订单发出的权益。</div>

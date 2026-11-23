@@ -309,6 +309,13 @@ module.exports = {
   listRecords: function (limit) {
     return listRecordPage(limit, 0).then(function (page) { return page.rows })
   },
+  // 整次查询的报告（查询结果页）。旧服务端对未开通会员返回 403，页面提示开通会员。
+  exportQuery: function (queryId) {
+    if (!queryId) return Promise.resolve({ ok: false, message: '记录不存在' })
+    return queryRequest('/api/v1/queries/' + encodeURIComponent(queryId) + '/export', {}, 'GET', true).then(function (response) {
+      return require('../utils/report-file').scopedFile(response, 'query')
+    })
+  },
   exportBook: function (name, queryId) {
     function build() {
       // Refresh permissions at export time instead of trusting a mock profile or stale report.

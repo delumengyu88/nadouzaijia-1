@@ -16,6 +16,7 @@ function decorate(rows, offset) {
       badge: row.badge || '',
       badgeCls: row.badgeCls || '',
       line: row.line || '',
+      hit: row.badgeCls === 'ok' && !!row.id && !!row.name,
       key: (row.id || '') + ':' + (offset + index) + ':' + (row.name || '')
     }
   })
@@ -39,7 +40,19 @@ Page(require('../../api/splash').page({
     }))
     this.fetchPage(false)
   },
-  onUnload: function () { this.loadToken += 1 },
+  onUnload: function () { this.loadToken += 1; this.disposed = true; require('../../utils/report-file').release(this.exportFolder) },
+  downloadReport: function (e) {
+    if (this.session !== sessionKey()) { this.onShow(); return }
+    var row = this.data.rows[e.currentTarget.dataset.index]
+    if (!row || !row.hit || this.data.downloading) return
+    var page = this
+    this.returning = true
+    this.setData({ downloading: row.key })
+    // 每条查询记录对应一个节目：复用详情页的单节目报告导出。
+    require('../../utils/report-download').run(this, api.exportBook(row.name, row.id), function () {
+      if (!page.disposed) page.setData({ downloading: '' })
+    })
+  },
   loadMore: function () {
     if (this.session !== sessionKey()) { this.onShow(); return }
     if (!this.data.hasMore || this.data.loadingMore) return
