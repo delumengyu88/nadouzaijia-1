@@ -196,7 +196,7 @@ def test_program_export_selects_only_owned_requested_item(session, clock):
         == 404
     )
     response = client.get(base + "/export")
-    assert "X-Nadou-Export-Scope" not in response.headers
+    assert response.headers["X-Nadou-Export-Scope"] == "query"
     assert {"第一个节目", "第二个节目"}.issubset(sheet_values(response))
 
 

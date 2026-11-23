@@ -14,7 +14,13 @@ class PayProduct:
     test_only: bool = False
 
     @property
+    def is_unlock(self) -> bool:
+        return self.code.startswith("unlock_band_")
+
+    @property
     def description(self) -> str:
+        if self.is_unlock:
+            return f"{self.title} 永久有效"
         return f"{self.title} {self.duration_days} 天"
 
     def public(self) -> dict:
@@ -36,6 +42,18 @@ TEST = PayProduct("membership_test", "支付测试", "regular", 1, 0, 1, test_on
 DIAMOND = PayProduct("membership_diamond", "体验会员", "vip", 5, 1, 100)
 
 LIVE_TEST = PayProduct("membership_test_live", "现网支付测试", "regular", 1, 1, 100, test_only=True)
+
+# One-program, one-band permanent unlocks. Sold only through WeChat virtual payment.
+# ``membership`` holds the entitlement kind; 36500 days stands for "permanent".
+# amount_yuan is the whole-yuan floor kept for the legacy column; amount_fen is the price.
+UNLOCK_DAYS = 36500
+UNLOCK_90_180 = PayProduct(
+    "unlock_band_90_180", "本节目解锁 · 90–180天", "band_90_180", UNLOCK_DAYS, 19, 1990
+)
+UNLOCK_30_90 = PayProduct(
+    "unlock_band_30_90", "本节目解锁 · 30–90天", "band_30_90", UNLOCK_DAYS, 39, 3990
+)
+UNLOCK_PRODUCTS = {product.code: product for product in (UNLOCK_90_180, UNLOCK_30_90)}
 
 # Workbench membership conversion and revenue skip these.
 # membership_dev stays after the experience-build route is removed: those rows
@@ -64,6 +82,8 @@ def product_by_code(code: str | None) -> PayProduct | None:
         return None
     if code == DIAMOND.code:
         return DIAMOND
+    if code in UNLOCK_PRODUCTS:
+        return UNLOCK_PRODUCTS[code]
     return LIVE_TEST if code == LIVE_TEST.code else _BY_CODE.get(code)
 
 

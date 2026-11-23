@@ -10,6 +10,9 @@ class AccessGrants:
     program_30: bool = False
     program_90: bool = False
     screenshot: bool = False
+    # Per-program, per-band permanent unlocks bought one at a time.
+    band_90_180: bool = False
+    band_30_90: bool = False
 
 
 @dataclass(frozen=True)
@@ -80,9 +83,12 @@ class EntitlementPolicy:
         program_floor = 30 if grants.program_30 else 90 if grants.program_90 else None
         membership_sees = membership_floor is not None and age_days >= membership_floor
         program_sees = program_floor is not None and age_days >= program_floor
+        band_sees = (bucket == "d90_179" and grants.band_90_180) or (
+            bucket == "d30_89" and grants.band_30_90
+        )
         screenshot_ok = grants.screenshot and age_days >= 90
 
-        if membership_sees or program_sees:
+        if membership_sees or program_sees or band_sees:
             return AccessDecision(
                 age_bucket=bucket,
                 locked=False,

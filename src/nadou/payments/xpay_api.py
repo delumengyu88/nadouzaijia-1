@@ -15,10 +15,22 @@ from nadou.auth import WeChatLogin
 from nadou.config import get_settings
 from nadou.models import Order, User, VirtualOrder
 from nadou.payments import xpay, xpay_push
-from nadou.payments.catalog import DIAMOND, LIVE_TEST, product_by_code, product_for_sale
-from nadou.payments.config import diamond_product_id, live_test_product_id, user_may_use_test_tier
+from nadou.payments.catalog import (
+    DIAMOND,
+    LIVE_TEST,
+    UNLOCK_PRODUCTS,
+    product_by_code,
+    product_for_sale,
+)
+from nadou.payments.config import (
+    diamond_product_id,
+    live_test_product_id,
+    live_virtual_product_id,
+    user_may_use_test_tier,
+)
 from nadou.payments.service import _view
 from nadou.payments.summary import require_context_product
+from nadou.payments.unlock import is_unlock, unlock_offer
 from nadou.user_orders import UserOrders
 
 
@@ -155,13 +167,23 @@ def register_virtual_orders(app: FastAPI, get_session, payer, clock, notifier, w
         user: User = Depends(payer),
         session: Session = Depends(get_session, scope="function"),
     ):
-        require_context_product(
-            session, user, payload.program_name, payload.tier, clock(), virtual=True
-        )
+        unlock_program = None
+        if is_unlock(payload.tier):
+            offer = unlock_offer(session, user, payload.program_name, payload.tier, clock())
+            unlock_program = offer["program_name"]
+        else:
+            require_context_product(
+                session, user, payload.program_name, payload.tier, clock(), virtual=True
+            )
         gateway = xpay.configured()
         xpay_push.configured_key()
         test_allowed = user_may_use_test_tier(user.id)
-        if payload.tier == DIAMOND.code:
+        if unlock_program is not None:
+            product = UNLOCK_PRODUCTS[payload.tier]
+            product_id = live_virtual_product_id(product.code)
+            if not product_id:
+                raise HTTPException(503, "单节目解锁暂未开放支付")
+        elif payload.tier == DIAMOND.code:
             product = DIAMOND
             product_id = diamond_product_id()
             if not product_id:
@@ -195,6 +217,7 @@ def register_virtual_orders(app: FastAPI, get_session, payer, clock, notifier, w
             status="待支付",
             created_at=clock(),
             client="小程序",
+            program_name=unlock_program,
         )
         session.add(order)
         session.flush()

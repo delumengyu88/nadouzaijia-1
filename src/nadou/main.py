@@ -27,6 +27,7 @@ from nadou.payments.api import PaymentApi
 from nadou.public_config import PublicConfig
 from nadou.public_home import PublicHome
 from nadou.query_records import QueryRecords
+from nadou.record_frames import RecordFrames
 from nadou.schemas import SearchOut
 from nadou.search import EmptyQuery, ProgramSearch, UnknownUser
 from nadou.signed_url import FakeSignedUrlProvider, SignedUrlProvider
@@ -121,7 +122,9 @@ def create_app(
         user: User = Depends(current_user),
     ):
         try:
-            return ProgramSearch(session, urls, clock()).search(name, user.id)
+            return ProgramSearch(session, urls, clock(), frames_ready=frames is not None).search(
+                name, user.id
+            )
         except EmptyQuery:
             raise HTTPException(status_code=400, detail="name is required") from None
         except UnknownUser:
@@ -151,6 +154,7 @@ def create_app(
     InviteState.register(app, get_session, clock)
     UserEvidence.register(app, get_session, clock, alerts)
     QueryRecords.register(app, get_session, clock)
+    RecordFrames.register(app, get_session, clock, frames, current_user)
     PaymentApi.register(app, get_session, clock, alerts, grant_writer)
     UserOrders.register(app, get_session, clock)
     # Experience-build only. Delete this line with src/nadou/devtools before review.
@@ -175,8 +179,7 @@ def create_app(
                 detail="export requires an active membership",
             ) from None
         headers = {"Content-Disposition": exported.disposition()}
-        if program_name is not None:
-            headers["X-Nadou-Export-Scope"] = "program"
+        headers["X-Nadou-Export-Scope"] = "program" if program_name is not None else "query"
         return Response(
             content=exported.body,
             media_type=exported.media_type,

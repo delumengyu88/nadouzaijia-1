@@ -37,6 +37,49 @@ function summaryHitLine(search) {
   return search.platform_count > 0 ? line + ' · 涉及 ' + search.platform_count + ' 个平台' : line
 }
 
+var BAND_KEYS = ['ge_180', 'd90_179', 'd30_89', 'lt_30']
+var BAND_STATES = ['open', 'locked', 'evidence']
+var UNLOCK_PRODUCTS = ['unlock_band_90_180', 'unlock_band_30_90']
+
+function frameView(value) {
+  return value === 'clear' || value === 'blur' ? value : ''
+}
+
+// Result-page bands come only from servers that know them. Anything malformed drops
+// the whole list so the page keeps its existing flat layout.
+function sanitizeBands(value) {
+  if (!Array.isArray(value) || !value.length) return null
+  var seen = {}
+  var bands = []
+  for (var i = 0; i < value.length; i += 1) {
+    var src = value[i] || {}
+    if (BAND_KEYS.indexOf(src.band) === -1 || seen[src.band] || BAND_STATES.indexOf(src.state) === -1) return null
+    seen[src.band] = true
+    var band = {
+      band: src.band,
+      label: typeof src.label === 'string' && src.label ? src.label : '',
+      count: count(src.count),
+      state: src.state,
+      frame_view: frameView(src.frame_view),
+      unlocked_by: typeof src.unlocked_by === 'string' ? src.unlocked_by : '',
+      unlock: null,
+      upgrade_hint: typeof src.upgrade_hint === 'string' ? src.upgrade_hint : ''
+    }
+    var offer = src.unlock
+    if (offer && UNLOCK_PRODUCTS.indexOf(offer.product) !== -1 && Number.isSafeInteger(offer.amount_fen) && offer.amount_fen > 0) {
+      band.unlock = {
+        product: offer.product,
+        amount_fen: offer.amount_fen,
+        price_text: typeof offer.price_text === 'string' && /^¥[0-9]+(\.[0-9]{1,2})?$/.test(offer.price_text) ? offer.price_text : '',
+        purchasable: offer.purchasable === true
+      }
+    }
+    bands.push(band)
+  }
+  bands.sort(function (a, b) { return BAND_KEYS.indexOf(a.band) - BAND_KEYS.indexOf(b.band) })
+  return bands
+}
+
 function sanitizeSearch(body) {
   var src = body || {}
   var unresolved = src.outcome === 'unverified' || (src.outcome === 'miss' && src.unverified_source_count > 0)
@@ -101,6 +144,7 @@ function sanitizeSearch(body) {
     if (Array.isArray(rec.timestamps)) open.timestamps = rec.timestamps.map(String)
     if (thumb) open.thumbnail_url = thumb
     if (hd) open.hd_url = hd
+    if (frameView(rec.frame_view)) open.frame_view = rec.frame_view
     records.push(open)
   })
   var summary = src.locked_summary || emptySummary()
@@ -140,7 +184,11 @@ function sanitizeSearch(body) {
       ? src.evidence_platforms.filter(function (name) { return typeof name === 'string' && name && name !== '其他平台' && name !== '平台未识别' })
       : undefined,
     locked_window: lockedWindow,
-    example: !!src.example
+    example: !!src.example,
+    viewer_tier: ['free', 'regular', 'vip'].indexOf(src.viewer_tier) === -1 ? '' : src.viewer_tier,
+    bands: sanitizeBands(src.bands),
+    frames_ready: src.frames_ready === true,
+    report_ready: src.report_ready === true
   }
 }
 
@@ -148,5 +196,6 @@ module.exports = {
   imageUrl: imageUrl,
   summaryHitLine: summaryHitLine,
   emptySummary: emptySummary,
-  sanitizeSearch: sanitizeSearch
+  sanitizeSearch: sanitizeSearch,
+  sanitizeBands: sanitizeBands
 }

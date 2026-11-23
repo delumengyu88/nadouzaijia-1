@@ -2,14 +2,19 @@
 var SheetReader = require('./sheet')
 var XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
-function scopedFile(response) {
+// scope 'program' (default) is the one-program export. scope 'query' is the whole-query export;
+// servers before the result-tier release send no scope header there, which is accepted.
+function scopedFile(response, scope) {
+  var expected = scope === 'query' ? 'query' : 'program'
   var headers = {}
   Object.keys(response.header || {}).forEach(function (key) { headers[key.toLowerCase()] = response.header[key] })
   var type = String(headers['content-type'] || '').split(';')[0].trim().toLowerCase()
   var bytes = response.data instanceof ArrayBuffer ? new Uint8Array(response.data) : null
-  if (headers['x-nadou-export-scope'] !== 'program' || (type !== XLSX && type !== 'application/zip') ||
+  var given = headers['x-nadou-export-scope']
+  var scoped = given === expected || (expected === 'query' && given === undefined)
+  if (!scoped || (type !== XLSX && type !== 'application/zip') ||
       !bytes || bytes.length < 4 || bytes[0] !== 80 || bytes[1] !== 75 || bytes[2] !== 3 || bytes[3] !== 4) {
-    return { ok: false, message: '未收到本节目的报告文件' }
+    return { ok: false, message: expected === 'query' ? '未收到本次查询的报告文件' : '未收到本节目的报告文件' }
   }
   var extension = type === XLSX ? 'xlsx' : 'zip'
   var filename = '汇总.' + extension

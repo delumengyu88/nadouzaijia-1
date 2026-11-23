@@ -22,6 +22,12 @@
     <view class="hint">.xlsx，含「节目名称」列，≤500 行</view>
     <view class="btn" bindtap="start">开始查询</view>
   </view>
+  <view class="guide">
+    <view class="guide-item"><text class="guide-no">1</text><text class="guide-text">检索全平台播出/命中记录</text></view>
+    <view class="guide-item"><text class="guide-no">2</text><text class="guide-text">按时间分档查看</text></view>
+    <view class="guide-item"><text class="guide-no">3</text><text class="guide-text">会员看更多</text></view>
+    <view class="guide-item"><text class="guide-no">4</text><text class="guide-text">可下载报告</text></view>
+  </view>
   <block wx:if="{{examples.length || examplesError}}">
   <view class="sec-head">
     <text class="sec-title" bindtap="tapExamples">示例报告</text>

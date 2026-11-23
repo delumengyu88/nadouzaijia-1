@@ -29,3 +29,10 @@
   white-space: nowrap;
   line-height: 1.4;
 }
+
+/* 首页简要说明：查什么、怎么看、会员与报告。第一条独占一行，其余三条并排，375 宽不挤压。 */
+.guide { display: flex; flex-wrap: wrap; justify-content: space-between; margin: 20rpx 32rpx 0; padding: 20rpx 24rpx 4rpx; background: #fff; border-radius: 24rpx; }
+.guide-item { display: flex; align-items: center; margin-bottom: 16rpx; min-width: 0; }
+.guide-item:first-child { width: 100%; }
+.guide-no { flex-shrink: 0; width: 36rpx; height: 36rpx; line-height: 36rpx; border-radius: 50%; background: #e7f0ff; color: #1D4E9E; font-size: 22rpx; text-align: center; font-weight: 600; }
+.guide-text { margin-left: 10rpx; font-size: 24rpx; color: #4b5563; line-height: 1.4; white-space: nowrap; }

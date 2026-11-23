@@ -1081,6 +1081,13 @@ module.exports = {
     }
     return docs[id] || null
   },
+  exportQuery: function (id) {
+    var query = findQuery(id)
+    var view = query ? queryView(query) : null
+    var hit = view && (view.items || []).filter(function (item) { return item.hit })[0]
+    if (!hit) return { ok: false, message: '没有可导出的记录' }
+    return this.exportBook(hit.name)
+  },
   exportBook: function (name) {
     var account = acc()
     if (!account) return { ok: false, message: '请先登录' }

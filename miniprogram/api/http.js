@@ -56,14 +56,14 @@ class PayClient {
       card: title,
       title: title,
       priceText: priceText,
-      blurb: body.duration_days ? ('有效期 ' + body.duration_days + ' 天') : '',
+      blurb: body.permanent === true ? ('永久有效 · 仅限本节目' + (body.program_name ? '《' + body.program_name + '》' : '')) : (body.duration_days ? ('有效期 ' + body.duration_days + ' 天') : ''),
       renewLine: '',
       coverLine: '',
       payText: priceText ? ('立即支付 ' + priceText) : '立即支付',
       allowCheck: false,
       allowRepay: false,
       showPay: phase === 'pending',
-      successLine: phase === 'granted' ? (title + '已发放') : '',
+      successLine: phase === 'granted' ? (title + (body.permanent === true ? '已解锁，返回报告即可查看' : '已发放')) : '',
       navTitle: body.status === '已退款' ? '已退款' : '',
       centerTitle: body.status === '已退款' ? '订单已退款' : ''
     }

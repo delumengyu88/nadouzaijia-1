@@ -100,7 +100,8 @@ class Entitlement(Base):
     __tablename__ = "entitlements"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('regular', 'vip', 'program_90', 'program_30', 'screenshot')",
+            "kind IN ('regular', 'vip', 'program_90', 'program_30', 'screenshot', "
+            "'band_90_180', 'band_30_90')",
             name="ck_entitlements_kind",
         ),
         CheckConstraint(
@@ -319,7 +320,9 @@ class Order(Base):
             "status IN ('待支付', '已支付', '已发放', '发放异常', '已退款')",
             name="ck_orders_status",
         ),
-        CheckConstraint("tier IN ('regular', 'vip')", name="ck_orders_tier"),
+        CheckConstraint(
+            "tier IN ('regular', 'vip', 'band_90_180', 'band_30_90')", name="ck_orders_tier"
+        ),
         CheckConstraint("duration_days > 0", name="ck_orders_duration"),
         CheckConstraint("amount >= 0", name="ck_orders_amount"),
         CheckConstraint(
@@ -329,7 +332,8 @@ class Order(Base):
         CheckConstraint(
             "product IS NULL OR product IN "
             "('membership_regular', 'membership_vip', 'membership_test', 'membership_dev', "
-            "'membership_test_live', 'membership_diamond')",
+            "'membership_test_live', 'membership_diamond', 'membership_trial', "
+            "'unlock_band_90_180', 'unlock_band_30_90')",
             name="ck_orders_product",
         ),
         UniqueConstraint("wechat_transaction_id", name="uq_orders_wechat_transaction_id"),
@@ -353,6 +357,8 @@ class Order(Base):
     amount_fen: Mapped[int | None] = mapped_column(Integer)
     prepay_id: Mapped[str | None] = mapped_column(String(64))
     wechat_transaction_id: Mapped[str | None] = mapped_column(String(64))
+    # Canonical program title for a one-program band unlock. Null for memberships.
+    program_name: Mapped[str | None] = mapped_column(String(200))
 
 
 class VirtualOrder(Base):

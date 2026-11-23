@@ -25,7 +25,7 @@ Page(require('../../api/splash').page({
     this.timer = setInterval(function () { self.tick() }, 700)
   },
   onHide: function () { this.stop() },
-  onUnload: function () { this.stop() },
+  onUnload: function () { this.disposed = true; this.stop(); require('../../utils/report-file').release(this.exportFolder) },
   stop: function () {
     if (this.timer) clearInterval(this.timer)
     this.timer = 0
@@ -105,7 +105,16 @@ Page(require('../../api/splash').page({
     data.loadError = false
     data.needLogin = false
     data.loading = false
+    data.showReport = !!this.id && !!data.done && (data.items || []).some(function (item) { return item.hit })
     this.setData(data)
+  },
+  downloadReport: function () {
+    if (config.calibrating || !this.data.showReport || this.data.reportLoading) return
+    var page = this
+    this.setData({ reportLoading: true })
+    require('../../utils/report-download').run(this, api.exportQuery(this.id), function () {
+      if (!page.disposed) page.setData({ reportLoading: false })
+    })
   },
   applyQueryError: function (error) {
     this.finished = true

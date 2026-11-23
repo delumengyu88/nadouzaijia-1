@@ -11,6 +11,7 @@ from nadou.auth import UserSessions
 from nadou.models import User
 from nadou.payments.service import PayError, PaymentService
 from nadou.payments.summary import membership_options, require_context_product
+from nadou.payments.unlock import unlock_offer
 from nadou.payments.xpay_api import register_virtual_orders
 from nadou.user_orders import UserOrders
 
@@ -81,6 +82,19 @@ class PaymentApi:
                     )
                 }
             return payments.list_tiers(user, virtual=channel == "virtual")
+
+        @app.get("/api/v1/unlocks/offer")
+        def unlock_offer_view(
+            response: Response,
+            product: str = Query(min_length=1, max_length=32),
+            program_name: str = Query(min_length=1, max_length=200),
+            session: Session = Depends(get_session, scope="function"),
+            user: User = Depends(payer),
+        ):
+            response.headers["Cache-Control"] = "private, no-store"
+            offer = unlock_offer(session, user, program_name, product, clock())
+            offer.pop("product_id", None)
+            return offer
 
         @app.post("/api/v1/pay/orders")
         def create_order(

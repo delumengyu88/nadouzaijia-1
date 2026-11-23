@@ -42,7 +42,7 @@ Page(require('../../api/splash').page({
     }
     this.refreshApplication()
   },
-  onHide: function () { this.refreshSummary = !!this.data.summaryHidden },
+  onHide: function () { this.refreshSummary = !!this.data.summaryHidden || !!this.data.useTimeline },
   onIdentityReady: function () { this.onShow() },
   onUnload: function () { this.disposed = true; this.releaseExport() },
   releaseExport: function () {
@@ -134,6 +134,20 @@ Page(require('../../api/splash').page({
       view.badge = facts.hit ? '已命中' : '未命中'
       view.badgeCls = facts.hit ? 'ok' : 'miss'
     }
+    var timeline = search.example ? null : require('../../utils/bands').timeline(search)
+    view.useTimeline = !!timeline
+    view.timeline = timeline
+    if (timeline) {
+      // 新服务端：时间轴替代平铺列表与锁定蒙层；旧服务端没有 bands，保持原布局。
+      view.header = timeline.line
+      view.showOpen = false
+      view.groups = []
+      view.showLocked = false
+      view.showHint = false
+      view.showEvidence = false
+      view.showSingleOffer = false
+      view.showDownload = timeline.reportReady && !!query.id && timeline.total > 0 && !view.summaryOnlyReport
+    }
     view.phase = 'ready'
     view.title = meta.name
     view.showBack = true
@@ -141,6 +155,7 @@ Page(require('../../api/splash').page({
     view.statusBarHeight = layout.statusBarHeight
     view.navHeight = layout.navHeight
     this.setData(view)
+    if (timeline && timeline.framesReady) this.loadFrames(timeline)
     this.refreshApplication()
     if (view.summaryHidden && view.summaryPlans.length && config.mode === 'live' && !config.liveOneYuanTest) this.loadSummaryPlans(search, name)
     if (config.mode === 'live' && view.showLocked && !require('../../api/live-test-offer').dedicated()) this.loadOffers(name)
@@ -179,6 +194,79 @@ Page(require('../../api/splash').page({
         singleText: single ? '单节目解锁 · ' + member.priceText(single) : ''
       })
     }, function () { /* A missing catalog cannot authorize a purchase. */ })
+  },
+  loadFrames: function (timeline) {
+    var page = this
+    var revision = state.sessionRevision()
+    var seq = this._searchSeq
+    var rows = []
+    timeline.bands.forEach(function (band) {
+      band.rows.forEach(function (row) { rows.push({ id: row.id, view: row.view }) })
+    })
+    function alive() {
+      return !page.disposed && seq === page._searchSeq && revision === state.sessionRevision() && page.data.useTimeline
+    }
+    require('../../utils/frame-loader').load(rows, function (id, path) {
+      var found = require('../../utils/bands').findRow(page.data.timeline, id)
+      if (!found) return
+      var update = {}
+      update['timeline.bands[' + found.b + '].rows[' + found.r + '].src'] = path
+      page.setData(update)
+    }, alive)
+  },
+  timelineRow: function (event) {
+    var data = event.currentTarget.dataset
+    var bands = (this.data.timeline && this.data.timeline.bands) || []
+    var band = bands[Number(data.band)]
+    var row = band && band.rows[Number(data.row)]
+    return row ? { band: band, row: row, b: Number(data.band), r: Number(data.row) } : null
+  },
+  toggleRow: function (event) {
+    var found = this.timelineRow(event)
+    if (!found) return
+    var update = {}
+    update['timeline.bands[' + found.b + '].rows[' + found.r + '].expanded'] = !found.row.expanded
+    this.setData(update)
+  },
+  openFrame: function (event) {
+    var found = this.timelineRow(event)
+    if (!found) return
+    var row = found.row
+    if (row.clear && row.src) {
+      this.setData({ zoomSrc: row.src })
+      return
+    }
+    if (row.blur) {
+      var page = this
+      var cta = (this.data.timeline && this.data.timeline.memberCta) || '开通会员'
+      wx.showModal({
+        title: '模糊预览',
+        content: '图片已在服务端打码，开通会员后可查看清晰截图并放大。',
+        cancelText: '知道了',
+        confirmText: cta,
+        confirmColor: '#1D4E9E',
+        success: function (res) { if (res && res.confirm) page.buyTimelineMember() }
+      })
+    }
+  },
+  closeZoom: function () { this.setData({ zoomSrc: '' }) },
+  unlockBand: function (event) {
+    if (this.data.phase !== 'ready' || !this.data.useTimeline) return
+    var band = ((this.data.timeline && this.data.timeline.bands) || [])[Number(event.currentTarget.dataset.index)]
+    var unlock = require('../../api/band-unlock')
+    if (!band || !band.locked || !unlock.known(band.product)) return
+    if (require('../../utils/trial').blockPayment()) return
+    if (!band.purchasable || !unlock.allowed(band.product)) {
+      wx.showModal({ title: '暂未开放在线购买', content: '本节目这一时间段暂不能在线解锁，可联系客服开通。', showCancel: false, confirmText: '知道了' })
+      return
+    }
+    wx.navigateTo({ url: '/pages/pay/index?source=unlock&product=' + encodeURIComponent(band.product) + '&name=' + encodeURIComponent(this.data.name) })
+  },
+  buyTimelineMember: function () {
+    if (this.data.phase !== 'ready' || !this.data.useTimeline) return
+    if (require('../../utils/trial').blockPayment()) return
+    var product = (this.data.timeline && this.data.timeline.memberProduct) || 'membership_regular'
+    wx.navigateTo({ url: '/pages/pay/index?product=' + product + '&name=' + encodeURIComponent(this.data.name) })
   },
   imageFailed: function (event) {
     var data = event.currentTarget.dataset

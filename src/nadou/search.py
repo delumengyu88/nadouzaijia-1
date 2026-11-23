@@ -4,6 +4,18 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from nadou.bands import (
+    BAND_LABELS,
+    BAND_ORDER,
+    KIND_BAND_30_90,
+    KIND_BAND_90_180,
+    band_counts,
+    band_offer,
+    band_state,
+    frame_view,
+    upgrade_hint,
+    viewer_tier,
+)
 from nadou.config import get_settings
 from nadou.entitlements import AccessDecision, AccessGrants, EntitlementPolicy, LockedSummary
 from nadou.importer import TestTaskFilter
@@ -12,6 +24,8 @@ from nadou.normalize import ProgramNormalizer
 from nadou.platform_names import PlatformNames
 from nadou.program_titles import ProgramTitleGuard
 from nadou.schemas import (
+    BandOut,
+    BandUnlockOut,
     LockedRecordOut,
     LockedSummaryOut,
     OpenRecordOut,
@@ -40,10 +54,19 @@ class ProgramSearch:
     REASON_UNKNOWN_AGE = "检测时间待核实"
     _LOCKED_KEYS = ("record_id", "age_bucket", "locked", "lock_reason")
 
-    def __init__(self, session: Session, urls: SignedUrlProvider | None, now: datetime) -> None:
+    def __init__(
+        self,
+        session: Session,
+        urls: SignedUrlProvider | None,
+        now: datetime,
+        *,
+        frames_ready: bool = False,
+    ) -> None:
         self.session = session
         self.urls = urls
         self.now = now
+        # True when GET /api/v1/records/{id}/frame has a frame source behind it.
+        self.frames_ready = frames_ready
 
     def search(self, raw_name: str, user_id: str | None) -> SearchOut:
         canonical = ProgramNormalizer().canonical(raw_name)
@@ -178,7 +201,61 @@ class ProgramSearch:
                 for _age, record, _task in kept
             )
             else "",
+            viewer_tier=viewer_tier(program_grants),
+            bands=self._bands(open_records, locked_records, program_grants, user_id),
+            frames_ready=self.frames_ready,
+            report_ready=True,
         )
+
+    def _bands(
+        self,
+        open_records: list[OpenRecordOut],
+        locked_records: list[LockedRecordOut],
+        grants: AccessGrants,
+        user_id: str | None,
+    ) -> list[BandOut]:
+        buckets = [row.age_bucket for row in open_records if row.access != "summary"]
+        buckets += [row.age_bucket for row in locked_records]
+        counts = band_counts(buckets)
+        user = self.session.get(User, user_id) if user_id is not None else None
+        can_buy = user is not None and bool(user.wechat_openid)
+        membership = AccessGrants(vip=grants.vip, regular=grants.regular)
+        bands: list[BandOut] = []
+        for band in BAND_ORDER:
+            state, view = band_state(band, grants)
+            unlocked_by = None
+            if state == "open":
+                if band_state(band, membership)[0] == "open":
+                    unlocked_by = (
+                        "free"
+                        if band == "ge_180" and not (grants.vip or grants.regular)
+                        else "membership"
+                    )
+                else:
+                    unlocked_by = "unlock"
+            offer = None
+            if state == "locked" and counts[band]:
+                found = band_offer(band, grants, can_buy=can_buy)
+                if found is not None:
+                    offer = BandUnlockOut(
+                        product=found.product,
+                        amount_fen=found.amount_fen,
+                        price_text=found.price_text,
+                        purchasable=found.purchasable,
+                    )
+            bands.append(
+                BandOut(
+                    band=band,
+                    label=BAND_LABELS[band],
+                    count=counts[band],
+                    state=state,
+                    frame_view=view,
+                    unlocked_by=unlocked_by,
+                    unlock=offer,
+                    upgrade_hint=upgrade_hint(band, grants) if state == "locked" else None,
+                )
+            )
+        return bands
 
     def _live_grants(self, user_id: str | None) -> list[Entitlement]:
         if user_id is None:
@@ -192,6 +269,7 @@ class ProgramSearch:
     @staticmethod
     def _grants_for(rows: list[Entitlement], program: str, record_id: str) -> AccessGrants:
         vip = regular = program_30 = program_90 = screenshot = False
+        band_90_180 = band_30_90 = False
         for row in rows:
             if row.kind == "vip":
                 vip = True
@@ -203,12 +281,18 @@ class ProgramSearch:
                 program_90 = True
             elif row.kind == "screenshot" and record_id and row.record_id == record_id:
                 screenshot = True
+            elif row.kind == KIND_BAND_90_180 and row.program_name == program:
+                band_90_180 = True
+            elif row.kind == KIND_BAND_30_90 and row.program_name == program:
+                band_30_90 = True
         return AccessGrants(
             vip=vip,
             regular=regular,
             program_30=program_30,
             program_90=program_90,
             screenshot=screenshot,
+            band_90_180=band_90_180,
+            band_30_90=band_30_90,
         )
 
     def _not_billable(self, canonical: str) -> SearchOut:
@@ -379,6 +463,7 @@ class ProgramSearch:
             "access": decision.access,
             "can_download_report": decision.can_download_report,
             "can_download_screenshot": decision.can_download_screenshot and self.urls is not None,
+            "frame_view": frame_view(decision),
         }
         if decision.reveal_fields:
             payload["platform"] = (

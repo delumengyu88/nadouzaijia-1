@@ -272,7 +272,7 @@ def test_support_does_not_inherit_admin_user_details():
             page.select_option("#ban-type", "permanent")
             page.fill("#ban-reason", "验收封禁")
             page.click("button[data-act=ban]")
-            page.locator(".tag", has_text="已封禁").wait_for()
+            page.get_by_text("永久 · 验收封禁").wait_for()
             with page.expect_navigation():
                 page.click("button[data-act=logout]")
             page.locator("h2", has_text="账号登录").wait_for()
@@ -285,7 +285,7 @@ def test_support_does_not_inherit_admin_user_details():
             page.goto(f"{base}/admin/#/w04", wait_until="networkidle")
             page.fill("#user-query", phone)
             page.click("button[data-act=user-search]")
-            page.locator(".tag", has_text="已封禁").wait_for()
+            page.get_by_text("永久 · 验收封禁").wait_for()
             support_text = page.locator("body").inner_text()
             assert "永久" in support_text
             assert "验收封禁" in support_text

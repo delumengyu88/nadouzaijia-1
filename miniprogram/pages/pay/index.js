@@ -1,6 +1,7 @@
 var testOffer = require('../../api/live-test-offer')
 var diamond = require('../../api/diamond')
 var summaryUnlock = require('../../api/summary-unlock')
+var bandUnlock = require('../../api/band-unlock')
 var api = require('../../api/index')
 var state = require('../../api/state')
 var nav = require('../../utils/nav')
@@ -52,6 +53,7 @@ Page(require('../../api/splash').page({
     this.product = query.product || 'membership_vip'
     this.programName = decode(query.name)
     this.summaryPurchase = query.source === 'summary'
+    this.unlockPurchase = query.source === 'unlock'
     this.orderNo = query.id || ''
     this.livePayFlow = require('../../config').mode === 'live'
     if (this.livePayFlow && (this.orderNo ? /^XV/.test(this.orderNo) : (require('../../config').virtualPayment || this.product === diamond.id))) {
@@ -63,6 +65,10 @@ Page(require('../../api/splash').page({
     this.setData({ statusBarHeight: layout.statusBarHeight, navHeight: layout.navHeight, showBack: true })
     if (this.summaryPurchase && (!query.product || !this.programName.trim() || this.orderNo || !summaryUnlock.allowed(this.product))) {
       this.setData({ phase: 'unavailable', title: '当前方案不可购买', resultSub: '请返回本节目报告刷新解锁方案。', showPay: false })
+      return
+    }
+    if (this.unlockPurchase && (!bandUnlock.known(this.product) || !this.programName.trim() || this.orderNo)) {
+      this.setData({ phase: 'unavailable', title: '当前方案不可购买', resultSub: '请返回本节目报告刷新后再试。', showPay: false })
       return
     }
     if (testOffer.dedicated() && this.product !== testOffer.id && !this.orderNo) { this.offerUnavailable(testOffer); return }
@@ -96,7 +102,35 @@ Page(require('../../api/splash').page({
       this.readSummaryOffer()
       return
     }
+    if (this.unlockPurchase) {
+      this.readUnlockOffer()
+      return
+    }
     this.open()
+  },
+  // 确认页：本节目 · 时间段 · 条数 · 价格。价格与可购状态只认 GET /api/v1/unlocks/offer。
+  readUnlockOffer: function () {
+    var page = this
+    this.setData({ phase: 'loadingTestOffer', title: '确认解锁', showPay: false })
+    if (!bandUnlock.allowed(this.product)) {
+      this.setData({ phase: 'unavailable', title: '暂未开放在线购买', resultSub: '本节目这一时间段暂不能在线解锁，可联系客服开通。', showPay: false })
+      return
+    }
+    bandUnlock.offer(this.programName, this.product).then(function (offer) {
+      if (!page.activeSession()) return
+      if (!offer.ok || !offer.purchasable) {
+        page.setData({ phase: 'unavailable', title: offer.ok ? '暂未开放在线购买' : '当前方案不可购买',
+          resultSub: offer.ok ? '本节目这一时间段暂不能在线解锁，可联系客服开通。' : offer.message, showPay: false })
+        return
+      }
+      page.unlockOffer = offer
+      page.setData({
+        phase: 'pending', title: '确认解锁', card: '解锁 ' + offer.bandLabel + ' 记录', priceText: offer.price,
+        blurb: '《' + offer.programName + '》' + offer.bandLabel + ' · ' + offer.count + ' 条记录',
+        renewLine: '永久有效 · 仅限本节目、本时间段', coverLine: '解锁后可查看清晰截图并下载报告；不含其他时间段。',
+        payText: '立即支付 ' + offer.price, showPay: true
+      })
+    })
   },
   readSummaryOffer: function () {
     var page = this
@@ -271,6 +305,7 @@ Page(require('../../api/splash').page({
   pay: function () {
     if (!this.activeSession()) return
     if (this.summaryPurchase && (!this.data.showPay || this.data.phase !== 'pending' || !summaryUnlock.allowed(this.product))) return
+    if (this.unlockPurchase && !this.orderNo && (!this.unlockOffer || !this.data.showPay || this.data.phase !== 'pending' || !bandUnlock.allowed(this.product))) return
     if (testOffer.dedicated() && this.product !== testOffer.id) return
     if (this.product === testOffer.id && (!testOffer.enabled() || !this.data.showPay || this.data.phase !== 'pending')) return
     if (this.product === diamond.id) {
@@ -280,7 +315,7 @@ Page(require('../../api/splash').page({
       if (this.data.payLoading) return
       if (this.data.phase === 'paying' || this.data.phase === 'confirming' || this.data.phase === 'granting' || this.data.phase === 'granted') return
       this.setData({ payLoading: true })
-      var pending = this.orderNo ? api.startPay(this.orderNo) : api.checkout(this.product, this.summaryPurchase ? this.programName : undefined)
+      var pending = this.orderNo ? api.startPay(this.orderNo) : api.checkout(this.product, this.summaryPurchase || this.unlockPurchase ? (this.unlockOffer ? this.unlockOffer.programName : this.programName) : undefined)
       this.afterOrder(pending)
       return
     }

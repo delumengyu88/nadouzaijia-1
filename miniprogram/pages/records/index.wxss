@@ -57,3 +57,5 @@
   font-size: 28rpx;
   line-height: 80rpx;
 }
+.record-actions { display: flex; align-items: center; }
+.record-actions .evidence-link + .evidence-link { margin-left: 32rpx; }
