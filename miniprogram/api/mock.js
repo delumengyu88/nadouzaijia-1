@@ -35,24 +35,14 @@ var EVIDENCE_TEXT = {
   accepted: '',
   pay: '请按客服指引完成线下付款，付款不在小程序内完成。',
   working: '',
-  delivered: '材料已线下交付，请确认查收。',
+  delivered: '材料已线下交付。',
   done: '',
   failed: '',
   closed: '',
   cancelled: ''
 }
 
-var EVIDENCE_BADGE = {
-  submitted: '已提交',
-  accepted: '已受理',
-  pay: '待付款（线下）',
-  working: '取证中',
-  delivered: '已交付',
-  done: '已完成',
-  failed: '取证失败',
-  closed: '已关闭',
-  cancelled: '已取消'
-}
+var EVIDENCE_BADGE = require('./evidence').badge
 
 function save() { state.save() }
 function acc() { return state.account() }
@@ -235,20 +225,30 @@ function latestDate(report) {
   return latest
 }
 
-function homeExamples() {
-  return catalog.examples.map(function (name) {
-    var report = searchRaw(name, { example: true })
-    var meta = metaOf(name)
-    var count = 0
-    report.records.forEach(function (rec) {
-      if (rec.age_bucket !== 'lt_30') count += 1
-    })
-    return {
-      name: meta.name,
-      line: '涉及 ' + report.platform_count + ' 个平台',
-      sub: '命中 ' + count + ' 条记录 · ' + (latestDate(report) || date.today())
-    }
+function exampleSummary(name) {
+  var report = searchRaw(name, { example: true })
+  var meta = metaOf(name)
+  var count = 0
+  report.records.forEach(function (rec) {
+    if (rec.age_bucket !== 'lt_30') count += 1
   })
+  var day = latestDate(report)
+  var sub = '命中 ' + count + ' 条记录' + (day ? ' · ' + day : '')
+  report.line = '涉及 ' + report.platform_count + ' 个平台'
+  report.sub = sub
+  return { name: meta.name, line: report.line, sub: sub, report: report }
+}
+
+function homeExamples() {
+  var factsOf = require('../utils/present').exampleFacts
+  var cards = []
+  catalog.examples.forEach(function (name) {
+    var card = exampleSummary(name)
+    var facts = factsOf(card.report.records)
+    if (!facts.hit) return
+    cards.push({ name: card.name, line: facts.line, sub: facts.sub, image: facts.image, illustrated: !facts.image })
+  })
+  return cards
 }
 
 function runningQuery(account) {
@@ -306,7 +306,7 @@ function homeState() {
     examplesError: !!session.examplesError,
     examples: session.examplesError ? [] : homeExamples(),
     platformTotal: 26,
-    draft: session.draft || ''
+    draft: state.getDraft()
   }
 }
 
@@ -349,17 +349,20 @@ function profile() {
 function memberCenter() {
   var account = acc()
   var tier = tierOf(account)
-  var statusLine = ''
-  if (account && tier === 'vip') statusLine = '当前 VIP，有效至 ' + account.paidVipExpiry
+  var until = ''
+  if (account && tier === 'vip') until = account.paidVipExpiry
   else if (account && tier === 'regular') {
-    var until = date.active(account.paidRegularExpiry) ? account.paidRegularExpiry : account.inviteExpiry
-    statusLine = '当前普通会员，有效至 ' + until
-  } else if (account) statusLine = '当前免费用户'
+    until = date.active(account.paidRegularExpiry) ? account.paidRegularExpiry : account.inviteExpiry
+  }
   return {
     guest: !account,
     tier: tier,
-    statusLine: statusLine
+    statusLine: require('../utils/member').statusLine(tier, until)
   }
+}
+
+function membershipPlans() {
+  return require('../utils/member').plansFromProducts(PRODUCTS)
 }
 
 function queryView(query) {
@@ -481,7 +484,9 @@ function findQuery(id) {
 function nextNo(prefix) {
   var session = state.load()
   session.seq += 1
-  return prefix + date.today().replace(/-/g, '') + date.pad2(session.seq)
+  var seq = String(session.seq)
+  while (seq.length < 3) seq = '0' + seq
+  return prefix + date.today().replace(/-/g, '') + seq
 }
 
 function reusable(status) {
@@ -630,8 +635,24 @@ function viewEvidence(item) {
     refundMethod: item.refundMethod || '',
     refundTime: item.refundTime || '',
     canWithdraw: item.status === 'submitted',
-    canConfirm: item.status === 'delivered',
-    contactFrom: 'evidence:' + item.no
+    contactFrom: 'evidence:' + item.no,
+    phoneText: maskPhone(item.phone) || '—',
+    quoteText: '—',
+    reasonText: item.reason || '—',
+    platformText: item.platform || '—',
+    noteText: item.note || '—',
+    refundText: item.refundAmount > 0 ? ('¥' + item.refundAmount) : '—',
+    times: [
+      { label: '提交', value: item.day || '—' },
+      { label: '受理', value: '—' },
+      { label: '报价', value: '—' },
+      { label: '付款', value: '—' },
+      { label: '交付', value: '—' },
+      { label: '完成', value: '—' },
+      { label: '失败', value: '—' },
+      { label: '关闭', value: '—' },
+      { label: '取消', value: '—' }
+    ]
   }
 }
 
@@ -644,11 +665,8 @@ function maskPhone(phone) {
 module.exports = {
   bootstrap: function () { state.load() },
   reset: function () { state.reset() },
-  splashSeen: function () { return !!state.load().splashSeen },
-  markSplashSeen: function () {
-    state.load().splashSeen = true
-    save()
-  },
+  splashSeen: function () { return require('./splash').seen() },
+  markSplashSeen: function () { require('./splash').markSeen() },
   markAnnounceSeen: function () {
     state.load().announceSeen = true
     save()
@@ -678,11 +696,9 @@ module.exports = {
   accountKind: function () { return state.currentId() },
   profile: profile,
   memberCenter: memberCenter,
-  setDraft: function (value) {
-    state.load().draft = String(value || '')
-    save()
-  },
-  getDraft: function () { return state.load().draft || '' },
+  membershipPlans: membershipPlans,
+  setDraft: state.setDraft,
+  getDraft: state.getDraft,
   parseTitles: function (raw) { return text.parseTitles(raw) },
   parseFile: function (name, size) {
     var lower = String(name || '').toLowerCase()
@@ -757,6 +773,10 @@ module.exports = {
     save()
     return queryView(query)
   },
+  listRecordPage: function (limit, offset) {
+    var rows = this.listRecords()
+    return { rows: rows.slice(offset, offset + limit), hasMore: offset + limit < rows.length }
+  },
   listRecords: function () {
     var account = acc()
     if (!account) return []
@@ -783,7 +803,11 @@ module.exports = {
       if (text.foldKey(title) === text.foldKey(name)) allowed = true
     })
     if (!allowed) return null
-    return searchRaw(name, { example: true })
+    var summary = exampleSummary(name)
+    var facts = require('../utils/present').exampleFacts(summary.report.records)
+    summary.report.line = facts.line
+    summary.report.sub = facts.sub
+    return summary.report
   },
   programMeta: function (name) { return metaOf(name) },
   tierOfAccount: function () { return tierOf(acc()) },
@@ -940,6 +964,7 @@ module.exports = {
       vipUnchanged: account.paidVipExpiry === vipBefore
     }
   },
+  evidenceSampleName: function () { return '雾港来信' },
   listEvidence: function () {
     var account = acc()
     if (!account) return []
@@ -948,6 +973,7 @@ module.exports = {
       return {
         id: view.id,
         name: view.name,
+        platform: item.platform || '',
         badge: view.badge,
         badgeCls: view.badgeCls,
         line: view.hasRefund ? '已全额退款 ¥' + view.refundAmount : view.day
@@ -1011,19 +1037,6 @@ module.exports = {
     if (!found) return { ok: false, message: '申请不存在' }
     if (found.status !== 'submitted') return { ok: false, message: '当前状态不能撤回' }
     found.status = 'cancelled'
-    save()
-    return { ok: true, detail: viewEvidence(found) }
-  },
-  confirmEvidence: function (id) {
-    var account = acc()
-    if (!account) return { ok: false, message: '请先登录' }
-    var found = null
-    account.evidence.forEach(function (item) {
-      if (item.id === id) found = item
-    })
-    if (!found) return { ok: false, message: '申请不存在' }
-    if (found.status !== 'delivered') return { ok: false, message: '当前状态不能确认' }
-    found.status = 'done'
     save()
     return { ok: true, detail: viewEvidence(found) }
   },

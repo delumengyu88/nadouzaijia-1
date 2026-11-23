@@ -1,19 +1,19 @@
+<view hidden="{{showSplash}}" aria-hidden="{{showSplash}}">
 <view class="tab-page">
-<view class="nav" style="padding-top: {{statusBarHeight}}px;">
+<view class="nav" wx:if="{{!showSplash}}" style="padding-top: {{statusBarHeight}}px;">
   <view class="nav-bar">
     <view class="nav-brand">那豆在架</view>
   </view>
 </view>
 <view style="height: {{navHeight}}px;"></view>
 <view class="body">
-  <view class="pad">
-    <view class="h1">已收录平台片单检索，免费</view>
-    <view class="sub">已收录 {{platformTotal}} 个平台</view>
-  </view>
   <view class="banner run" wx:if="{{banner == 'running'}}" bindtap="openRunning">
     <text>{{bannerText}}</text><text class="chev">›</text>
   </view>
-  <view class="banner" wx:elif="{{banner == 'guest'}}"><text>未登录</text><view><button class="login-link" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">微信登录</button><view class="login-error" wx:if="{{loginError}}">{{loginError}}</view></view></view>
+  <view class="banner guest-banner" wx:elif="{{banner == 'guest'}}">
+    <text class="guest-identity">免费用户</text>
+    <button wx:if="{{loginError || !identifying}}" class="login-link guest-retry" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">重试</button>
+  </view>
   <view class="banner" wx:elif="{{banner == 'free'}}">{{bannerText}}</view>
   <view class="card">
     <view class="card-title">输入片单</view>
@@ -22,17 +22,15 @@
     <view class="hint">.xlsx，含「节目名称」列，≤500 行</view>
     <view class="btn" bindtap="start">开始查询</view>
   </view>
+  <block wx:if="{{examples.length || examplesError}}">
   <view class="sec-head">
     <text class="sec-title" bindtap="tapExamples">示例报告</text>
   </view>
-  <view class="note" wx:if="{{examplesError}}">示例报告暂时无法加载。</view>
+  <view class="note" wx:if="{{examplesError}}" bindtap="loadHome">示例报告暂时无法加载，点击重试。</view>
   <view class="ex" wx:for="{{examples}}" wx:key="name" data-name="{{item.name}}" bindtap="openExample">
-    <view class="thumb">
-      <view class="moon"></view>
-      <view class="hill"></view>
-      <text class="thumb-badge">高清</text>
-      <text class="thumb-wm">那豆在架</text>
-      <text class="thumb-time">00:12:31</text>
+    <view class="thumb {{item.image || item.illustrated ? '' : 'thumb-plain'}}">
+      <image wx:if="{{item.image}}" src="{{item.image}}" data-name="{{item.name}}" data-src="{{item.image}}" binderror="exampleImageFailed" mode="aspectFill" style="width:100%;height:100%;" />
+      <block wx:elif="{{item.illustrated}}"><view class="moon"></view><view class="hill"></view></block>
     </view>
     <view class="ex-main">
       <view class="ex-name-row"><text class="ex-tag">示例</text><text class="ex-name">{{item.name}}</text></view>
@@ -41,26 +39,19 @@
     </view>
     <text class="chev">›</text>
   </view>
+  </block>
   <view class="foot-gap"></view>
 </view>
 </view>
-<view class="splash-cover" wx:if="{{showSplash}}">
-  <image wx:if="{{!splashFailed}}" class="splash-bg" src="/assets/p01-splash-bg.webp" mode="aspectFill" bindload="splashLoaded" binderror="splashFailed" />
-  <view class="splash-copy">
-    <view class="splash-title">那豆在架</view>
-    <view class="splash-tagline"><text>全平台片单检索，</text><text class="splash-highlight">永久免费</text></view>
-  </view>
-  <view class="splash-logo"><view></view></view>
-  <view class="splash-skip" style="top: {{splashSkipTop}}px; right: {{splashSkipRight}}px;" bindtap="finishSplash">跳过 {{seconds}}</view>
-</view>
-<view class="mask" wx:if="{{showAnnounce && !showSplash}}">
+<view class="mask" wx:if="{{announcement && showAnnounce && !showSplash && !showPrivacy}}">
   <view class="dialog">
-    <view class="dialog-title">公告</view>
-    <view class="dialog-body">每月 2 日和 16 日更新片单索引。免费用户可看 ≥180 天低清记录。</view>
-    <view class="btn" bindtap="closeAnnounce">我知道了</view>
+    <view class="dialog-title">{{announcement.title}}</view>
+    <view class="dialog-body">{{announcement.body}}</view>
+    <view class="btn" bindtap="closeAnnounce">{{announcement.buttonText}}</view>
+    <view class="announce-dismiss" bindtap="closeAnnounce">知道了</view>
   </view>
 </view>
-<view class="mask" wx:if="{{showDone && !showAnnounce && !showSplash}}">
+<view class="mask" wx:if="{{showDone && !showAnnounce && !showSplash && !announcement}}">
   <view class="dialog">
     <view class="dialog-title">查询完成</view>
     <block wx:if="{{doneSingle}}">
@@ -71,11 +62,6 @@
     <view class="btn" bindtap="openDone">去查看</view>
   </view>
 </view>
-<view class="mask" wx:if="{{needLogin}}">
-  <view class="dialog">
-    <view class="dialog-title">登录后继续</view>
-    
-    <button class="btn" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">微信登录</button>
-    <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
-  </view>
 </view>
+<include src="../../components/launch-poster/view.wxml" />
+<privacy-popup />

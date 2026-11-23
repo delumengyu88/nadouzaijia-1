@@ -2,14 +2,33 @@
 
 page { overflow-x: hidden; }
 
-.evidence-link { text-align: right; color: #1D4E9E; font-size: 26rpx; padding: 16rpx 0; }
+.evidence-link { text-align: right; color: #1D4E9E; font-size: 26rpx; padding: 8rpx 0 0; }
+.report-btn { margin-top: 16rpx; }
+.miss-actions { margin-top: 16rpx; }
+.miss-action { width: 48%; margin-top: 0; }
+.result { padding-top: 128rpx; text-align: center; }
+.result-title {
+  margin-top: 32rpx;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #1F2329;
+  line-height: 56rpx;
+}
+.result-primary {
+  margin: 48rpx auto 0;
+  width: 480rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  background: #1D4E9E;
+  color: #fff;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+.item-retry { width: 48%; margin-top: 16rpx; margin-left: 0; margin-right: auto; }
 
 /* 旋转弧会画出方形包围盒。不裁切时真机会把这块算进页面宽度，右缘出现一列淡字。 */
-.query-root {
-  width: 100%;
-  overflow-x: hidden;
-}
-
+.query-root { width: 100%; overflow-x: hidden; }
 .q-ring-block {
   width: 100%;
   padding-top: 120rpx;
@@ -18,7 +37,6 @@ page { overflow-x: hidden; }
   align-items: center;
   overflow: hidden;
 }
-
 .q-ring {
   position: relative;
   width: 160rpx;
@@ -27,7 +45,6 @@ page { overflow-x: hidden; }
   border-radius: 50%;
   overflow: hidden;
 }
-
 .q-ring-track {
   position: absolute;
   left: 0;
@@ -38,7 +55,6 @@ page { overflow-x: hidden; }
   border-radius: 50%;
   border: 8rpx solid #E5E9F0;
 }
-
 .q-ring-progress {
   position: absolute;
   left: 0;
@@ -47,7 +63,6 @@ page { overflow-x: hidden; }
   height: 160rpx;
   z-index: 1;
 }
-
 .q-ring-clip {
   position: absolute;
   top: 0;
@@ -55,10 +70,8 @@ page { overflow-x: hidden; }
   height: 160rpx;
   overflow: hidden;
 }
-
 .q-ring-clip.right { right: 0; }
 .q-ring-clip.left { left: 0; }
-
 .q-ring-half {
   position: absolute;
   top: 0;
@@ -67,19 +80,16 @@ page { overflow-x: hidden; }
   background: #1D4E9E;
   transition: transform 300ms linear;
 }
-
 .q-ring-half.right {
   right: 0;
   border-radius: 0 80rpx 80rpx 0;
   transform-origin: 0% 50%;
 }
-
 .q-ring-half.left {
   left: 0;
   border-radius: 80rpx 0 0 80rpx;
   transform-origin: 100% 50%;
 }
-
 .q-ring-spinner {
   position: absolute;
   left: 0;
@@ -88,7 +98,6 @@ page { overflow-x: hidden; }
   height: 160rpx;
   z-index: 2;
 }
-
 .q-ring-arc {
   width: 160rpx;
   height: 160rpx;
@@ -98,12 +107,10 @@ page { overflow-x: hidden; }
   border-top-color: #1D4E9E;
   animation: q-ring-spin 0.9s linear infinite;
 }
-
 @keyframes q-ring-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
-
 .q-ring-hole {
   position: absolute;
   left: 8rpx;
@@ -114,11 +121,9 @@ page { overflow-x: hidden; }
   background: #f4f6f8;
   z-index: 3;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
-
 .q-ring-ratio {
   width: 128rpx;
   height: 44rpx;
@@ -131,7 +136,6 @@ page { overflow-x: hidden; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 .q-ring-label {
   width: 100%;
   height: 44rpx;
@@ -147,7 +151,6 @@ page { overflow-x: hidden; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 .q-ring-wait {
   width: 100%;
   height: 32rpx;

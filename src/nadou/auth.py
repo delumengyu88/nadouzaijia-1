@@ -1,6 +1,7 @@
 """Mini program identity: exchange a WeChat code, then use our own opaque session."""
 
 import hashlib
+import logging
 import secrets
 from datetime import datetime, timedelta
 from uuid import uuid4
@@ -15,15 +16,39 @@ from nadou.config import get_settings
 from nadou.models import Entitlement, User, UserSession
 
 
+class _RedactWeChatQuery(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                arg.copy_with(query=None)
+                if isinstance(arg, httpx.URL)
+                and any(
+                    key in arg.params for key in ("access_token", "pay_sig", "secret", "js_code")
+                )
+                else arg
+                for arg in record.args
+            )
+        return True
+
+
+logging.getLogger("httpx").addFilter(_RedactWeChatQuery())
+
+
 class WeChatLogin:
+    SESSION_URL = "https://api.weixin.qq.com/sns/jscode2session"
+
     @staticmethod
     def exchange(code: str) -> str:
+        return WeChatLogin.exchange_session(code)[0]
+
+    @staticmethod
+    def exchange_session(code: str) -> tuple[str, str]:
         settings = get_settings()
-        if not settings.wx_appid or not settings.wx_appsecret:
-            raise HTTPException(503, "WeChat login is unavailable")
+        if not settings.wx_appid or not settings.wx_appsecret.get_secret_value():
+            raise HTTPException(503, "微信登录未配置")
         try:
             response = httpx.get(
-                "https://api.weixin.qq.com/sns/jscode2session",
+                WeChatLogin.SESSION_URL,
                 params={
                     "appid": settings.wx_appid,
                     "secret": settings.wx_appsecret.get_secret_value(),
@@ -37,11 +62,11 @@ class WeChatLogin:
             body = response.json()
         except (httpx.HTTPError, ValueError):
             # Never expose upstream URLs, credentials, session_key or error bodies.
-            raise HTTPException(503, "WeChat login is unavailable") from None
+            raise HTTPException(503, "微信登录服务暂不可用，请稍后重试") from None
         if not isinstance(body, dict):
-            raise HTTPException(503, "WeChat login is unavailable")
+            raise HTTPException(503, "微信登录服务暂不可用，请稍后重试")
         if body.get("errcode") in (40029, 40163):
-            raise HTTPException(401, "invalid WeChat code")
+            raise HTTPException(401, "微信登录凭证已失效，请重新登录")
         openid = body.get("openid")
         if (
             body.get("errcode")
@@ -51,8 +76,8 @@ class WeChatLogin:
             or not isinstance(body.get("session_key"), str)
             or not body["session_key"]
         ):
-            raise HTTPException(503, "WeChat login is unavailable")
-        return openid
+            raise HTTPException(503, "微信登录服务暂不可用，请稍后重试")
+        return openid, body["session_key"]
 
     @staticmethod
     def user(session: Session, openid: str, now: datetime) -> User:

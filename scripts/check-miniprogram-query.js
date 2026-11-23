@@ -9,11 +9,27 @@ config.apiBase = '/test-api'
 var store = {}
 var pending = []
 var throwNext = false
+var querySeq = 0
 global.getCurrentPages = function () { return [1, 2] }
 global.wx = {
   getStorageSync: function (k) { return store[k] }, setStorageSync: function (k, v) { store[k] = v },
   getSystemInfoSync: function () { return { statusBarHeight: 20 } },
   request: function (opt) {
+    var url = opt.url || ''
+    if (url.indexOf('/api/v1/queries') !== -1) {
+      var creating = (opt.method || 'GET') === 'POST' && /\/api\/v1\/queries$/.test(url)
+      var id = 'srv-q'
+      if (creating) id = 'srv-q-' + (++querySeq)
+      else {
+        var found = url.match(/\/api\/v1\/queries\/([^/?]+)/)
+        if (found) id = decodeURIComponent(found[1])
+      }
+      opt.success({ statusCode: creating ? 201 : 200, data: {
+        id: id, queued: true, running: false, done: false, head: '', percent: 0, items: [],
+        networkError: null, showNetworkRetry: null, failBanner: null, seen_at: null
+      } })
+      return
+    }
     if (throwNext) { throwNext = false; throw new Error('request crashed') }
     pending.push(opt) // never answered unless a test does it
   }
@@ -37,8 +53,8 @@ guard.now = function () { return clock }
 var def
 global.Page = function (p) { def = p }
 require('../miniprogram/pages/query/index')
-function open(names) {
-  var created = api.createQuery(names)
+async function open(names) {
+  var created = await Promise.resolve(api.createQuery(names))
   assert(created.ok)
   var page = Object.assign({}, def, { data: {}, setData: function (v) { Object.assign(this.data, v) } })
   page.onLoad({ id: created.id })
@@ -51,7 +67,7 @@ async function main() {
   state.setSession({ token: 'query-token', expires_at: new Date(Date.now() + 86400000).toISOString(), user: { id: 'q', tier: 'free' } })
 
   // 1. 请求一直不回：59 秒仍在查询，进度只按真实完成数走；60 秒停下并提示超时、清掉轮询。
-  var page = open(['不回片'])
+  var page = await open(['不回片'])
   await drain()
   assert.strictEqual(pending.length, 1)
   assert.strictEqual(activeTimers(), 1)
@@ -94,7 +110,7 @@ async function main() {
 
   // 3. wx.request 同步抛错：停在原进度，提示可重试，不卡住也不改计成已完成。
   throwNext = true
-  page = open(['抛错片']); await drain(); page.tick()
+  page = await open(['抛错片']); await drain(); page.tick()
   assert(page.data.done && !page.data.running && page.data.networkError && page.data.showNetworkRetry)
   assert.strictEqual(page.data.failBanner, '网络异常，请重试')
   assert.strictEqual(page.data.items[0].line, '网络异常，请重试')
@@ -114,7 +130,7 @@ async function main() {
 
   // 4. 多个节目：进度只随真实返回变化，时间流逝不推进度。
   var before = pending.length
-  page = open(['甲片', '乙片']); await drain()
+  page = await open(['甲片', '乙片']); await drain()
   clock += 30000; page.tick(); await drain()
   assert.strictEqual(page.data.percent, 0)
   assert.strictEqual(page.data.ringMode, 'spin')
@@ -146,7 +162,7 @@ async function main() {
   assert.strictEqual(activeTimers(), 0)
 
   // 6. 切到后台期间回包：回来直接展示结果，不再发请求。
-  page = open(['回来片']); await drain()
+  page = await open(['回来片']); await drain()
   var hidden = pending.length
   page.onHide()
   answer(pending[hidden - 1], 'hit'); await drain()
@@ -156,7 +172,7 @@ async function main() {
   assert.strictEqual(activeTimers(), 0)
 
   // 7. 回调在后台丢失：满 60 秒再回来，停下并提示超时，不另发请求。
-  page = open(['后台片']); await drain()
+  page = await open(['后台片']); await drain()
   var lost = pending.length
   page.onHide()
   clock += 60000
@@ -168,7 +184,7 @@ async function main() {
 
   // 8. 多条查询超时：停掉尚未发出的下一条，不能接着查。
   var batch = pending.length
-  page = open(['一片', '二片', '三片']); await drain()
+  page = await open(['一片', '二片', '三片']); await drain()
   answer(pending[batch], 'hit'); await drain(); page.tick(); await drain()
   assert.strictEqual(page.data.head, '已完成 1 / 3')
   var sent = pending.length
@@ -185,7 +201,7 @@ async function main() {
 
   // 9. 网络失败：进度停在原位，下面是「网络异常，请重试」和重试按钮。
   var netAt = pending.length
-  page = open(['甲网', '乙网']); await drain()
+  page = await open(['甲网', '乙网']); await drain()
   answer(pending[netAt], 'hit'); await drain(); page.tick(); await drain()
   assert.strictEqual(page.data.head, '已完成 1 / 2')
   assert.strictEqual(page.data.percent, 50)
@@ -218,7 +234,7 @@ async function main() {
   assert.strictEqual(activeTimers(), 0)
 
   // 10. 服务端错误不是网络异常，进入可重试的失败结果，不占用「停在原进度」。
-  page = open(['服务片']); await drain()
+  page = await open(['服务片']); await drain()
   pending[pending.length - 1].success({ statusCode: 503, data: {} })
   await drain(); page.tick()
   assert(page.data.done && !page.data.networkError && page.data.items[0].failed && page.data.itemRetry)
@@ -227,7 +243,7 @@ async function main() {
 
   // 11. 进度环：三分之一按真实比例，两条都返回后是满环，不再旋转。
   var thirdAt = pending.length
-  page = open(['环一', '环二', '环三']); await drain()
+  page = await open(['环一', '环二', '环三']); await drain()
   assert.strictEqual(page.data.ringMode, 'spin')
   answer(pending[thirdAt]); await drain(); page.tick(); await drain()
   assert.strictEqual(page.data.ringText, '1/3')
@@ -239,7 +255,7 @@ async function main() {
   page.onUnload()
 
   var fullAt = pending.length
-  page = open(['满甲', '满乙']); await drain()
+  page = await open(['满甲', '满乙']); await drain()
   answer(pending[fullAt], 'hit'); await drain(); page.tick(); await drain()
   answer(pending[fullAt + 1], 'hit'); await drain(); page.tick(); await drain()
   assert(page.data.done && !page.data.running)
@@ -255,7 +271,7 @@ async function main() {
 
   // 12. 30 秒换文案、60 秒仍走原来的超时；重试后从同一次请求的起点重新计。只查一条时全程旋转。
   var anchor = clock
-  page = open(['慢片']); await drain()
+  page = await open(['慢片']); await drain()
   assert.strictEqual(page.data.ringSpin, true)
   assert.strictEqual(page.data.ringWait, '通常 10–30 秒')
   clock = anchor + 29999; page.tick(); await drain()

@@ -142,8 +142,8 @@ def add_record(
     )
 
 
-def add_query(session, clock, query_id, programs):
-    session.add(MemberQuery(id=query_id, created_at=clock))
+def add_query(session, clock, query_id, programs, user_id=None):
+    session.add(MemberQuery(id=query_id, created_at=clock, user_id=user_id))
     for position, item in enumerate(programs):
         session.add(
             QueryProgram(
@@ -304,6 +304,7 @@ def test_rejects_callers_who_cannot_export(session, clock, client):
         clock,
         "q-auth",
         [{"uploaded": "海边故事", "matched": "海边故事", "resolution": "exact"}],
+        user_id="user-regular",
     )
     session.commit()
 
@@ -335,6 +336,7 @@ def test_rejects_callers_who_cannot_export(session, clock, client):
     allowed = export(client, "q-auth", "user-regular")
     assert allowed.status_code == 200
     assert allowed.headers["content-type"].startswith(ExportMedia.XLSX)
+    assert export(client, "q-auth", "user-vip").status_code == 404
 
 
 def test_header_columns_and_exact_strings(session, clock):
@@ -400,6 +402,7 @@ def test_header_columns_and_exact_strings(session, clock):
                 "program_type": "电影",
             },
         ],
+        user_id="user-vip",
     )
     session.commit()
     response = export(make_client(session, clock), "q-layout", "user-vip")
@@ -466,6 +469,7 @@ def test_legacy_resolution_uses_only_the_uploaded_title(session, clock):
                 "resolution": "exact",
             },
         ],
+        user_id="user-regular",
     )
     session.commit()
     response = export(make_client(session, clock), "q-alias", "user-regular")
@@ -512,6 +516,7 @@ def test_two_records_of_the_same_platform_and_program(session, clock):
         clock,
         "q-same",
         [{"uploaded": "重复节目", "matched": "重复节目", "resolution": "exact"}],
+        user_id="user-vip",
     )
     session.commit()
     response = export(make_client(session, clock), "q-same", "user-vip")
@@ -614,6 +619,7 @@ def test_excludes_test_prefix_and_non_done(session, clock):
             {"uploaded": "保留节目", "matched": "保留节目", "resolution": "exact"},
             {"uploaded": "只有新记录", "matched": "只有新记录", "resolution": "exact"},
         ],
+        user_id="user-vip",
     )
     session.commit()
     response = export(make_client(session, clock), "q-filter", "user-vip")
@@ -644,6 +650,7 @@ def test_detection_date_is_beijing_calendar_day(session, clock):
         clock,
         "q-date",
         [{"uploaded": "日期节目", "matched": "日期节目", "resolution": "exact"}],
+        user_id="user-regular",
     )
     session.commit()
     response = export(make_client(session, clock), "q-date", "user-regular")
@@ -700,6 +707,7 @@ def test_screenshot_is_embedded_watermarked_and_has_no_hyperlink(session, clock)
                 "program_type": "综艺",
             }
         ],
+        user_id="user-vip",
     )
     session.commit()
     signer = RecordingSigner()
@@ -770,6 +778,7 @@ def test_sheet2_matches_the_unresolved_summary(session, clock):
             },
             {"uploaded": "太新了", "matched": "太新了", "resolution": "exact"},
         ],
+        user_id="user-regular",
     )
     session.commit()
     response = export(make_client(session, clock), "q-rest", "user-regular")
@@ -818,21 +827,22 @@ def test_membership_age_floor_changes_rows_and_scope(session, clock):
         program="仅四十天",
         when=at_age(clock, 40),
     )
-    add_query(
-        session,
-        clock,
-        "q-floor",
-        [
-            {"uploaded": "跨档节目", "matched": "跨档节目", "resolution": "exact"},
-            {"uploaded": "仅四十天", "matched": "仅四十天", "resolution": "exact"},
-        ],
-    )
+    floor_programs = [
+        {"uploaded": "跨档节目", "matched": "跨档节目", "resolution": "exact"},
+        {"uploaded": "仅四十天", "matched": "仅四十天", "resolution": "exact"},
+    ]
+    for query_id, owner in (
+        ("q-floor-vip", "user-vip"),
+        ("q-floor-regular", "user-regular"),
+        ("q-floor-both", "user-both"),
+    ):
+        add_query(session, clock, query_id, floor_programs, user_id=owner)
     session.commit()
     client = make_client(session, clock)
 
-    vip = load_workbook(BytesIO(export(client, "q-floor", "user-vip").content))
-    regular = load_workbook(BytesIO(export(client, "q-floor", "user-regular").content))
-    both = load_workbook(BytesIO(export(client, "q-floor", "user-both").content))
+    vip = load_workbook(BytesIO(export(client, "q-floor-vip", "user-vip").content))
+    regular = load_workbook(BytesIO(export(client, "q-floor-regular", "user-regular").content))
+    both = load_workbook(BytesIO(export(client, "q-floor-both", "user-both").content))
     try:
         assert meta_block(vip["命中结果"])["查询范围"] == "2 个节目 · 已收录平台 · ≥30 天记录"
         assert meta_block(regular["命中结果"])["查询范围"] == "2 个节目 · 已收录平台 · ≥90 天记录"
@@ -897,6 +907,7 @@ def test_unrecognized_platform_is_still_a_hit(session, clock):
             {"uploaded": "已知节目", "matched": "已知节目", "resolution": "exact"},
             {"uploaded": "山东节目", "matched": "山东节目", "resolution": "exact"},
         ],
+        user_id="user-vip",
     )
     session.commit()
     response = export(make_client(session, clock), "q-platform", "user-vip")
@@ -946,6 +957,7 @@ def test_stored_matched_name_does_not_remap_the_uploaded_title(session, clock):
         clock,
         "q-same-name",
         [{"uploaded": "ABC剧", "matched": "节目1986", "resolution": "exact"}],
+        user_id="user-vip",
     )
     session.commit()
     response = export(make_client(session, clock), "q-same-name", "user-vip")
@@ -971,7 +983,7 @@ def test_splits_when_the_workbook_would_exceed_the_limit(session, clock):
         programs.append({"uploaded": name, "matched": name, "resolution": "exact"})
     programs.append({"uploaded": "落在末卷", "resolution": "miss"})
     programs.append({"uploaded": "待核名", "resolution": "pending", "detail": "候选丙"})
-    add_query(session, clock, "q-split", programs)
+    add_query(session, clock, "q-split", programs, user_id="user-vip")
     session.commit()
 
     whole = export(make_client(session, clock), "q-split", "user-vip")
@@ -1065,6 +1077,7 @@ def test_category_is_from_each_visible_index_record(session, clock):
         clock,
         "category-query",
         [{"uploaded": "类别节目", "resolution": "exact", "program_type": "节目类型值"}],
+        user_id="category-member",
     )
     session.commit()
     response = export(make_client(session, clock), "category-query", "category-member")
@@ -1093,6 +1106,7 @@ def test_stop_words_cannot_be_exported_as_hits(session, clock):
         clock,
         "stop-query",
         [{"uploaded": title, "resolution": "exact"} for title in titles],
+        user_id="stop-member",
     )
     session.commit()
     response = export(make_client(session, clock), "stop-query", "stop-member")

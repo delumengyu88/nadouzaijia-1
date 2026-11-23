@@ -26,6 +26,31 @@ class TestTaskFilter:
     """A filename or platform that starts with test_ never counts."""
 
     PREFIX = "test_"
+    SEED_TASK_IDS = frozenset(
+        (
+            "a1b2c3d4",
+            "b2c3d4e5",
+            "c3d4e5f6",
+            "d4e5f6a7",
+            "e5f6a7b8",
+            "f6a7b8c9",
+            "a7b8c9d0",
+            "b8c9d0e1",
+            "c9d0e1f2",
+            "e1f2a3b4",
+        )
+    )
+
+    @classmethod
+    def commercial_task(cls, task: Task | None) -> bool:
+        return (
+            task is not None
+            and task.status == "done"
+            and not task.is_test
+            and not task.task_id.startswith("demo-")
+            and task.task_id not in cls.SEED_TASK_IDS
+            and not cls.excluded(task.raw_filename, task.platform_name, None)
+        )
 
     @staticmethod
     def excluded(filename: str, platform_raw: str | None, platform_canonical: str | None) -> bool:

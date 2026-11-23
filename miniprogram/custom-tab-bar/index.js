@@ -1,5 +1,8 @@
 Component({
+  lifetimes: { attached: function () { this.syncVisibility() } },
+  pageLifetimes: { show: function () { this.syncVisibility() } },
   data: {
+    posterHidden: true,
     selected: 0,
     list: [
       { pagePath: '/pages/home/index', text: '首页', icon: '/assets/tab-home.png', iconOn: '/assets/tab-home-on.png' },
@@ -8,6 +11,7 @@ Component({
     ]
   },
   methods: {
+    syncVisibility: function () { this.setData({ posterHidden: require('../api/splash').tabHidden() }) },
     switchTab: function (e) {
       var path = e.currentTarget.dataset.path
       var index = Number(e.currentTarget.dataset.index)

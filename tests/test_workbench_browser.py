@@ -4,6 +4,7 @@ import subprocess
 import sys
 import threading
 import time
+from uuid import uuid4
 
 import pytest
 
@@ -90,6 +91,15 @@ def test_each_workbench_page_loads_without_console_errors():
         with playwright_sync.sync_playwright() as playwright:
             browser = playwright.chromium.launch()
             page = browser.new_page(viewport={"width": 1440, "height": 900})
+            splash_requests = []
+            page.on(
+                "request",
+                lambda req: (
+                    splash_requests.append(req.method)
+                    if req.url.endswith("/admin/content/splash")
+                    else None
+                ),
+            )
             page.on("pageerror", lambda exc: errors.append(str(exc)))
             page.on(
                 "console",
@@ -143,6 +153,30 @@ def test_each_workbench_page_loads_without_console_errors():
                     assert word not in text
                 for leak in ENGLISH_LEAKS:
                     assert leak not in text
+            page.goto(f"{base}/admin/#/w06", wait_until="networkidle")
+            page.locator("#ann-title").wait_for()
+            assert page.locator(".card-hd").all_text_contents()[0] == "公告"
+            assert page.get_by_text("开屏海报", exact=False).count() == 0
+            name = "内容回归" + uuid4().hex[:8]
+            page.locator("#ann-title").fill(name)
+            page.locator("#ann-body").fill("测试公告")
+            page.get_by_role("button", name="新建公告").click()
+            row = page.get_by_role("row").filter(has_text=name)
+            row.get_by_role("button", name="下线").click()
+            row.get_by_role("button", name="上线").wait_for()
+            example = page.locator(".example-card").first
+            original = example.locator("h4").inner_text()
+            card = page.locator(".example-card").filter(has_text=original)
+            card.get_by_role("button", name="下移").click()
+            playwright_sync.expect(page.locator(".example-card").nth(1).locator("h4")).to_have_text(
+                original
+            )
+            card.get_by_role("button", name="上移").click()
+            playwright_sync.expect(example.locator("h4")).to_have_text(original)
+            card.get_by_role("button", name="下线").click()
+            card.get_by_role("button", name="上线").click()
+            card.get_by_role("button", name="下线").wait_for()
+            assert not splash_requests
             browser.close()
         assert errors == []
     finally:

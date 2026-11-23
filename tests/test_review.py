@@ -109,7 +109,13 @@ def test_mixed_review_is_excluded_from_summary_and_user_export(session, clock, r
     visible.hit_type = "consensus"
     visible.category = "已计入记录"
     hidden.category = "不应导出的字段"
-    add_query(session, clock, "review-query", [{"uploaded": "家庭", "resolution": "exact"}])
+    add_query(
+        session,
+        clock,
+        "review-query",
+        [{"uploaded": "家庭", "resolution": "exact"}],
+        user_id="review-vip",
+    )
     session.commit()
     client = make_client(session, clock)
     body = client.get(

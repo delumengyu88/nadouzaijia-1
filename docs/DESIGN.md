@@ -26,9 +26,12 @@ This PR is the smallest backend later PRs can build on: import the hourly task e
 | `nadou.search` | `ProgramSearch` |
 | `nadou.query_export` | `QueryExport` workbook |
 | `nadou.main` | FastAPI app |
+| `nadou.public_config` | `PublicConfig`, the unauthenticated splash switch |
+| `nadou.payments` | WeChat Pay JSAPI orders, notification, and grant |
+| `nadou.user_orders` | `UserOrders`, the signed-in mini-program order list |
 | `nadou.seed` | Synthetic CSV + index rows through the importer |
 
-Normalization and parsing are classes. `SignedUrlProvider` is the seam the real CDN signer will replace; the API calls only that.
+Normalization and parsing are classes. `SignedUrlProvider` is the seam the real CDN signer will replace; the API calls only that. The current signer returns `signed://derived/` and includes no host, so the mini program does not request it. The server does not build absolute URLs for the mini program, and there is no separate public-origin environment variable. The mini program production root is `https://nadou.youroem.cn`. `inadol.com` 在备案下来之前不可用于小程序。
 
 ## Data model
 
@@ -42,7 +45,7 @@ Ages use the Beijing calendar date of `tasks.created_at`. If that is null, use `
 | `program_aliases` | Retired schema only; never read or written by application matching. |
 | `users` | Caller of the search endpoint. `X-User-Id` is a local-only stand-in until WeChat login; it is not production authentication. |
 | `entitlements` | Active grants: `regular` / `vip` (expiry), `program_90` / `program_30` (canonical program + expiry), `screenshot` (one record id + expiry). The policy takes the widest live grant. Payment upgrade rules (suspended 普通 days, 7-day renewals) are not implemented; a grant counts when `expires_at` is in the future. |
-| `member_queries` | One saved lookup. `id` is the workbook 查询编号. |
+| `member_queries` | One saved lookup. `id` is the workbook 查询编号. `user_id` is a nullable foreign key to `users`. `seen_at` is nullable. Index `ix_member_queries_user_id_created_at` is `(user_id, created_at)`. |
 | `query_programs` | Uploaded names in that lookup: optional 节目类型, matched canonical name, resolution (`exact` / `alias` / `manual` / `miss` / `pending` / `failed`), and the 说明 text. |
 
 `PlatformNames` maps a variant such as `GD移动` to operator `移动` and province `广东`. OTT and 百视通 are stored in `platform_subtype` and are not part of the count. The same class is used for the CSV `平台名` and for the filename parser. A name that cannot be parsed leaves the three fields null and `source_unverified` true. `is_test` is set when the raw filename, the raw platform, or the canonical platform starts with `test_` (case-insensitive, after full/half-width fold). Test rows are stored so a later export can clear the flag, and they never appear in search or in the workbook export.
@@ -54,8 +57,133 @@ The API shows `其他平台` (`PlatformNames.OTHER`) only on records the caller 
 1. `GET /health` — process up.
 2. `GET /api/v1/programs/search?name=` — canonicalize `name`, return that program's counted records filtered for the caller.
 3. `GET /api/v1/queries/{query_id}/export` — workbook for one saved query. See below. Same `X-User-Id` stand-in.
+4. `GET /api/v1/app/config` — public splash switch for the mini program. No login. See below.
+5. `GET /api/v1/invite-codes/state` — whether the caller has redeemed an invite code. See below.
+6. `GET /api/v1/app/home` — public home content for the mini program. No login. See below.
+7. `GET /api/v1/app/examples/{name}` — public example report for one homepage example. No login. See below.
+8. `GET /api/v1/pay/orders` — the signed-in user's orders, newest first. See below. One order is the existing `GET /api/v1/pay/orders/{order_number}`.
+9. `POST /api/v1/evidence-requests` — 登录用户提交委托取证。见下方「用户侧委托取证」。
+10. `GET /api/v1/evidence-requests` — 只返回当前用户的工单，按 `created_at` 倒序。
+11. `GET /api/v1/evidence-requests/{id}` — 本人工单详情。非本人或不存在都是 404。
+12. `POST /api/v1/evidence-requests/{id}/withdraw` — 仅「已提交」可撤回为「已取消」。
+13. `POST /api/v1/evidence-requests/{id}/confirm` — 仅「已交付」可确认为「已完成」。
 
 Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is local-only until WeChat login lands.** Do not expose this header as account authentication on a shared or deployed API. There is no import endpoint; import is `TaskExportImporter`, used by the seed script and tests. Workbench upload can call the same class later.
+
+### 小程序公开配置
+
+`GET /api/v1/app/config` 不需要 `Authorization`，未登录也可以读。它只读 `splash_config` 里 id 为 1 的那一行，不插入、不更新。不要复用管理接口的 `SplashBook.get()`：那个方法在没有行时会写入一条默认记录，而且默认 `enabled` 是 false。
+
+响应只有开屏开关和标语。不返回图片名、跳转文案、更新时间、主键，也不返回任何存储路径：
+
+```json
+{"splash_enabled": true, "slogan": "片单检索"}
+```
+
+表里没有这一行时返回 `splash_enabled: true`、`slogan: ""`，表的行数不变。工作台「内容配置」只管理公告和首页示例。管理端保留兼容接口 `PUT /api/v1/admin/content/splash`，配置更新后由小程序读取。服务端不做缓存；响应带 `Cache-Control: public, max-age=60`，给调用方自己缓存。
+
+### 小程序邀请状态
+
+`GET /api/v1/invite-codes/state` 给兑换邀请码页和个人中心的邀请行用。不改 `GET /api/v1/auth/me`。登录识别与 `/api/v1/auth/me` 相同，都是 `Authorization: Bearer` 用户会话：没有 token、token 无效或会话过期时按未登录处理，返回 200，而不是 401。`X-User-Id` 不能代替这个会话。封禁账号仍是 403。
+
+只读 `invite_codes` 里 `redeemed_by` 等于当前用户的行，不插入、不更新。`bound` 表示这个用户已经成功兑换过邀请码。邀请权益过期、邀请码本身的可兑换期限已过，都仍然是已绑定，不能再兑。不看 `entitlements` 是否还在有效期内，也不读取其他用户的邀请码。
+
+字段名与小程序一致。兑换页只用 `guest` 和 `bound`。个人中心在已登录时还用 `bound` 和 `bindText`（`miniprogram/pages/profile/index.wxml` 的邀请行标题）。未绑定，包括未登录，`bindText` 为「兑换邀请码」。已绑定是「邀请码 」加上邀请码前 4 位和 `****`，与小程序 `maskCode` 相同。
+
+```json
+{"guest": false, "bound": true, "bindText": "邀请码 ABCD****"}
+```
+
+未登录：
+
+```json
+{"guest": true, "bound": false, "bindText": "兑换邀请码"}
+```
+
+不返回邀请码明文、渠道、手机号、兑换时间，也不返回权益档位或到期时间。这些页面都不用后两项；`bindSub` 在小程序 mock 里恒为空字符串，个人中心模板也没有使用，所以不放进响应。响应带 `Cache-Control: no-store`。
+
+### 小程序首页
+
+`GET /api/v1/app/home` 和 `GET /api/v1/app/examples/{name}` 都不需要 `Authorization`，未登录也可以读。只做查询，不插入、不更新。不要复用 `SplashBook.get()`，也不要走会写审计的工作台保存方法。响应不带用户、权益或签名地址。两个接口都带 `Cache-Control: public, max-age=60`。平台数是一次查询后在进程里按平台键去重，没有另做超时缓存。
+
+首页对应小程序现在的 `platformTotal`、`examples[{name,line,sub}]`，以及首页公告弹窗（文案目前写在 `miniprogram/pages/home/index.wxml`）。示例详情对应 `exampleReport(name)`。
+
+```json
+{
+  "announcements": [
+    {
+      "id": "…",
+      "title": "索引更新",
+      "body": "…",
+      "button_text": "我知道了",
+      "jump_label": null,
+      "frequency": "once",
+      "starts_at": "…",
+      "ends_at": "…"
+    }
+  ],
+  "examples": [
+    {"name": "示例节目", "line": "涉及 2 个平台", "sub": "命中 2 条记录 · 2026-08-13"}
+  ],
+  "platformTotal": 2
+}
+```
+
+公告只返回 `online` 且 `starts_at <= now < ends_at` 的行，排序与工作台列表相同：`starts_at` 降序，再按 `id`。已下线、未开始、已到期（含 `ends_at` 等于当前时刻）都不返回。工作台在多条同时落在窗口内时，会把除 `starts_at` 最新的一条外标成「已被更新覆盖」；这个接口不另做这层隐藏，窗口内的上线条都返回，调用方可以取第一条当作当前弹窗。没有公告时 `announcements` 是 `[]`。
+
+示例只返回 `homepage_examples.online` 的行，排序与工作台相同：`sort_order`，再按 `id`。卡片不读添加时写下的 `platform_hits` 和 `detected_on`。`line` / `sub` 按该节目当前仍可进入报告的索引记录现算：`hit_type` 为 `consensus`，任务规则与检索的 `ProgramSearch.included` 相同（没有任务的行保留，测试任务和未完成任务去掉），并且 `date_generated` 为假。`line` 里的平台数与检索的 `platform_count` 同一口径，只统计真实检测日龄满 30 天的记录。`sub` 的条数也只数这些记录；日期是这些记录里最晚的真实检测日（北京日历日）。真实检测日用 `ProgramSearch.record_time`（任务提交时间，否则文件上传时间，否则记录上的 `uploaded_at`），从不用 `generated_uploaded_at`，也从不用当天填空。一条都没有时 `sub` 为 `命中 0 条记录`，后面不接日期。
+
+`platformTotal` 是全库已收录平台数，不是某一个节目的 `platform_count`。口径：`index_records.hit_type = consensus` 的记录所关联的任务里，能通过 `ProgramSearch.included` 和 `ProgramSearch._unverified` 的，再取 `ProgramSearch._platform_key`（省份可以为空，加上运营商）去重。子类型（OTT、百视通）和公网/专网不另算一个平台。`其他平台` 和 `平台未识别` 是未核实来源的展示名，不计入。这个数不按 30 天过滤，也不因 `date_generated` 把平台拿掉：生成日期只影响示例上能不能把该行的时间当成检测日。没有可计平台时返回 `0`，不写死固定数字。
+
+`GET /api/v1/app/examples/{name}` 用与检索相同的标题折叠找到一条上线示例。找不到、未上线，或标题折叠后为空，返回 404 `example not found`，同样带上面的缓存头。返回的 `name` 是工作台保存的节目名，`program_name` 是折叠后的索引名。`records` 与上面的 `line` / `sub` 是同一批行：有真实检测日，并且 `EntitlementPolicy.age_bucket` 不是 `lt_30`（不满 30 天，任何权益都看不到字段）。`date_generated` 的行、没有真实检测日的行、不满 30 天的行都不出现，也不以打码形式返回平台或精确时间。记录按真实检测日从新到旧。只有这类行时 `records` 为空；`evidence_program_name` 仍是示例节目名，只要去掉 `date_generated` 之后还有索引行。没有任何可报告行时它为 `null`。
+
+下面这些字段没有公开来源（没有登录用户，也不签名），每条记录固定为 `null`：`thumbnail_url`、`hd_url`、`access`、`can_download_report`、`can_download_screenshot`、`locked`。没有可报告记录时 `evidence_program_name` 为 `null`。不返回 `locked_summary`、`locked_window`，也不返回首页会话字段（登录态、草稿、是否已看过公告）。
+
+### 小程序我的订单
+
+`GET /api/v1/pay/orders` 使用和 `GET /api/v1/auth/me` 相同的登录态：`Authorization: Bearer <token>`。未登录返回 401，`detail` 为 `authentication required`。封禁返回 403，`detail` 为 `account is disabled`。只返回当前用户的订单，按 `created_at` 倒序，同一时刻再按订单 id 倒序。没有订单时正文是 `[]`。列表和 `GET /api/v1/pay/orders/{order_number}` 的响应都带 `Cache-Control: no-store`，包括查单的 404。下单和同步不带这个头。
+
+`product` 属于 `TEST_PRODUCTS`（`membership_test`、`membership_dev`）的订单照实返回，`isTest` 为 true，由调用方决定是否展示。其他订单 `isTest` 为 false。
+
+| 字段 | 来源 |
+|---|---|
+| `orderNo` | `orders.order_number` |
+| `title` | 在售目录里的商品名。目录没有该编码时为 `null`（`membership_dev` 不在目录里） |
+| `line` | `statusText · 价格 · 北京时间的日期`。有 `amount_fen` 时按分换算，整元不写小数，否则保留两位；没有 `amount_fen` 时用元整数 `amount` |
+| `status` | 下表的英文码。库里没有对应码时为 `null` |
+| `statusText` | 库内中文状态原文 |
+| `product` | 商品编码，没有则为 `null` |
+| `isTest` | 商品编码在 `TEST_PRODUCTS` 中 |
+
+| 库内状态 | `status` | 说明 |
+|---|---|---|
+| 待支付 | `pending` | 小程序已有 |
+| 已支付 | `paid` | 小程序没有这个英文码，本接口自定 |
+| 已发放 | `granted` | 小程序已有 |
+| 发放异常 | `grant_error` | 小程序已有 |
+| 已退款 | `refunded` | 小程序没有这个英文码，本接口自定 |
+
+不返回预支付标识、微信交易号、退款原因、用户 id、商户信息或回调正文。
+
+单笔详情不另建路由，复用 `GET /api/v1/pay/orders/{order_number}`。不是当前用户的订单，或订单不存在，都是 404，`detail` 为 `订单不存在`。该接口原有字段不变：`status` 仍是中文库内状态，`title` 仍是目录商品名（目录没有则为 `null`）。查单响应在这些字段之外附上 `orderNo`、`line`、`statusText`、`product`、`isTest`。英文 `status` 不写入详情，避免改掉原有的中文 `status`。下单和同步走同一个视图，因此也会带上这五个字段，原有字段同样不改。
+
+支付页还用到、这里不返回的字段（没有库内数据，不编造）：`programName`、`card`、`priceText`、`blurb`、`renewLine`、`coverLine`、`payText`、`allowRepay`、`allowCheck`、`showPay`、`successLine`。
+
+### 用户侧委托取证
+
+鉴权和 `GET /api/v1/auth/me` 相同，请求头是 `Authorization: Bearer`。未登录 401。数据库里的状态继续用中文，工作台接口不改。
+
+`POST /api/v1/evidence-requests` 的字段：`name`（必填，去掉首尾空白并做 NFKC 之后必须非空，最长 200）、`kind`（只能是 `normal` 或 `recent`）、`platform`（可选；`recent` 忽略且不存）、`note`（可选，最长 500，写入 `requirement`）、`phone`（必填，11 位并且以 1 开头）。这个接口不接收 `record_ref`，也不会去读检索记录或生成日期来填任何字段。
+
+`normal` 存成 `request_type=常规`，`recent` 存成 `近期`。成功时 201，正文只有 `{id, no}`。`no` 就是 `application_number`，仍由工作台的 `ApplicationNumbers.next_value` 生成。联系电话写在新增的可空列 `evidence_requests.contact_phone`（迁移 `20261122_0012`，可升级也可降级，不改已有行的其他列）。`phone` 必须由本次请求带上，不读取 `users.phone`。缺失或空白是 422 `{code:"phone_required", message:"请填写联系手机号"}`。格式不对是 422 `{code:"invalid_phone", message:"请填写正确的手机号"}`。用户侧响应和钉钉通知里的手机号都是脱敏的（如 `138****1234`）。
+
+列表每条是 `id, no, name, platform, kind, status, status_text, created_at`。详情在此基础上增加 `note`、脱敏 `phone`、`quote_amount`、`failure_reason`、`refund_method`、`refund_amount`、`refund_note`，以及 `accepted_at`、`quoted_at`、`payment_confirmed_at`、`delivered_at`、`completed_at`、`failed_at`、`cancelled_at`、`closed_at`。`status` 与中文的对应是：已提交 `submitted`，已受理 `accepted`，待付款（线下） `pay`，取证中 `working`，已交付 `delivered`，已完成 `done`，取证失败 `failed`，已关闭 `closed`，已取消 `cancelled`。`status_text` 是库里的中文原值。
+
+同一用户、同一节目名（先去首尾空白，再 NFKC），如果已经有状态属于已提交、已受理、待付款（线下）、取证中的工单，返回 409 `{code:"duplicate", id, no, message:"这个节目已经提交过取证申请"}`，`id` 和 `no` 是已有的那一张。检查和插入在同一个事务里完成，并且先锁住这个用户：Postgres 用 `SELECT … FOR UPDATE`；SQLite 先提交登录时的只读事务，再 `UPDATE` 该用户行，把写锁一直占到本次请求提交，另一个连接用 `busy_timeout` 等待。已取消、已交付、已完成、取证失败、已关闭都不阻止再次提交。
+
+撤回和确认在状态不对时返回 409 `{code:"invalid_state", message:…}`。这两步写审计。`AuditWriter` 的操作者是员工账号；用户自己操作时没有员工，所以 `actor_id` 为空，`after_json` 里记下 `user_id`，不记手机号。
+
+事务提交成功之后才走现有 `Notifier`（请求返回前先 `commit`，通知放在后台任务里）。正文含标题、节目名、工单号、取证类型和脱敏手机号。通知抛错不影响 201；提交没写进库就不会发。工单号连续三次都冲突时返回 503 `{code:"no_unavailable", message:"提交失败，请稍后再试"}`。
 
 ## Import
 
@@ -148,7 +276,7 @@ Login is `POST /api/v1/admin/auth/login` with username and password. Passwords a
 
 The browser transport is the httpOnly cookie `nadou_admin_session` (`SameSite=Lax`, `Path=/api/v1/admin`, `Secure` outside local/test). The login JSON also returns the token so a non-browser client can send `Authorization: Bearer`. If both are present, the bearer token is the one that is used. Logout revokes that session by setting `revoked_at`. Sessions last 12 hours. `python -m nadou create-admin --reset-password` sets `revoked_at` on every unexpired session for that admin and clears that account's login locks, in the same transaction as the new password hash. The audit row records how many locks were cleared and does not contain the password. Other accounts' sessions are left alone.
 
-Five consecutive failures lock that account from that client IP for 30 minutes. Failures from another IP do not lock the account, and failures against one account do not lock a different account on the same IP. The client address is the direct connection address; a forwarded header is not trusted. An admin unlocks with `POST /api/v1/admin/staff/{id}/unlock`, which clears every lock for that account and writes an audit row. The first admin account is created on the server with `python -m nadou create-admin` (see the README). The command reuses the Argon2id hasher, refuses passwords shorter than 12 characters, and writes an audit row that does not contain the password. It does not load demo data and does not read `NADOU_ALLOW_DEV_SEED`. Later accounts are created by an admin.
+Five consecutive failures lock that account from that client IP for 30 minutes. Failures from another IP do not lock the account, and failures against one account do not lock a different account on the same IP. The client address is the direct peer, unless `NADOU_TRUSTED_PROXIES` (default `127.0.0.1`) allows that peer to supply `X-Forwarded-For`. When uvicorn is started with `--proxy-headers`, it trusts `127.0.0.1` by default and rewrites the peer address once, so do not also pass `--proxy-headers` when running the backend directly on the machine, or the address is handled twice. An admin unlocks with `POST /api/v1/admin/staff/{id}/unlock`, which clears every lock for that account and writes an audit row. The first admin account is created on the server with `python -m nadou create-admin` (see the README). The command reuses the Argon2id hasher, refuses passwords shorter than 12 characters, and writes an audit row that does not contain the password. It does not load demo data and does not read `NADOU_ALLOW_DEV_SEED`. Later accounts are created by an admin.
 
 ### Audit log
 
@@ -170,13 +298,13 @@ Marking `取证中` failed requires a reason and a refund method. The refund amo
 
 Support lookup returns the phone masked to the last four digits (`90000001234` → `*******1234`). Admin sees the full phone. Ban requires a reason. `temporary` requires an end time; `permanent` rejects one. Unban clears the ban fields. Every change is audited.
 
-Manual grant or extend takes `regular` or `vip`, a day count, and a reason. The resulting row has `entitlements.source = manual`. `EntitlementBook.counts_for_revenue` is false for that source, which is how invite-code conversion and order revenue leave the grant out. An order issuance uses `source = order`.
+Manual grant or extend takes `regular` or `vip`, a day count, and a reason. The resulting row has `entitlements.source = manual`. `EntitlementBook.counts_for_revenue` is false for that source, which is how invite-code conversion and order revenue leave the grant out. An order issuance uses `source = order`. Orders whose `product` is in `TEST_PRODUCTS` (`membership_test` and `membership_dev`) are left out of invite-code conversion and that revenue set.
 
 ### Orders and reissue
 
-The order table is a read model until payment exists. `OrderLookup.by_order_number` and `GET /api/v1/admin/orders/by-number/{order_number}` find an order by its public number. Export is `GET /api/v1/admin/orders/export` (CSV, admin only).
+The workbench still reads orders; it does not take payment. `OrderLookup.by_order_number` and `GET /api/v1/admin/orders/by-number/{order_number}` find an order by its public number. Export is `GET /api/v1/admin/orders/export` (CSV, admin only). Mini program JSAPI payment is specified in [PAYMENTS.md](PAYMENTS.md). The server prices each tier. A verified WeChat notification, or a server-side order query, grants that order's original tier and duration through `EntitlementIssuer` and `OrderGrantWriter`. `amount` stays the yuan integer the workbench already shows. `amount_fen` is the WeChat charge in 分.
 
-`EntitlementIssuer.issue` grants the order's original tier and duration. `order_issuances.order_id` is unique, so a second call returns the existing grant instead of creating another entitlement. The issuer tries three times, then sets the order and the issuance to `发放异常` and notifies once. `POST /api/v1/admin/orders/{id}/reissue` (support or admin) runs that same path only for `发放异常`. The body cannot carry a tier or a duration; the issuance row keeps the snapshot taken on the first attempt. A repeated reissue returns the entitlement already issued.
+`EntitlementIssuer.issue` grants the order's original tier and duration. The new entitlement ends at `max(live expiry of that same tier, now) + duration_days`. The live expiry is the latest `expires_at` still in the future for that `kind`, the same instant `vip_expires_at` or `regular_expires_at` shows, whatever the source. A `regular` grant is not a base for `vip`, and a `vip` grant is not a base for `regular`; neither row is rewritten by a purchase of the other tier. Suspending leftover 普通 days on upgrade, and 7-day renewals, stay unimplemented. `order_issuances.order_id` is unique, so a second call returns the existing grant instead of creating another entitlement or extending again. The issuer tries three times, then sets the order and the issuance to `发放异常` and notifies once. `POST /api/v1/admin/orders/{id}/reissue` (support or admin) runs that same path only for `发放异常`. The body cannot carry a tier or a duration; the issuance row keeps the snapshot taken on the first attempt. A repeated reissue returns the entitlement already issued.
 
 ### Hourly index run
 
@@ -188,7 +316,7 @@ If the newest successful run is more than two days old, the job calls `Notifier`
 
 ## Query workbook export
 
-`GET /api/v1/queries/{query_id}/export` writes the caller's view of one saved query. Missing `X-User-Id` is a free caller. An unknown user id is 404. A missing query id is 404.
+`GET /api/v1/queries/{query_id}/export` writes the caller's view of one saved query. Missing `X-User-Id` is a free caller. An unknown user id is 404. A missing query id is 404. The query must belong to the caller (`member_queries.user_id`). Another member gets 404. Non-members still get 403 when the row has an owner, or when the id is missing, because that check runs first. A legacy row with a null `user_id` cannot be attributed: export and `GET /api/v1/queries/{id}` return 404 for every caller, and the row is omitted from `GET /api/v1/queries`, because allowing it would let anyone who knows the id export it.
 
 Only a live `regular` (普通会员) or `vip` grant can export. Free callers, and callers whose only live grants are `program_90`, `program_30`, or `screenshot`, get 403. Expired grants do not count. There is no row cap. If both `regular` and `vip` are live, VIP wins and the wider age floor is used.
 
@@ -282,3 +410,79 @@ Some `index_records` rows have no task in the export and a NULL `uploaded_at`. F
 - Flagged rows are never formal output, decided server-side: `RecordWindow.permitted` drops them from `/api/v1/queries/{query_id}/export`; in search they always have `can_download_report = false` (so the mini program's own xlsx skips them) and they never contribute to `evidence_platforms` or `evidence_program_name`, the only values the mini program uses to prefill 委托取证. When every visible row of a program is flagged, `evidence_program_name` is intentionally empty, so P07/P08 open 委托取证 with a blank program name for the member to fill in rather than prefilling from generated rows.
 - Because of that exclusion the exported row count can be lower than the count on P08. Every member xlsx prints the exported count in A1 (`那豆在架 命中结果（共导出 N 条）`) and in the file name (`汇总-共导出N条.xlsx`, or `.zip` when split). For a split archive the outer file name counts all rows; A1 in each part counts that part’s rows.
 - `scripts/backfill_generated_dates.py` writes the placeholders. Each date is `2026-11-22` minus `60 + sha256("nadou-orphan-dates-v1:" + id) mod 131` days at 12:00 Beijing time, so reruns give the same result. `--dry-run` only counts; `--undo` clears every flagged row. Before launch, either fill in real dates or remove these rows.
+
+## 体验版会员档位开关
+
+只给体验版测试用，用来把当前登录账号切成免费、普通会员或 VIP，核对各档权益。服务端不读取、也不依赖小程序传来的任何版本或环境信息，包括 `envVersion`、自定义请求头和 `Referer`。
+
+接口要同时通过两道门，缺一不可：
+
+1. `NADOU_TRIAL_TOOLS` 精确等于 `1`（默认 `0`。`true`、`yes` 或其他值都视为关闭）。生产必须保持 `0`。
+2. `user_may_use_test_tier` 放行当前用户。这是和微信支付 0.01 元 `membership_test` 档同一个函数：`NADOU_WECHAT_PAY_TEST_TIER` 为打开，且用户 id 在 `NADOU_WECHAT_PAY_TEST_USERS`（逗号分隔，默认空，空名单等于没有人）。只认用户 id，不认 openid。不要再设第二份名单，也不要把真实账号写进仓库或镜像。
+
+要用档位切换，必须同时打开 `NADOU_WECHAT_PAY_TEST_TIER`。白名单里的人因此也会在支付档位列表里看到 0.01 元档。
+
+切换会立刻把该账号当前仍有效的普通会员和 VIP 改成到期，包括真实付过费的，而且不会按原来的到期时间恢复。白名单里只放测试账号。
+
+### 小程序怎么调
+
+`POST /api/v1/dev/tier`
+
+请求头只需要登录会话：`Authorization: Bearer <POST /api/v1/auth/wechat/login 返回的 token>`。不要为了放行额外传版本号。白名单里填的是 `GET /api/v1/auth/me` 返回的 `id`。
+
+请求体字段名是 `tier`，取值 `free`、`regular` 或 `vip`：
+
+```json
+{"tier": "regular"}
+```
+
+成功返回 200。`regular` 和 `vip` 从服务器当前时间起 30 天，并写一条 `orders.product = "membership_dev"` 的订单（金额 0，状态「已发放」，时间为当前时间，不生成回溯日期）。`free` 清空普通会员和 VIP，不写订单，`expires_at` 为 `null`。开通走现有的 `OrderGrantWriter`。
+
+```json
+{"tier": "regular", "expires_at": "2026-12-21T12:00:00+08:00"}
+```
+
+```json
+{"tier": "free", "expires_at": null}
+```
+
+以下情况都返回 **404**，响应体与路由不存在时相同（`{"detail":"Not Found"}`），不要据此在界面上区分原因：
+
+- `NADOU_TRIAL_TOOLS` 不是 `1`
+- `user_may_use_test_tier` 不放行（支付测试开关没开，或用户 id 不在 `NADOU_WECHAT_PAY_TEST_USERS`）
+- 没有有效的用户登录会话
+
+请求里带上伪造的 `envVersion=trial`、`Referer` 或其他体验版标识，不能代替白名单，也不能在开关关闭时把接口打开。
+
+已登录且两道门都通过，但 `tier` 不是这三个值时，返回 400，`detail` 为 `tier must be free, regular, or vip`。
+
+`membership_dev` 加在 `TEST_PRODUCTS` 里，和 `membership_test` 走同一条排除：不进入收入口径 `EntitlementBook.revenue_entitlements`，也不进入邀请码「兑换后 30 天内付费转化」。订单列表里仍能看到这些订单。不新增 `is_test` 列。迁移 `20261122_0011` 只放宽 `ck_orders_product`，`down_revision` 是 `20261122_0010`。这个取值和集合里的位置在接口拆除后仍然保留，见下面的清单。
+
+### 上线检查清单（正式版提交审核前）
+
+- [ ] 运维把 `NADOU_TRIAL_TOOLS` 改回 `0`
+- [ ] 删除本接口，不要只关开关就提交审核
+- [ ] 确认 `NADOU_WECHAT_PAY_TEST_USERS` 为空，部署配置和仓库里都没有真实用户 id
+
+只删除这些：
+
+- 整个 `src/nadou/devtools/`
+- `src/nadou/main.py` 里的 `register_trial_tools(...)`
+- `src/nadou/config.py` 里的 `trial_tools`
+- `tests/test_trial_tools.py`
+- 本节，以及 README、`.env.example` 里对应的 `NADOU_TRIAL_TOOLS` 说明
+
+`membership_dev` 永久留在 `TEST_PRODUCTS` 和 `ck_orders_product` 里，当作已经写下的订单的标记。从 `TEST_PRODUCTS` 拿掉之后，这些金额为 0 的订单会重新被算进付费转化。从约束里拿掉需要再做一次迁移，库里只要还有 `membership_dev` 行，迁移就会失败。
+
+`NADOU_WECHAT_PAY_TEST_USERS` 和 `user_may_use_test_tier` 与 0.01 元档共用。只下线体验版切换时不要删它们。
+
+## 查询记录保留期
+
+保留期从提交时间算起，清理范围限于有归属的用户查询和其节目明细。
+
+- 免费用户（清理当时没有仍在有效期内的普通会员或 VIP）：从 `member_queries.created_at` 起保留 30 天。
+- 会员（清理当时有仍在有效期内的普通会员或 VIP）：从 `member_queries.created_at` 起保留 180 天。
+- 到期后删除该用户的 `member_queries` 行，并一并删除其 `query_programs`。
+- 按用户和时间清理。索引用 `ix_member_queries_user_id_created_at`（`user_id`, `created_at`），不要全表扫描。
+- 运行 `python -m nadou query-retention` 可只读统计到期行数。经授权备份后，可使用 `--apply` 分批清理，或使用 `--apply --daily` 持续每 24 小时运行。使用 Compose 的 `query-retention` 配置档启动同名服务。默认每天只读统计；备份且另获实际清理授权后，显式设置 `NADOU_RETENTION_MODE=--apply` 并重新创建该服务才会删除到期行。服务共用应用数据库配置，进程失败后由 Docker 重启并重新检查到期行。默认配置档不启动清理。
+- `user_id` 为空的历史行无法核对归属：任何人导出都是 404，`GET /api/v1/queries/{id}` 也是 404，并且不会出现在 `GET /api/v1/queries` 列表里。本变更不删除这些行。
