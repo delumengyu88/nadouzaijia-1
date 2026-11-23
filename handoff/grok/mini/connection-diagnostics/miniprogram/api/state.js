@@ -1,0 +1,287 @@
+var date = require('../utils/date')
+
+var KEY = 'nadou.session.v1'
+var memory = null
+var sessionRevision = 0
+var entryDraft = ''
+
+function blankAccount() {
+  return {
+    inviteBound: false,
+    inviteCode: '',
+    inviteExpiry: '',
+    paidVipExpiry: '',
+    paidRegularExpiry: '',
+    paidRegularResume: '',
+    programs: [],
+    orders: [],
+    queries: [],
+    evidence: [],
+    misses: 0,
+    missLockUntil: 0
+  }
+}
+
+function futureOr(fixed, fallbackDays) {
+  var day = date.today()
+  if (fixed > day) return fixed
+  return date.addDays(day, fallbackDays)
+}
+
+function initialState() {
+  return {
+    splashSeen: false, announceSeen: false, draft: '', seq: 20, evidenceSeq: 20,
+    current: 'guest', accounts: { free: blankAccount(), member: blankAccount() }
+  }
+}
+
+function buildSeed() {
+  var session = initialState()
+  if (require('../config').mode !== 'mock') return session
+  var member = session.accounts.member
+  member.inviteBound = true
+  member.inviteCode = 'A8K3N2P7'
+  member.inviteExpiry = futureOr('2026-12-22', 31)
+  member.paidVipExpiry = futureOr('2026-12-18', 27)
+  member.programs = [
+    { name: '雾港来信', tier: 'program_30', expiry: date.addDays(date.today(), 6) }
+  ]
+  member.orders = [
+    order('DD20261122001', 'membership_vip', 599, 'granted', '2026-11-22', ''),
+    order('DD20261122002', 'membership_vip', 599, 'granting', '2026-11-22', ''),
+    order('DD20261121003', 'membership_regular', 299, 'confirming', '2026-11-21', ''),
+    order('DD20261120004', 'single_program_30d', 199, 'pending', '2026-11-20', '星河旧梦'),
+    order('DD20261119005', 'membership_vip', 599, 'failed', '2026-11-19', ''),
+    order('DD20261118006', 'membership_regular', 299, 'cancelled', '2026-11-18', ''),
+    order('DD20261122018', 'membership_vip', 599, 'grant_error', '2026-11-22', '')
+  ]
+  member.orders[4].unpaidConfirmed = false
+  member.queries = [
+    {
+      id: 'qseed',
+      created: '2026-11-20',
+      status: 'done',
+      seen: false,
+      progress: 4,
+      total: 4,
+      items: [
+        { name: '星河旧梦', error: false },
+        { name: '长街烟火', error: false },
+        { name: '雾港来信', error: false },
+        { name: '南岭追光', error: true }
+      ]
+    },
+    {
+      id: 'qfail',
+      created: '2026-11-18',
+      status: 'done',
+      seen: true,
+      progress: 2,
+      total: 2,
+      items: [
+        { name: '星河旧梦', error: true },
+        { name: '南岭追光', error: true }
+      ]
+    },
+    {
+      id: 'qmiss',
+      created: '2026-11-18',
+      status: 'done',
+      seen: true,
+      progress: 2,
+      total: 2,
+      items: [
+        { name: '无名甲', error: false },
+        { name: '无名乙', error: false }
+      ]
+    }
+  ]
+  member.evidence = seedEvidence()
+  return session
+}
+
+function order(no, product, price, status, day, programName) {
+  return {
+    no: no,
+    product: product,
+    price: price,
+    status: status,
+    day: day,
+    programName: programName || '',
+    unpaidConfirmed: status === 'cancelled' || status === 'pending'
+  }
+}
+
+function seedEvidence() {
+  var day = '2026-11-20'
+  var base = function (id, status) {
+    return {
+      id: id,
+      no: 'QZ2026112201' + id,
+      name: '雾港来信',
+      kind: 'normal',
+      status: status,
+      day: day,
+      contact: '林可',
+      phone: '13912345678',
+      note: '请尽量取近期播出记录。',
+      org: '',
+      reason: '',
+      refundAmount: 0,
+      refundMethod: '',
+      refundTime: ''
+    }
+  }
+  var rows = [
+    base('1', 'submitted'),
+    base('2', 'accepted'),
+    base('3', 'pay'),
+    base('4', 'working'),
+    base('5', 'delivered'),
+    base('6', 'done'),
+    base('7', 'failed'),
+    base('8', 'closed'),
+    base('9', 'cancelled')
+  ]
+  rows[6].reason = '失败原因：目标平台当期无可用片源。'
+  rows[6].refundAmount = 680
+  rows[6].refundMethod = '线下原路退回'
+  rows[6].refundTime = '2026-11-21 16:30'
+  var plainFail = base('7a', 'failed')
+  plainFail.name = '长街烟火'
+  plainFail.reason = '失败原因：目标平台当期无可用片源。'
+  rows.push(plainFail)
+  return rows
+}
+
+function storageGet() {
+  if (typeof wx === 'undefined' || !wx.getStorageSync) return null
+  try {
+    return wx.getStorageSync(KEY) || null
+  } catch (err) {
+    return null
+  }
+}
+
+function storageSet(value) {
+  if (typeof wx === 'undefined' || !wx.setStorageSync) return
+  try {
+    wx.setStorageSync(KEY, value)
+  } catch (err) {}
+}
+
+function load() {
+  if (memory) return memory
+  var saved = storageGet()
+  if (saved && saved.accounts && saved.accounts.free && saved.accounts.member) {
+    memory = saved
+    return memory
+  }
+  memory = buildSeed()
+  storageSet(memory)
+  return memory
+}
+
+function save() {
+  if (memory) storageSet(memory)
+}
+
+function reset() {
+  entryDraft = ''
+  sessionRevision += 1
+  memory = buildSeed()
+  save()
+  return memory
+}
+
+function currentId() {
+  if (require('../config').mode !== 'mock' || load().current.indexOf('wx:') === 0) {
+    return token() ? 'wx:' + load().auth.user.id : 'guest'
+  }
+  return load().current
+}
+
+function account() {
+  var state = load()
+  var id = currentId()
+  if (id === 'guest') return null
+  var account = state.accounts[id]
+  if (state.auth && id === 'wx:' + state.auth.user.id) syncMembership(account, state.auth.user)
+  return account
+}
+
+function userId() {
+  return token() ? load().auth.user.id : ''
+}
+
+function token() {
+  var auth = load().auth
+  if (!auth || !auth.token || !auth.user || !auth.user.id) return ''
+  if (!(Date.parse(auth.expires_at) > Date.now())) { clearSession(); return '' }
+  return auth.token
+}
+
+function clearSession(expectedToken) {
+  var data = load()
+  if (expectedToken && (!data.auth || data.auth.token !== expectedToken)) return
+  entryDraft = ''
+  sessionRevision += 1
+  data.auth = null
+  data.current = 'guest'
+  save()
+}
+
+function membershipDay(expiry) {
+  var instant = Date.parse(expiry)
+  if (!(instant > Date.now())) return ''
+  return new Date(instant + 8 * 3600 * 1000).toISOString().slice(0, 10)
+}
+
+function syncMembership(account, user) {
+  // Keep full timestamps in auth; dates are only for Beijing display labels.
+  account.paidVipExpiry = membershipDay(user.vip_expires_at)
+  account.paidRegularExpiry = membershipDay(user.regular_expires_at)
+}
+
+function getDraft() {
+  var owner = account()
+  return owner ? owner.draft || '' : entryDraft
+}
+
+function setDraft(value) {
+  var text = String(value || '')
+  var owner = account()
+  if (!owner) { entryDraft = text; return }
+  owner.draft = text
+  save()
+}
+
+function setSession(auth, acceptEntryDraft) {
+  var data = load()
+  var id = 'wx:' + auth.user.id
+  sessionRevision += 1
+  var account = data.accounts[id] || blankAccount()
+  if (acceptEntryDraft && entryDraft) account.draft = entryDraft
+  entryDraft = ''
+  syncMembership(account, auth.user)
+  data.accounts[id] = account
+  data.current = id
+  data.auth = { token: auth.token, expires_at: auth.expires_at, user: auth.user }
+  save()
+}
+
+module.exports = {
+  load: load,
+  save: save,
+  reset: reset,
+  account: account,
+  currentId: currentId,
+  userId: userId,
+  token: token,
+  getDraft: getDraft,
+  setDraft: setDraft,
+  sessionRevision: function () { token(); return sessionRevision },
+  setSession: setSession,
+  clearSession: clearSession,
+  blankAccount: blankAccount
+}
