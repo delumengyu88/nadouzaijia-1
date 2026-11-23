@@ -13,7 +13,6 @@ const state = {
   staff: [],
   orders: [],
   orderId: null,
-  splash: null,
   notes: [],
   examples: [],
   programs: [],
@@ -701,18 +700,13 @@ function orderDrawer(row, admin) {
 
 async function renderContent() {
   if (state.me.role !== "admin") return denied();
-  const [splash, notes, examples, programs] = await Promise.all([
-    api("/api/v1/admin/content/splash"),
+  const [notes, examples, programs] = await Promise.all([
     api("/api/v1/admin/content/announcements"),
     api("/api/v1/admin/content/examples"),
     api("/api/v1/admin/content/programs"),
   ]);
-  if (!splash.ok) {
-    state.message = explain(splash.data, splash.status);
-    shell("内容配置", "", false);
-    return;
-  }
-  state.splash = splash.data;
+  const failed = [notes, examples, programs].find(result => !result.ok);
+  if (failed) state.message = explain(failed.data, failed.status);
   state.notes = notes.ok ? notes.data : [];
   state.examples = examples.ok ? examples.data : [];
   state.programs = programs.ok ? programs.data : [];
@@ -746,25 +740,9 @@ async function renderContent() {
   const options = state.programs
     .map((row) => `<option value="${escapeHtml(row.program_name)}">${escapeHtml(row.program_name)}</option>`)
     .join("");
-  const poster = state.splash;
   shell(
     "内容配置",
-    `<div class="card"><div class="card-hd">开屏海报 ${poster.enabled ? '<span class="tag tag-green">总开关：开</span>' : '<span class="tag tag-gray">总开关：关</span>'}</div>
-      <div class="card-bd" style="display:flex;gap:24px">
-        <div class="poster-frame"><div class="poster"><div class="brand">那豆在架</div><div>${escapeHtml(poster.slogan || "未填写口号")}</div><div class="skip">跳过 5</div></div></div>
-        <div style="flex:1">
-          <div class="field"><label>图片名称</label><input class="input" id="splash-image" value="${escapeHtml(poster.image_name || "")}"></div>
-          <div class="field" style="margin-top:8px"><label>跳转说明</label><input class="input" id="splash-jump" value="${escapeHtml(poster.jump_label || "")}"></div>
-          <div class="field" style="margin-top:8px"><label>口号</label><input class="input" id="splash-slogan" value="${escapeHtml(poster.slogan || "")}"></div>
-          <p class="help">口号不得出现「永久免费」「全平台」。</p>
-          <div style="margin-top:12px;display:flex;gap:8px">
-            <button class="btn btn-primary" type="button" data-act="splash-save" data-enabled="1">保存并开启</button>
-            <button class="btn btn-default" type="button" data-act="splash-save" data-enabled="0">关闭开屏</button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="card"><div class="card-hd">公告</div><div class="card-bd flush"><table class="data"><thead><tr>
+    `<div class="card"><div class="card-hd">公告</div><div class="card-bd flush"><table class="data"><thead><tr>
       <th>公告</th><th>按钮 / 跳转</th><th>生效期间</th><th>频率</th><th>状态</th><th></th>
     </tr></thead><tbody>${announcementRows || '<tr><td colspan="6">暂无公告</td></tr>'}</tbody></table></div>
       <div class="card-bd"><div class="filters">
@@ -1391,19 +1369,6 @@ async function onClick(event) {
     const result = await api(`/api/v1/admin/orders/${id}/refund`, {
       method: "POST",
       json: { reason: value("#refund-reason") },
-    });
-    await afterChange(result.ok, result.status, result.data);
-    return;
-  }
-  if (act === "splash-save") {
-    const result = await api("/api/v1/admin/content/splash", {
-      method: "PUT",
-      json: {
-        enabled: node.dataset.enabled === "1",
-        image_name: value("#splash-image"),
-        jump_label: value("#splash-jump"),
-        slogan: value("#splash-slogan"),
-      },
     });
     await afterChange(result.ok, result.status, result.data);
     return;
