@@ -1,0 +1,14 @@
+<view class="device">
+  <button type="primary" bindtap="check" loading="{{busy}}" disabled="{{busy}}">检查连接和微信登录</button>
+  <text class="result" selectable="true">{{line}}</text>
+  <block wx:if="{{hasFailure}}">
+    <view class="label">{{rawStage}} · 最近错误原文</view>
+    <text class="raw" selectable="true">{{hasRaw ? raw : '微信未返回 errMsg'}}</text>
+  </block>
+  <view class="label">手机本地日志</view>
+  <text class="path" selectable="true">{{logPath}}</text>
+  <text class="result" wx:if="{{!logSaved}}">文件暂不可写或不可读，当前可见日志可复制。</text>
+  <button bindtap="copyRaw" disabled="{{!hasRaw}}">复制最近错误原文</button>
+  <button bindtap="copyLog" disabled="{{!hasLog}}">复制完整日志</button>
+  <button bindtap="shareLog" disabled="{{!hasLog}}">导出日志到微信</button>
+</view>

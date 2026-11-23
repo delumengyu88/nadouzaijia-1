@@ -1,0 +1,5 @@
+.device {padding:40rpx 32rpx;color:#253344;}
+button {margin:20rpx 0;}
+.result,.raw,.path {display:block;margin:20rpx 0;line-height:1.6;white-space:pre-wrap;word-break:break-all;}
+.raw,.path {background:#f3f5f8;padding:18rpx 22rpx;font-size:26rpx;}
+.label {font-size:28rpx;font-weight:600;margin-top:32rpx;}

@@ -1,0 +1,1 @@
+<view><button bindtap="probe" disabled="{{busy}}">检查连接</button><text selectable="true">{{result}}</text><button bindtap="copy" wx:if="{{canCopy}}">复制微信错误原文</button></view>

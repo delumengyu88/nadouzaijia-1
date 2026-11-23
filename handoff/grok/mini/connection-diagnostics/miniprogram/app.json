@@ -1,0 +1,9 @@
+{
+  "pages": [
+    "pages/device-connection/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "本人连接诊断"
+  },
+  "sitemapLocation": "sitemap.json"
+}
