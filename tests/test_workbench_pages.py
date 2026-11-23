@@ -59,7 +59,7 @@ def test_demo_pages_and_api_hide_banned_labels(workbench):
         "GET",
         f"/api/v1/admin/users?q={DemoAccounts.SAMPLE_PHONE}",
         token,
-    ).json()
+    ).json()["items"]
     detail = call(workbench, "GET", f"/api/v1/admin/users/{user[0]['id']}", token).text
     blobs.append(detail)
     search = workbench.client.get(

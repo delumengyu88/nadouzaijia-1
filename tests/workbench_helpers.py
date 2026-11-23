@@ -20,7 +20,7 @@ def call(workbench, method: str, path: str, token: str | None, *, json=None, exp
     return response
 
 
-def add_user(session, clock, phone: str, *, vip: bool = False) -> User:
+def add_user(session, clock, phone: str | None, *, vip: bool = False) -> User:
     user = User(id=str(uuid4()), created_at=clock, phone=phone)
     session.add(user)
     if vip:

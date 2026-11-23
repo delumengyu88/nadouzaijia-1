@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from nadou.admin.audit import AuditWriter
@@ -40,6 +40,34 @@ class EntitlementBook:
             query = query.where(Entitlement.id.not_in(excluded))
         return list(session.scalars(query).all())
 
+    MEMBERSHIP_KINDS = frozenset({"regular", "vip"})
+
+    @staticmethod
+    def current_for_users(
+        session: Session, user_ids: list[str], now: datetime
+    ) -> dict[str, Entitlement]:
+        if not user_ids:
+            return {}
+        rows = session.scalars(
+            select(Entitlement).where(
+                Entitlement.user_id.in_(user_ids),
+                Entitlement.kind.in_(EntitlementBook.MEMBERSHIP_KINDS),
+                Entitlement.expires_at > now,
+            )
+        ).all()
+        current: dict[str, Entitlement] = {}
+        for row in rows:
+            held = current.get(row.user_id)
+            if held is None or EntitlementBook._preferred(row, held):
+                current[row.user_id] = row
+        return current
+
+    @staticmethod
+    def _preferred(candidate: Entitlement, held: Entitlement) -> bool:
+        if candidate.kind != held.kind:
+            return candidate.kind == "vip"
+        return (candidate.expires_at, candidate.id) > (held.expires_at, held.id)
+
 
 class UserView:
     @staticmethod
@@ -58,8 +86,21 @@ class UserView:
             "banned_at": user.banned_at.isoformat() if user.banned_at else None,
         }
 
+    @staticmethod
+    def list_item(user: User, *, reveal_phone: bool, membership: Entitlement | None) -> dict:
+        body = UserView.render(user, reveal_phone=reveal_phone)
+        body["membership"] = None if membership is None else membership.kind
+        body["membership_expires_at"] = (
+            None if membership is None else membership.expires_at.isoformat()
+        )
+        return body
+
 
 class MemberDirectory:
+    LIKE_ESCAPE = "/"
+    PAGE_SIZE = 20
+    MAX_PAGE_SIZE = 100
+
     def __init__(self, session: Session) -> None:
         self.session = session
 
@@ -69,17 +110,50 @@ class MemberDirectory:
             raise WorkbenchError(404, "user not found")
         return user
 
-    def by_phone(self, phone: str) -> list[User]:
-        return self.by_contact(phone)
-
-    def by_contact(self, query: str) -> list[User]:
-        text = query.strip()
-        if not text:
-            raise WorkbenchError(400, "phone is required")
-        return list(
+    def search(
+        self,
+        query: str | None,
+        *,
+        page: int = 1,
+        page_size: int = PAGE_SIZE,
+    ) -> tuple[list[User], int]:
+        page = max(page, 1)
+        page_size = min(max(page_size, 1), MemberDirectory.MAX_PAGE_SIZE)
+        statement = select(User)
+        counted = select(func.count()).select_from(User)
+        text = (query or "").strip()
+        if text:
+            matched = MemberDirectory._matches(text)
+            statement = statement.where(matched)
+            counted = counted.where(matched)
+        total = self.session.scalar(counted) or 0
+        rows = list(
             self.session.scalars(
-                select(User).where(or_(User.phone == text, User.wechat_openid == text))
+                statement.order_by(User.created_at.desc(), User.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
             ).all()
+        )
+        return rows, total
+
+    @staticmethod
+    def _escape_like(text: str) -> str:
+        return (
+            text.replace(MemberDirectory.LIKE_ESCAPE, MemberDirectory.LIKE_ESCAPE * 2)
+            .replace("%", f"{MemberDirectory.LIKE_ESCAPE}%")
+            .replace("_", f"{MemberDirectory.LIKE_ESCAPE}_")
+        )
+
+    @staticmethod
+    def _matches(text: str):
+        escaped = MemberDirectory._escape_like(text)
+        contains = f"%{escaped}%"
+        prefix = f"{escaped}%"
+        return or_(
+            User.phone.like(contains, escape=MemberDirectory.LIKE_ESCAPE),
+            User.display_name.ilike(contains, escape=MemberDirectory.LIKE_ESCAPE),
+            User.wechat_openid.like(prefix, escape=MemberDirectory.LIKE_ESCAPE),
+            User.id == text,
         )
 
 

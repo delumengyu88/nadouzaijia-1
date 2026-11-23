@@ -9,6 +9,9 @@ const state = {
   invites: [],
   stats: [],
   user: null,
+  users: [],
+  userTotal: 0,
+  userPage: 1,
   locks: [],
   staff: [],
   orders: [],
@@ -522,6 +525,19 @@ async function renderInvites() {
 
 async function renderUsers() {
   const admin = state.me.role === "admin";
+  const page = state.userPage || 1;
+  const params = new URLSearchParams();
+  params.set("page", String(page));
+  params.set("page_size", "20");
+  if (state.userQuery) params.set("q", state.userQuery);
+  const listed = await api(`/api/v1/admin/users?${params.toString()}`);
+  if (!listed.ok) {
+    state.message = explain(listed.data, listed.status);
+    shell("用户与会员", "", false);
+    return;
+  }
+  state.users = listed.data.items || [];
+  state.userTotal = listed.data.total || 0;
   if (admin && state.locks.length === 0) {
     const locks = await api("/api/v1/admin/staff/locks");
     state.locks = locks.ok ? locks.data : [];
@@ -563,7 +579,7 @@ async function renderUsers() {
       <tbody>${grants || '<tr><td colspan="4">暂无权益</td></tr>'}</tbody></table>
       ${user.ban_type && admin ? `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="unban" data-id="${escapeHtml(user.id)}">解禁</button></div>` : ""}
       </div></div>`
-    : '<div class="card"><div class="card-bd">输入手机号后查询。</div></div>';
+    : '<div class="card"><div class="card-bd">选择一名用户查看详情。</div></div>';
   const grantCard = admin && user
     ? `<div class="card" style="margin:0 0 16px"><div class="card-hd">手动开通 / 延长会员</div><div class="card-bd">
         <div class="field"><label>档位</label><select class="select" id="grant-tier" style="width:100%"><option value="vip">VIP</option><option value="regular">普通会员</option></select></div>
@@ -593,13 +609,41 @@ async function renderUsers() {
           <button class="btn btn-default" type="button" data-act="staff-create">新建账号</button>
         </div></div></div>`
     : "";
+  const queryShown = admin ? state.userQuery || "" : state.userQuery ? maskPhone(state.userQuery) : "";
+  const rows = state.users
+    .map((row) => {
+      const selected = user && row.id === user.id ? "selected" : "";
+      const status = row.ban_type ? '<span class="tag tag-red">已封禁</span>' : '<span class="tag tag-green">正常</span>';
+      return `<tr class="${selected}" data-act="open-user" data-id="${escapeHtml(row.id)}" style="cursor:pointer">
+        <td>${escapeHtml(row.display_name || "—")}</td>
+        <td>${escapeHtml(row.phone || "—")}</td>
+        <td>${memberTag(row)}</td>
+        <td class="nowrap">${escapeHtml(ymd(row.membership_expires_at))}</td>
+        <td class="nowrap">${escapeHtml(fmt(row.created_at))}</td>
+        <td>${status}</td>
+      </tr>`;
+    })
+    .join("");
+  const lastPage = Math.max(1, Math.ceil((state.userTotal || 0) / 20));
+  const pager = `<div class="card-bd pager">
+      <span class="help" style="margin:0">共 ${state.userTotal} 人</span>
+      <button class="btn btn-default btn-sm" type="button" data-act="user-page" data-page="${page - 1}"${page <= 1 ? " disabled" : ""}>上一页</button>
+      <span class="help" style="margin:0">第 ${page} / ${lastPage} 页</span>
+      <button class="btn btn-default btn-sm" type="button" data-act="user-page" data-page="${page + 1}"${page >= lastPage ? " disabled" : ""}>下一页</button>
+    </div>`;
   shell(
     "用户与会员",
     `${admin ? "" : '<p class="help">当前为客服视角：只读。</p>'}
-    <div class="card"><div class="card-hd">查找用户</div><div class="card-bd"><div class="filters">
-      <div class="field"><label>手机号</label><input class="input w-xl" id="user-query" value="${escapeHtml(admin ? state.userQuery || "" : state.userQuery ? maskPhone(state.userQuery) : "")}" placeholder="输入手机号"></div>
-      <button class="btn btn-primary" type="button" data-act="user-search">查询</button>
-    </div></div></div>
+    <div class="card"><div class="card-hd">用户
+      <div style="display:flex;gap:8px;font-weight:400">
+        <input class="input w-xl" id="user-query" value="${escapeHtml(queryShown)}" placeholder="手机号 / 昵称 / 用户ID">
+        <button class="btn btn-primary" type="button" data-act="user-search">查询</button>
+      </div>
+    </div>
+    <div class="card-bd flush"><table class="data"><thead><tr>
+      <th>昵称</th><th>手机号</th><th>会员</th><th>到期</th><th>注册时间</th><th>状态</th>
+    </tr></thead><tbody>${rows || '<tr><td colspan="6">暂无用户</td></tr>'}</tbody></table></div>
+    ${pager}</div>
     <div class="grid-2-1">${profile}<div>${grantCard}${locks}</div></div>`,
     false,
   );
@@ -637,9 +681,12 @@ async function renderOrders() {
         row.status === "发放异常"
           ? `<button class="btn btn-primary btn-sm" type="button" data-act="reissue-open" data-id="${escapeHtml(row.id)}">补发</button>`
           : `<button class="btn btn-default btn-sm" type="button" data-act="open-order" data-id="${escapeHtml(row.id)}">查看</button>`;
+      const userCell = row.user_id
+        ? `<button class="link" type="button" data-act="open-user" data-id="${escapeHtml(row.user_id)}">${escapeHtml(row.phone || "查看")}</button>`
+        : escapeHtml(row.phone || "—");
       return `<tr class="${selected} ${late}" data-act="open-order" data-id="${escapeHtml(row.id)}">
         <td class="mono nowrap">${escapeHtml(row.order_number)}</td>
-        <td>${escapeHtml(row.phone || "—")}</td>
+        <td>${userCell}</td>
         <td>${tierName(row.tier)} ${row.duration_days} 天</td>
         <td class="money">${money(row.amount)}</td>
         <td>${escapeHtml(row.client || "—")}</td>
@@ -693,7 +740,7 @@ function orderDrawer(row, admin) {
     <div class="drawer-hd">${escapeHtml(row.order_number)}<span class="sub">${escapeHtml(row.status)}</span></div>
     <p class="cs-hint"><a href="https://mpkf.weixin.qq.com/" target="_blank" rel="noopener noreferrer">回复请到微信小程序客服 ↗</a></p>
     <div class="drawer-bd"><div class="kv">
-      <div class="k">用户</div><div class="v">${escapeHtml(row.phone || "—")}</div>
+      <div class="k">用户</div><div class="v">${row.user_id ? `<button class="link" type="button" data-act="open-user" data-id="${escapeHtml(row.user_id)}">${escapeHtml(row.phone || "查看")}</button>` : escapeHtml(row.phone || "—")}</div>
       <div class="k">商品</div><div class="v">${tierName(row.tier)} ${row.duration_days} 天 · <span class="money">${money(row.amount)}</span></div>
       <div class="k">端</div><div class="v">${escapeHtml(row.client || "—")}</div>
       <div class="k">自动重试</div><div class="v">${row.attempts == null ? "—" : `${row.attempts} 次`}</div>
@@ -1262,22 +1309,56 @@ async function onClick(event) {
     await download("/api/v1/admin/invite-codes/export", "invites.csv");
     return;
   }
+  if (act === "open-user") {
+    event.preventDefault();
+    const detail = await api(`/api/v1/admin/users/${id}`);
+    if (!detail.ok) {
+      state.message = explain(detail.data, detail.status);
+      await draw();
+      return;
+    }
+    state.user = detail.data;
+    if (location.hash !== "#/w04") {
+      location.hash = "#/w04";
+      return;
+    }
+    await draw();
+    return;
+  }
+  if (act === "user-page") {
+    const last = Math.max(1, Math.ceil((state.userTotal || 0) / 20));
+    const picked = Number(node.dataset.page);
+    state.userPage = Number.isInteger(picked) ? Math.min(last, Math.max(1, picked)) : 1;
+    await draw();
+    return;
+  }
   if (act === "user-search") {
     let query = value("#user-query");
     if (state.me.role !== "admin" && state.userQuery && query === maskPhone(state.userQuery)) {
       query = state.userQuery;
     }
     state.userQuery = query;
-    const found = await api(`/api/v1/admin/users?q=${encodeURIComponent(query)}`);
-    if (!found.ok || !found.data[0]) {
+    state.userPage = 1;
+    const params = new URLSearchParams();
+    params.set("page", "1");
+    params.set("page_size", "20");
+    if (query) params.set("q", query);
+    const found = await api(`/api/v1/admin/users?${params.toString()}`);
+    if (!found.ok) {
       state.user = null;
-      state.message = found.ok ? "没有找到这个用户。" : explain(found.data, found.status);
+      state.message = explain(found.data, found.status);
       await draw();
       return;
     }
-    const detail = await api(`/api/v1/admin/users/${found.data[0].id}`);
-    state.user = detail.ok ? detail.data : null;
-    state.locks = [];
+    const items = found.data.items || [];
+    if (query && items[0]) {
+      const detail = await api(`/api/v1/admin/users/${items[0].id}`);
+      state.user = detail.ok ? detail.data : null;
+      if (!detail.ok) state.message = explain(detail.data, detail.status);
+    } else if (query && !items[0]) {
+      state.user = null;
+      state.message = "没有找到这个用户。";
+    }
     await draw();
     return;
   }
