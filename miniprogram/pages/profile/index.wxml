@@ -12,9 +12,9 @@
     <view class="fail-copy">网络异常，请重试</view>
     <button class="retry-btn" bindtap="retryLoad">重试</button>
   </view>
-  <view class="card choice-top" wx:elif="{{guest}}">
-    <text class="row-title">免费用户</text>
-    <button wx:if="{{loginError || !identifying}}" class="login-link" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">重试</button>
+  <view class="card guest-identity-card" wx:elif="{{guest}}">
+    <text class="row-title guest-identity-label">免费用户</text>
+    <button wx:if="{{loginError || !identifying}}" class="login-link profile-retry" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">重试</button>
   </view>
   <view class="card" wx:else>
     <view class="choice-top">

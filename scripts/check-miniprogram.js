@@ -408,6 +408,17 @@ if (!/<button[^>]*class="row contact-row"[^>]*open-type="contact"[^>]*>[\s\S]*?è
   fail('profile contact action must be a full menu row with a native contact button and chevron')
 }
 var profileCss = fs.readFileSync(path.join(root, 'pages/profile/index.wxss'), 'utf8')
+var guestCard = declMap(ruleBody(profileCss, '.profile-page .guest-identity-card'))
+var guestRetry = declMap(ruleBody(profileCss, '.guest-identity-card button.profile-retry'))
+if (guestCard.display !== 'flex' || guestCard['align-items'] !== 'center' || guestCard['flex-wrap'] !== 'nowrap' ||
+    guestRetry.width !== 'auto' || guestRetry.margin !== '0 0 0 auto' || guestRetry['max-width'] !== 'none' ||
+    guestRetry['min-height'] !== 'max(44px, 88rpx)' || guestRetry['min-width'] !== 'max(44px, 88rpx)') {
+  fail('guest profile keeps identity on the left and a single right-aligned accessible retry target')
+}
+if (!/class="card guest-identity-card" wx:elif="{{guest}}"/.test(profileMenu) ||
+    !/class="login-link profile-retry" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}"/.test(profileMenu)) {
+  fail('only the guest identity card owns the login retry action and loading state')
+}
 var contactRow = declMap(ruleBody(profileCss, '.profile-page button.contact-row'))
 if (contactRow.width !== '100%' || contactRow['max-width'] !== 'none' || contactRow.margin !== '0' ||
     contactRow['line-height'] !== 'inherit' || contactRow.display !== 'flex' || contactRow['text-align'] !== 'left') {
