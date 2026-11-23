@@ -1,8 +1,8 @@
 """Saved mini-program lookups. One row per confirm, one program per name.
 
-The search route is unchanged. The client creates the row when the member
-confirms the name list, then writes one summary after each program search
-returns. Summaries use the query's submission date and real detection
+The client creates a query for the confirmed names. Batch searches save summaries
+in the same transaction. Older clients can still post one result at a time.
+Summaries use the query's submission date and real detection
 results only. Rows with ``date_generated`` are skipped. A missing real
 detection time is not replaced with today.
 """
@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from nadou.auth import UserSessions
@@ -21,6 +21,7 @@ from nadou.entitlements import EntitlementPolicy
 from nadou.models import Entitlement, IndexRecord, MemberQuery, QueryProgram, Task, User
 from nadou.normalize import ProgramNormalizer
 from nadou.program_titles import ProgramTitleGuard
+from nadou.schemas import BatchNames
 from nadou.search import ProgramSearch
 from nadou.summary_source import approved_summary
 from nadou.text import RecordAge
@@ -108,20 +109,22 @@ class ResultSummary:
         the only clock. A missing time is never filled with now.
         """
         canonical = ProgramNormalizer.canonical(raw_name)
-        if not canonical or not ProgramTitleGuard.is_billable(canonical):
-            if ProgramSearch.empty_outcome() == "unverified":
-                return "unverified", ResultSummary.UNVERIFIED_LINE, canonical
-            return "miss", ResultSummary.MISS_LINE, canonical
-        records = list(
-            session.scalars(select(IndexRecord).where(IndexRecord.program_name == canonical)).all()
-        )
-        tasks = ResultSummary._tasks(session, {row.task_id for row in records})
+        pairs = []
+        if canonical and ProgramTitleGuard.is_billable(canonical):
+            pairs = session.execute(
+                select(IndexRecord, Task)
+                .outerjoin(Task, Task.task_id == IndexRecord.task_id)
+                .where(IndexRecord.program_name == canonical, IndexRecord.hit_type == "consensus")
+            ).all()
+        return ResultSummary.assess_pairs(canonical, pairs, now)
+
+    @staticmethod
+    def assess_pairs(canonical, pairs, now) -> tuple[str, str, str]:
         real: list[tuple[IndexRecord, Task | None]] = []
         any_old = False
         any_recent = False
         platforms: set[tuple[str, str]] = set()
-        for record in records:
-            task = tasks.get(record.task_id)
+        for record, task in pairs:
             if approved_summary(record, task):
                 if RecordAge.days(task.created_at, now) < 30:
                     continue
@@ -313,14 +316,39 @@ class QueryRecords:
             except QueryRejected as exc:
                 raise HTTPException(status_code=400, detail=exc.detail) from None
 
-        @app.post("/api/v1/queries/{query_id}/seen")
-        def mark_seen(
+        @app.post("/api/v1/queries/{query_id}/results/failed")
+        def record_failed_batch(
             query_id: str,
+            payload: BatchNames,
             user: User = Depends(reader),
             session: Session = Depends(get_session, scope="function"),
         ):
             try:
-                return QueryRecords.mark_seen(session, user, query_id, clock())
+                programs = QueryRecords.batch_programs(session, user.id, query_id, payload.names)
+            except QueryNotFound:
+                raise HTTPException(404, "query not found") from None
+            except QueryRejected as exc:
+                raise HTTPException(400, exc.detail) from None
+            # A late failure report cannot undo a completed search or a successful retry.
+            session.execute(
+                update(QueryProgram)
+                .where(
+                    QueryProgram.id.in_([p.id for p in programs.values()]),
+                    QueryProgram.resolution == "pending",
+                )
+                .values(resolution="failed", detail=ResultSummary.FAIL_LINE)
+            )
+            return {"ok": True}
+
+        @app.post("/api/v1/queries/{query_id}/seen")
+        def mark_seen(
+            query_id: str,
+            brief: bool = False,
+            user: User = Depends(reader),
+            session: Session = Depends(get_session, scope="function"),
+        ):
+            try:
+                return QueryRecords.mark_seen(session, user, query_id, clock(), brief=brief)
             except QueryNotFound:
                 raise HTTPException(status_code=404, detail="query not found") from None
 
@@ -405,11 +433,13 @@ class QueryRecords:
         return QueryRecords._detail(session, user, query, now)
 
     @staticmethod
-    def mark_seen(session: Session, user: User, query_id: str, now) -> dict:
+    def mark_seen(session: Session, user: User, query_id: str, now, *, brief=False) -> dict:
         query = QueryRecords._owned(session, user.id, query_id)
         if query.seen_at is None:
             query.seen_at = now
         session.flush()
+        if brief:
+            return {"id": query.id}
         return QueryRecords._detail(session, user, query, now)
 
     @staticmethod
@@ -432,6 +462,19 @@ class QueryRecords:
             if row.matched_name and ProgramNormalizer.canonical(row.matched_name) == canonical:
                 return row
         return None
+
+    @staticmethod
+    def batch_programs(session, user_id, query_id, names):
+        query = QueryRecords._owned(session, user_id, query_id)
+        requested = {ProgramNormalizer.canonical(name) for name in names}
+        programs = {}
+        for row in QueryRecords._programs(session, query.id):
+            name = ProgramNormalizer.canonical(row.uploaded_name)
+            if name in requested:
+                programs[name] = row
+        if programs.keys() != requested:
+            raise QueryRejected("name is not in this query")
+        return programs
 
     @staticmethod
     def _programs(session: Session, query_id: str) -> list[QueryProgram]:

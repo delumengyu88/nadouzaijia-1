@@ -47,7 +47,7 @@ class EmptyQuery(Exception):
 
 
 class ProgramSearch:
-    """Search one program and filter every record for the caller."""
+    """Render exact-name matches under the caller's current entitlements."""
 
     UNRECOGNIZED_PLATFORM = PlatformNames.OTHER
     HIT_LABEL = "已命中"
@@ -69,29 +69,40 @@ class ProgramSearch:
         self.frames_ready = frames_ready
 
     def search(self, raw_name: str, user_id: str | None) -> SearchOut:
-        canonical = ProgramNormalizer().canonical(raw_name)
-        if not canonical:
-            raise EmptyQuery(raw_name)
-        if not ProgramTitleGuard.is_billable(canonical):
-            return self._not_billable(canonical)
-        grants = self._live_grants(user_id)
-        rows = list(
-            self.session.scalars(
-                select(IndexRecord).where(IndexRecord.program_name == canonical)
-            ).all()
-        )
-        task_ids = {row.task_id for row in rows}
-        tasks: dict[str, Task] = {}
-        if task_ids:
-            for task in self.session.scalars(select(Task).where(Task.task_id.in_(task_ids))).all():
-                tasks[task.task_id] = task
+        results, _ = self.search_many([raw_name], user_id)
+        return results[0]
 
+    def search_many(
+        self, names: list[str], user_id: str | None
+    ) -> tuple[list[SearchOut], dict[str, list[tuple[IndexRecord, Task | None]]]]:
+        ordered = [ProgramNormalizer.canonical(name) for name in names]
+        if not all(ordered):
+            raise EmptyQuery("name is required")
+        unique = dict.fromkeys(ordered)
+        matches = {name: [] for name in unique if ProgramTitleGuard.is_billable(name)}
+        grants = self._live_grants(user_id) if matches else []
+        if matches:
+            pairs = self.session.execute(
+                select(IndexRecord, Task)
+                .outerjoin(Task, Task.task_id == IndexRecord.task_id)
+                .where(IndexRecord.program_name.in_(matches), IndexRecord.hit_type == "consensus")
+            )
+            for record, task in pairs:
+                matches[record.program_name].append((record, task))
+        results = {
+            name: self._render(name, matches[name], grants, user_id)
+            if name in matches
+            else self._not_billable(name)
+            for name in unique
+        }
+        return [results[name] for name in ordered], matches
+
+    def _render(self, canonical, pairs, grants, user_id) -> SearchOut:
         kept: list[tuple[int | None, IndexRecord, Task | None]] = []
         platforms: set[str] = set()
         unverified = 0
         summary_ids = set()
-        for record in rows:
-            task = tasks.get(record.task_id)
+        for record, task in pairs:
             if approved_summary(record, task):
                 if RecordAge.days(task.created_at, self.now) < 30:
                     continue

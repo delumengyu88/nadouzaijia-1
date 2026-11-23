@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 
 class LockedRecordOut(BaseModel):
@@ -120,3 +120,11 @@ class SearchOut(BaseModel):
     bands: list[BandOut] | None = None
     frames_ready: bool | None = None
     report_ready: bool | None = None
+
+
+class BatchNames(BaseModel):
+    names: list[str] = Field(min_length=1, max_length=200)
+
+
+class BatchSearchIn(BatchNames):
+    query_id: str | None = Field(default=None, min_length=1, max_length=64)
