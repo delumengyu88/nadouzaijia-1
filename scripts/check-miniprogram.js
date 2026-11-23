@@ -856,7 +856,7 @@ try {
   expectUploadFail({ name: 'a.xls', size: 20 }, '仅支持 .xlsx 文件', 'P05-fail-xlsx')
   expectUploadFail(workbook('empty.xlsx', [['节目名称']]), '文件为空，请重新选择。', 'P05-fail-emptyfile')
   expectUploadFail({ name: 'big.xlsx', size: 6 * 1024 * 1024, path: '/tmp/p05-big.xlsx' }, '文件超过 5MB，请拆分后再上传。', 'P05-fail-size')
-  expectUploadFail(workbook('nocol.xlsx', [['片名', '出品方'], ['星河旧梦', '云豆传媒']]), '未找到「节目名称」列，请确认它在表格前 10 行内', 'P05-fail-col')
+  expectUploadFail(workbook('nocol.xlsx', [['匹配节目名', '出品方'], ['星河旧梦', '云豆传媒']]), '没找到节目名那一列，请把节目名所在列的表头改成『节目名称』，或改用粘贴。', 'P05-fail-col')
   var manyRows = [['节目名称']]
   for (var rowIndex = 0; rowIndex < 501; rowIndex++) manyRows.push(['节目' + rowIndex])
   expectUploadFail(workbook('many.xlsx', manyRows), '超过 500 行，请删减后再上传。', 'P05-fail-rows')

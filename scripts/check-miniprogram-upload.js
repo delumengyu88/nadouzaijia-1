@@ -57,7 +57,31 @@ load(p, put('/tmp/name-owner.xlsx', [['2026 片单'], [], ['序号', '版权方'
 assert.strictEqual(p.data.phase, 'preview')
 assert.deepStrictEqual(p.data.items.map(function (i) { return [i.name, i.owner] }), [['星河旧梦', '云豆传媒'], ['南岭追光 & 续', '']])
 
-var COL = '未找到「节目名称」列，请确认它在表格前 10 行内'
+// 自家命中表一部节目可能占多行，复传时保留首次出现的上传名。
+var hitHeaders = ['序号', '平台', '节目类型', '上传节目名', '匹配节目名', '匹配度', '检测日期', '命中画面截图']
+var hitRows = [['那豆在架 命中结果'], ['查询编号'], ['查询范围'], ['生成日期'], ['说明'], [],
+  hitHeaders, [1, '', '', '长街烟火', '匹配甲'], [2, '', '', '星河旧梦', '匹配乙'],
+  [3, '', '', '长街烟火', '匹配丙']]
+function importedNames(rows) {
+  var result = SheetReader.read(XlsxFixture.build(rows))
+  assert.strictEqual(result.ok, true, result.code)
+  return result.items.map(function (item) { return item.name })
+}
+assert.deepStrictEqual(importedNames(hitRows), ['长街烟火', '星河旧梦'])
+hitRows[1] = ['名称', '查询说明']
+hitRows[6] = hitHeaders.concat('节目名称')
+hitRows[7] = hitRows[7].concat(['', '', '', '另一列'])
+assert.deepStrictEqual(importedNames(hitRows), ['长街烟火', '星河旧梦'])
+p = page()
+load(p, put('/tmp/命中结果.xlsx', hitRows))
+assert.deepStrictEqual(p.data.items.map(function (i) { return i.name }), ['长街烟火', '星河旧梦'])
+;['节目名称', '节目名', '上　传 节目名', '片名', '剧名', '作品名称', '作品名', '名称'].forEach(function (alias) {
+  assert.deepStrictEqual(importedNames([[alias], ['星河旧梦']]), ['星河旧梦'])
+})
+assert.deepStrictEqual(importedNames([['名称', '上传节目名', '节目名称'], ['甲', '乙', '丙']]), ['丙'])
+assert.deepStrictEqual(importedNames([['剧名', '上传节目名'], ['甲', '乙']]), ['乙'])
+
+var COL = '没找到节目名那一列，请把节目名所在列的表头改成『节目名称』，或改用粘贴。'
 var READ = '文件读取失败，请重新选择文件'
 var XLSX = '仅支持 .xlsx 文件'
 function expectPrompt(page, text) {
@@ -71,9 +95,9 @@ function expectPrompt(page, text) {
   assert.strictEqual(page.data.failText, text)
 }
 
-// 3. 两列都没有：提示缺的是「节目名称」列，并说明只在前 10 行找表头。
+// 匹配节目名不能单独作为片单标题。
 p = page()
-load(p, put('/tmp/none.xlsx', [['片名', '出品方'], ['星河旧梦', '云豆传媒']]))
+load(p, put('/tmp/none.xlsx', [['匹配节目名', '出品方'], ['星河旧梦', '云豆传媒']]))
 expectPrompt(p, COL)
 
 // 只有版权方没有节目名称，同样提示缺「节目名称」列。
@@ -96,6 +120,10 @@ assert.strictEqual(p.data.items[0].name, '星河旧梦')
 p = page()
 load(p, put('/tmp/row11.xlsx', headerOnRow(11)))
 expectPrompt(p, COL)
+var sparse = []
+sparse[10] = ['节目名称']
+sparse[11] = ['星河旧梦']
+assert.strictEqual(SheetReader.read(XlsxFixture.build(sparse)).code, 'col')
 
 // 读取失败的其他原因：不是 zip、文件读不到、超过 500 行、只有表头。
 files['/tmp/broken.xlsx'] = new Uint8Array([1, 2, 3, 4]).buffer
@@ -123,7 +151,7 @@ var big = Buffer.from(Array.from({ length: 2000 }, function (_, n) { return '<c 
 
 // 「重新选择」直接重新打开文件选择器，不跳回输入页；选新文件后正常识别。
 p = page()
-load(p, put('/tmp/none2.xlsx', [['片名'], ['星河旧梦']]))
+load(p, put('/tmp/none2.xlsx', [['匹配节目名'], ['星河旧梦']]))
 assert.strictEqual(p.data.phase, 'fail')
 assert.strictEqual(p.data.fromFile, true)
 picks.push(put('/tmp/fixed.xlsx', [['节目名称', '版权方'], ['雾港来信', '云豆传媒']]))
@@ -133,7 +161,7 @@ assert.strictEqual(pickerOpened, before + 1)
 assert.strictEqual(p.data.phase, 'preview')
 assert.strictEqual(p.data.items[0].name, '雾港来信')
 // 取消选择时停在原页，不跳回输入页。
-load(p, put('/tmp/none3.xlsx', [['片名'], ['x']]))
+load(p, put('/tmp/none3.xlsx', [['匹配节目名'], ['x']]))
 p.upload()
 assert.strictEqual(p.data.phase, 'fail')
 // 「---」是有效片名，会进预览；预览也必须把 fromFile 写成 false，不能留成 undefined。
