@@ -3,6 +3,36 @@
   padding-top: 16px;
   padding-bottom: 16px;
 }
+.profile-page .guest-identity-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  width: calc(100% - 32px);
+  min-height: 56px;
+  box-sizing: border-box;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.guest-identity-label {
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+.guest-identity-card button.profile-retry {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  box-sizing: border-box;
+  width: auto;
+  max-width: none;
+  min-width: max(44px, 88rpx);
+  min-height: max(44px, 88rpx);
+  margin: 0 0 0 auto;
+  padding: 4rpx 0 4rpx 16rpx;
+  white-space: nowrap;
+  line-height: 1.4;
+}
 .profile-page .row {
   padding: 24rpx 32rpx;
 }
