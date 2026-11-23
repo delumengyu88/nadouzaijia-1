@@ -370,14 +370,51 @@ var defaults = require(path.join(root, 'config'))
 if (defaults.mode !== 'live' || defaults.trialMode !== true || defaults.calibrating !== true) {
   fail('trial defaults must enable live mode, trialMode and calibrating')
 }
+if (defaults.apiBase !== 'https://nadou.youroem.cn') fail('production apiBase is ' + defaults.apiBase)
+if (defaults.apiUrl('/api/healthz') !== 'https://nadou.youroem.cn/api/healthz') {
+  fail('apiUrl must join the production root')
+}
 
-// A copied local development override cannot enable demo data in an uploaded build.
+var productionHost = 'nadou.youroem.cn'
+var hostHits = []
+walk(root, []).forEach(function (file) {
+  var ext = path.extname(file)
+  if (['.js', '.json', '.wxml', '.wxss', '.md'].indexOf(ext) === -1) return
+  var rel = path.relative(root, file)
+  var text = fs.readFileSync(file, 'utf8')
+  if (rel !== 'README.md' && text.indexOf('inadol.com') !== -1) {
+    fail('inadol.com must not be requested by the mini program: ' + rel)
+  }
+  if (ext !== '.js') return
+  var from = 0
+  var at = text.indexOf(productionHost, from)
+  while (at !== -1) {
+    hostHits.push(rel)
+    from = at + productionHost.length
+    at = text.indexOf(productionHost, from)
+  }
+})
+if (hostHits.length !== 1 || hostHits[0] !== 'config.js') {
+  fail('production API host must be written once in config.js, found: ' + hostHits.join(', '))
+}
+var miniReadme = fs.readFileSync(path.join(root, 'README.md'), 'utf8')
+if (miniReadme.replace(/`/g, '').indexOf('inadol.com 在备案下来之前不可用于小程序') === -1) {
+  fail('miniprogram README must say inadol.com cannot be used before ICP filing')
+}
+
+// A copied local development override cannot enable demo data or another API host in an uploaded build.
 var configSource = fs.readFileSync(path.join(root, 'config.js'), 'utf8')
 ;['develop', 'trial', 'release', 'unknown'].forEach(function (version) {
   var scope = { module: {}, wx: { getAccountInfoSync: function () { return { miniProgram: { envVersion: version } } } },
-    require: function () { return { mode: 'mock' } } }
+    require: function () { return { mode: 'mock', apiBase: 'https://example.invalid' } } }
   require('vm').runInNewContext(configSource, scope)
-  if (scope.module.exports.mode !== (version === 'develop' ? 'mock' : 'live')) fail('incorrect data source for ' + version)
+  var published = version !== 'develop'
+  if (scope.module.exports.mode !== (published ? 'live' : 'mock')) fail('incorrect data source for ' + version)
+  var expectedBase = published ? 'https://nadou.youroem.cn' : 'https://example.invalid'
+  if (scope.module.exports.apiBase !== expectedBase) fail('incorrect apiBase for ' + version)
+  if (scope.module.exports.apiUrl('/api/v1/auth/me') !== expectedBase + '/api/v1/auth/me') {
+    fail('apiUrl did not follow apiBase for ' + version)
+  }
 })
 
 // Baseline state coverage is explicitly mock; live routing has separate async checks.

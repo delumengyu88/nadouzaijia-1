@@ -16,8 +16,8 @@ function queryError(message, statusCode) {
   return error
 }
 function queryRequest(path, data, method, binary) {
-  var base = String(config.apiBase || '').replace(/\/$/, '')
-  if (!base) return Promise.reject(queryError('未配置服务地址', 0))
+  var url = config.apiUrl(path)
+  if (!url) return Promise.reject(queryError('未配置服务地址', 0))
   var token = state.token()
   if (!token) return Promise.reject(queryError('请先登录', 401))
   return new Promise(function (resolve, reject) {
@@ -30,7 +30,7 @@ function queryRequest(path, data, method, binary) {
     }
     try {
       wx.request({
-        url: base + path,
+        url: url,
         method: method || 'GET',
         timeout: 15000,
         data: data || {},
