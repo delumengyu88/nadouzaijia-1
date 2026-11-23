@@ -1,1 +1,12 @@
 /* local */
+/* 原生 button 在 style v2 下默认 184px 宽。与委托取证「提交申请」（pages/evidence evidence-submit）
+   和本页「开始查询」一样：通栏主按钮，左右各留 32rpx。 */
+button.btn.input-confirm {
+  box-sizing: border-box;
+  width: calc(100% - 64rpx);
+  max-width: none;
+  margin: 24rpx 32rpx 0;
+  padding: 0;
+}
+/* 预览列表很长时，确认按钮下方留出底部安全区。 */
+.preview-body { padding-bottom: calc(32rpx + env(safe-area-inset-bottom)); }

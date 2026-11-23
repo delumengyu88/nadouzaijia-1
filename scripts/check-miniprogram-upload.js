@@ -150,4 +150,8 @@ expectPrompt(p, READ)
 // 页面模板：三种失败提示下的「重新选择」都绑定 upload。
 var wxml = require('fs').readFileSync(require('path').join(__dirname, '../miniprogram/pages/input/index.wxml'), 'utf8')
 assert(/wx:if="\{\{showReselect\}\}" bindtap="upload">重新选择</.test(wxml))
+// 预览页「确认查询」是通栏主按钮（原生 button 默认只有 184px 宽）。
+assert(wxml.includes('class="btn block input-confirm" bindtap="confirm"'))
+var inputWxss = require('fs').readFileSync(require('path').join(__dirname, '../miniprogram/pages/input/index.wxss'), 'utf8')
+assert(/button\.btn\.input-confirm\s*\{[^}]*width: calc\(100% - 64rpx\)/.test(inputWxss))
 console.log('upload sheet: name-only, name+owner, missing column, read failures and re-pick checks ok')

@@ -196,7 +196,9 @@ async function main() {
   assert(formWxml.indexOf('placeholder="50 字以内"') !== -1)
   assert(formWxml.indexOf('placeholder="11 位手机号"') !== -1)
   assert(formWxml.indexOf('<picker') === -1, '类型不是 picker')
-  assert(formWxml.indexOf('<view class="field type-field"><text>{{kindText}}</text><text class="chev">›</text></view>') !== -1)
+  // 类型由入口决定、不可选，所以不画箭头。
+  assert(formWxml.indexOf('<view class="field type-field"><text>{{kindText}}</text></view>') !== -1)
+  assert(!/type-field[^\n]*chev/.test(formWxml), '类型行不显示箭头')
   assert(formWxss.indexOf('padding-right: 32rpx') !== -1)
   assert(read('app.wxss').indexOf('.chev {\n  color: #c5cad3;\n  font-size: 36rpx;') !== -1)
   assert(formWxml.indexOf('<icon type="success" size="56" color="#16A34A"') !== -1)
