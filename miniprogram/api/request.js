@@ -5,7 +5,7 @@ module.exports = function (path, data, options) {
   options = options || {}
   var base = String(config.apiBase || '').replace(/\/$/, '')
   if (!base) return Promise.reject(new Error('未配置服务地址'))
-  var token = options.public ? '' : state.token()
+  var token = options.public ? '' : (options.renewGuest ? state.pendingGuestToken() : (options.querySession ? state.queryToken() : state.token()))
   // optionalAuth sends a session when one exists, and still runs when it does not.
   // Invite state is 200 for a missing token. Other calls still require a session.
   if (!options.public && !options.optionalAuth && !token) return Promise.reject(new Error('请先登录'))
@@ -19,10 +19,16 @@ module.exports = function (path, data, options) {
         data: data || {},
         header: token ? { Authorization: 'Bearer ' + token } : {},
         success: function (res) {
+          if (options.querySession && token !== state.queryToken()) {
+            var stale = new Error('账户已改变')
+            stale.sessionChanged = true
+            reject(stale)
+            return
+          }
           // Evidence uses readBody and judges `code`. Redeem uses exposeStatus and judges `detail`.
           // Invite state uses optionalAuth. Keep one of each.
           if (options.readBody || options.exposeStatus) {
-            if (res.statusCode === 401 && token) state.clearSession(token)
+            if (res.statusCode === 401 && token && !options.renewGuest) state.clearSession(token)
             if (options.exposeStatus) resolve({ statusCode: res.statusCode, data: res.data })
             else resolve(res.data === undefined || res.data === null ? {} : res.data)
             return
@@ -30,7 +36,7 @@ module.exports = function (path, data, options) {
           if (res.statusCode >= 200 && res.statusCode < 300) resolve(res.data || {})
           else {
             // An old in-flight request must not erase a newly logged-in account.
-            if (res.statusCode === 401 && token) state.clearSession(token)
+            if (res.statusCode === 401 && token && !options.renewGuest) state.clearSession(token)
             reject(new Error(res.statusCode === 401 ? '请先登录' : '服务暂不可用'))
           }
         },

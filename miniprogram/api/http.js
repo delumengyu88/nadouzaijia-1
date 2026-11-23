@@ -408,7 +408,7 @@ module.exports = {
   retryAll: function () { return null },
   listRecords: function () { return [] },
   searchProgram: function (name) {
-    return request('/api/v1/programs/search', { name: name }).then(function (body) {
+    return request('/api/v1/programs/search', { name: name }, { querySession: true }).then(function (body) {
       if (!body || ['hit', 'miss', 'recent_only', 'unverified'].indexOf(body.outcome) < 0 ||
           (!Array.isArray(body.records) && !Array.isArray(body.platform_groups))) throw new Error('检索结果暂不可用')
       return shape.sanitizeSearch(body)

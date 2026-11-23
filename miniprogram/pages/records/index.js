@@ -5,7 +5,7 @@ var state = require('../../api/state')
 var PAGE_SIZE = 20
 
 function sessionKey() {
-  return api.isLive ? state.token() : state.currentId()
+  return api.isLive ? (state.queryToken() || state.pendingGuestToken()) : state.currentId()
 }
 
 function decorate(rows, offset) {
@@ -80,7 +80,7 @@ Page({
   showError: function (error) {
     var code = error && error.statusCode
     if (code === 401 || (error && error.message === '请先登录')) {
-      this.setData({ loading: false, failed: false, empty: false, rows: [], needLogin: true })
+      this.setData({ loading: false, failed: false, empty: false, rows: [], needLogin: true, guestExpired: !!state.load().guestExpired })
       return
     }
     var network = code === 0 || code >= 500 || (error && error.message === '网络异常，请重试')
@@ -89,7 +89,6 @@ Page({
   },
   retryLoad: function () { this.onShow() },
   goQuery: function () { wx.switchTab({ url: '/pages/home/index' }) },
-  login: function () { return require('../../utils/login')(this, this.onShow) },
   back: function () {
     if (getCurrentPages().length > 1) wx.navigateBack()
     else wx.switchTab({ url: '/pages/profile/index' })

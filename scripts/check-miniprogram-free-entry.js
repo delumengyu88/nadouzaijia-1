@@ -31,6 +31,20 @@ function page(name) {
   return Object.assign({}, def, { data: Object.assign({}, def.data), route: 'pages/' + name + '/index',
     setData: function (changes) { Object.assign(this.data, changes) } })
 }
+function guest(id) {
+  var credentials = account(id, 'free')
+  credentials.user.identity_kind = 'guest'
+  return credentials
+}
+function guestRequest() {
+  var req = requests.shift()
+  assert(req && req.url.endsWith('/auth/guest/session'))
+  assert.strictEqual(req.method, 'POST')
+  assert.deepStrictEqual(req.header, {})
+  assert.deepStrictEqual(req.data, {})
+  assert.strictEqual(logins.length, 0)
+  return req
+}
 async function exchange() {
   assert.strictEqual(logins.length, 1)
   logins.shift().success({ code: 'valid-platform-code' })
@@ -48,18 +62,33 @@ async function run() {
   visible.onShow()
   assert.strictEqual(visible.data.guest, true)
   assert.strictEqual(requests.length, 0)
-  logins.shift().fail()
+  assert.strictEqual(logins.length, 0, 'cold start and opening the personal center must not call wx.login')
+  var home = page('home')
+  stack = [home]
+  app.globalData.splashShownThisLaunch = true
+  home.onShow()
+  app.onShow()
+  assert.strictEqual(home.data.banner, 'guest')
+  assert.strictEqual(logins.length, 0)
+  var publicHome = requests.shift()
+  assert(publicHome.url.endsWith('/app/home'))
+  assert.deepStrictEqual(publicHome.header, {})
+  publicHome.success({statusCode:200,data:{platformTotal:null,examples:[],announcements:[]}})
   await settle()
-  assert(visible.data.loginError)
+  stack = [visible]
+  visible.onShow()
+  assert.strictEqual(requests.length, 0)
   assert.strictEqual(state.token(), '')
 
   api.setDraft('本次访客输入')
   app.onShow()
-  var joined = api.ensureEntry()
+  assert.strictEqual(logins.length, 0, 'returning to the foreground stays anonymous')
+  var joined = api.ensureEntry() // Explicit identity request from a protected action.
   var req = await exchange()
   req.success({ statusCode: 200, data: account('paid', 'vip') })
   await joined
   await settle()
+  visible.onShow()
   var profile = requests.shift()
   assert(profile.url.endsWith('/auth/me'))
   assert.strictEqual(profile.header.Authorization, 'Bearer token-paid')
@@ -119,9 +148,9 @@ async function run() {
   input.setData({items:[{name:'仅测试一次提交'}]})
   var submitted = input.confirm()
   input.confirm()
-  var pending = await exchange()
+  var pending = guestRequest()
   input.onUnload()
-  pending.success({statusCode:200,data:account('new', 'free')})
+  pending.success({statusCode:200,data:guest('first')})
   await submitted
   assert.strictEqual(requests.length, 0, 'a discarded input page must not submit')
   state.clearSession()
@@ -129,16 +158,84 @@ async function run() {
   stack = [input]
   input.onLoad({})
   input.setData({items:[{name:'仅测试一次提交'}]})
+  var unavailable = input.confirm()
+  guestRequest().success({statusCode:404,data:{}})
+  await unavailable
+  assert(input.data.loginError.includes('重试'))
+  assert.deepStrictEqual(logins, [])
   var creating = input.confirm()
   input.confirm()
-  pending = await exchange()
-  pending.success({statusCode:200,data:account('new', 'free')})
-  await creating
+  var same = api.ensureQuerySession()
+  pending = guestRequest()
+  assert.strictEqual(requests.length, 0, 'concurrent confirm and session requests are joined')
+  pending.success({statusCode:200,data:guest('new')})
+  await Promise.all([same, creating])
+  assert.strictEqual(state.token(), '', 'visitor credentials cannot authorize an account operation')
+  assert.strictEqual(api.accountKind(), 'guest')
+  assert.strictEqual(state.queryToken(), 'token-new')
   assert.strictEqual(requests.length, 1)
   var created = requests.shift()
   assert(created.url.endsWith('/queries') && created.method === 'POST')
   assert.strictEqual(created.header.Authorization, 'Bearer token-new')
   assert.deepStrictEqual(created.data, { name: '仅测试一次提交' })
+  wx.redirectTo = function (route) { assert(route.url.endsWith('id=own-query')) }
+  var expiry = new Date(Date.now() + 30 * 86400000).toISOString()
+  created.success({statusCode:201,data:{id:'own-query'},header:{'X-Nadou-Session-Expires-At':expiry}})
+  await settle()
+  assert.strictEqual(state.load().auth.expires_at, expiry)
+  var now = Date.now
+  var dayEight = now() + 8 * 86400000
+  Date.now = function () { return dayEight }
+  assert.strictEqual(state.queryToken(), 'token-new', 'guest can read their original records on day eight')
+  Date.now = now
+  var listed = api.listRecordPage(20, 0)
+  var ownList = requests.shift()
+  assert.strictEqual(ownList.header.Authorization, 'Bearer token-new')
+  ownList.success({statusCode:200,data:{items:[],total:0}})
+  assert.deepStrictEqual((await listed).rows, [])
+  var search = api.searchProgram('免费节目')
+  var ownSearch = requests.shift()
+  assert.strictEqual(ownSearch.header.Authorization, 'Bearer token-new')
+  ownSearch.success({statusCode:200,data:{outcome:'miss',records:[]}})
+  assert.strictEqual((await search).outcome, 'miss')
+  assert.strictEqual(api.profile().guest, true)
+  assert.strictEqual((await api.exportBook('免费节目')).ok, false)
+  assert.strictEqual(requests.length, 0)
+  api.setDraft('只属于此访客')
+  state.load().auth.expires_at = new Date(Date.now() - 1000).toISOString()
+  assert.strictEqual(state.queryToken(), '')
+  assert.strictEqual(state.pendingGuestToken(), 'token-new')
+  var checkPrevious = api.listRecords()
+  var renewal = requests.shift()
+  assert(renewal.url.endsWith('/auth/guest/session'))
+  assert.deepStrictEqual(renewal.header, {Authorization:'Bearer token-new'})
+  renewal.fail()
+  await assert.rejects(checkPrevious)
+  assert.strictEqual(state.pendingGuestToken(), 'token-new', 'a network error cannot abandon an existing visitor')
+  checkPrevious = api.listRecords()
+  renewal = requests.shift()
+  renewal.success({statusCode:200,data:guest('new')})
+  await settle()
+  var resumed = requests.shift()
+  assert(resumed.url.endsWith('/queries') && resumed.header.Authorization === 'Bearer token-new')
+  resumed.success({statusCode:200,data:{items:[{id:'own-query',name:'仅测试一次提交'}],total:1}})
+  assert.strictEqual((await checkPrevious)[0].id, 'own-query')
+  assert.strictEqual(api.getDraft(), '只属于此访客')
+  var expiredList = api.listRecords()
+  requests.shift().success({statusCode:401,data:{}})
+  await assert.rejects(expiredList)
+  assert.strictEqual(state.queryToken(), '')
+  assert.strictEqual(api.getDraft(), '')
+  assert.strictEqual(state.load().guestExpired, true)
+  assert.strictEqual(requests.length + logins.length, 0, 'expiry never replays a read, write or login')
+  var waiting = api.ensureQuerySession()
+  var guestRace = guestRequest()
+  state.setSession(account('real', 'vip'))
+  guestRace.success({statusCode:200,data:guest('late')})
+  await assert.rejects(waiting, function (error) { return error.sessionChanged })
+  assert.strictEqual(state.userId(), 'real')
+  assert.strictEqual((await api.ensureQuerySession()).tier, 'vip')
+  assert.strictEqual(logins.length + requests.length, 0)
   var form = page('evidence')
   form.onLoad({kind:'normal'})
   form.setData({phone:'13800000000',note:'原账户联系信息',name:'测试节目'})
@@ -153,7 +250,7 @@ async function run() {
   assert(!form.data.newId)
 
   state.clearSession()
-  var tab = page('profile')
+  var tab = page('orders')
   stack = [tab]
   var retry = tab.login()
   stack = []
@@ -162,6 +259,11 @@ async function run() {
   stack = [tab]
   tab.onShow()
   assert(!tab.data.loginLoading && !tab.loginAttempt, 'returning tab can retry')
-  console.log('automatic free entry, paid identity, offline retry, isolated drafts and private callbacks ok')
+  state.setSession(account('expiring', 'vip'))
+  state.load().auth.expires_at = new Date(Date.now() - 1000).toISOString()
+  app.onShow()
+  assert.strictEqual(state.load().auth, null)
+  assert.strictEqual(logins.length, 0, 'expiry on returning to the app must not start a new login')
+  console.log('guest entry without WeChat login, paid identity, expiry, isolated drafts and private callbacks ok')
 }
 run().catch(function (e) { console.error(e); process.exitCode = 1 })

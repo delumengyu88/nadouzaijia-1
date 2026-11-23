@@ -17,12 +17,13 @@ var RESELECT = { xlsx: 1, col: 1, read: 1 }
 Page({
   data: { title: '输入片单', showBack: true, phase: 'edit', raw: '', items: [] },
   onLoad: function (query) {
-    this.owner = api.accountKind()
+    this.owner = state.queryOwner()
     var data = nav.layout('input', this.query)
     data.title = '输入片单'
     data.showBack = true
     data.phase = 'edit'
     data.raw = api.getDraft()
+    data.guestExpired = !!state.load().guestExpired
     data.failText = ''
     data.box = ''
     data.fromFile = false
@@ -58,14 +59,14 @@ Page({
     })
   },
   newRecognition: function () {
-    var owner = api.accountKind()
+    var owner = state.queryOwner()
     var revision = state.sessionRevision()
     var page = this
     var sequence = this.recognition = (this.recognition || 0) + 1
     return function () {
       if (sequence !== page.recognition) return false
       var now = state.sessionRevision()
-      return now === revision || (owner === 'guest' && now === revision + 1 && api.accountKind() !== 'guest')
+      return now === revision || (owner === 'guest' && now === revision + 1 && state.queryOwner() !== 'guest')
     }
   },
   recognizeText: function () {
@@ -148,7 +149,7 @@ Page({
     this.setData({ items: items, summary: '共 ' + items.length + ' 条有效节目名' })
   },
   onShow: function () {
-    var current = api.accountKind()
+    var current = state.queryOwner()
     if (this.owner && this.owner !== 'guest' && this.owner !== current) {
       this.visit = (this.visit || 0) + 1
       this.recognition = (this.recognition || 0) + 1
@@ -165,23 +166,29 @@ Page({
   },
   onUnload: function () { this.visit = (this.visit || 0) + 1; this.recognition = (this.recognition || 0) + 1 },
   confirm: function () {
-    if (this.owner && this.owner !== 'guest' && this.owner !== api.accountKind()) { this.onShow(); return }
+    if (this.owner && this.owner !== 'guest' && this.owner !== state.queryOwner()) { this.onShow(); return }
     if (this.creating) return
-    if (api.accountKind() === 'guest') {
+    if (state.queryOwner() === 'guest') {
       var page = this
       var visit = this.visit
       this.creating = true
       this.setData({ loginLoading: true, loginError: '' })
-      return api.ensureEntry().then(function (user) {
+      return api.ensureQuerySession().then(function (user) {
         if (visit !== page.visit) return
         page.creating = false
         page.setData({ loginLoading: false })
-        if (user && user.id && user.id !== require('../../api/state').userId()) return
-        if (api.accountKind() !== 'guest') page.confirm()
+        if (user && user.id && (!state.load().auth || user.id !== state.load().auth.user.id)) return
+        var owner = state.queryOwner()
+        if (owner !== 'guest') {
+          page.owner = owner
+          page.setData({ guestExpired: false })
+          page.confirm()
+        }
       }, function (error) {
         if (visit !== page.visit) return
         page.creating = false
-        page.setData({ loginLoading: false, loginError: error.sessionChanged ? '' : '连接失败，请重试' })
+        page.setData({ loginLoading: false, guestExpired: !!state.load().guestExpired,
+          loginError: error.sessionChanged || error.statusCode === 401 ? '' : '免费查询服务暂不可用，点击确认查询重试' })
       })
     }
     var names = (this.data.items || []).map(function (item) { return item.name })

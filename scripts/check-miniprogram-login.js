@@ -64,45 +64,52 @@ function success(id) {
   })
 }
 async function main() {
-  for (var name of ['home', 'profile', 'member']) {
-    api.reset(); api.markSplashSeen(); dropIdentity()
+  for (var publicTab of ['home', 'profile']) {
+    api.reset()
     app.globalData.splashShownThisLaunch = true
-    var p = page(name)
-    var handler = name === 'member' ? 'go' : 'login'
-    if (name === 'member') p.pick({ currentTarget: { dataset: { id: 'membership_vip' } } })
-    p[handler]()
-    assert.strictEqual(p.data.loginLoading, true, name)
-    p[handler]()
-    assert.strictEqual(logins.length, 1, 'duplicate clicks cannot start another login')
-    logins.shift().fail({ errMsg: 'login:fail' }); await drain()
-    assert.strictEqual(p.data.loginLoading, false)
-    assert.strictEqual(p.data.loginError, '登录失败，请重试')
-    assert.strictEqual(api.accountKind(), 'guest')
-    p[handler]()
-    assert.strictEqual(p.data.loginError, '')
-    await success(name)
-    assert.strictEqual(p.data.loginLoading, false)
-    assert.strictEqual(p.data.loginError, '')
-    if (config.mode === 'live') {
-      var loaded = api.profile()
-      assert.strictEqual(typeof loaded.then, 'function')
-      var me = requests.filter(function (item) { return item.url.indexOf('/auth/me') !== -1 }).pop()
-      me.success({ statusCode: 200, data: { id: name, tier: 'free', vip_expires_at: null, regular_expires_at: null } })
-      await drain()
-      assert.strictEqual((await loaded).guest, false)
-      assert.strictEqual((await loaded).tier, 'free')
-      dropIdentity()
-    } else {
-      assert.strictEqual(api.profile().guest, false)
-      dropIdentity()
-    }
-    assert.strictEqual(state.userId(), name)
-    assert.strictEqual(state.token(), 'test-token-' + name)
-    assert.deepStrictEqual(navigation, [], 'success refreshes the original page')
-    var template = fs.readFileSync(require.resolve('../miniprogram/pages/' + name + '/index.wxml'), 'utf8')
-    assert(template.includes('loading="{{loginLoading}}"') && template.includes('disabled="{{loginLoading}}"'))
-    assert(template.includes('loginError'))
+    page(publicTab)
+    assert.strictEqual(logins.length, 0, publicTab + ' must not request a WeChat identity')
+    var publicTemplate = fs.readFileSync(require.resolve('../miniprogram/pages/' + publicTab + '/index.wxml'), 'utf8')
+    assert(!publicTemplate.includes('bindtap="login"'))
   }
+  api.reset(); api.markSplashSeen(); dropIdentity()
+  app.globalData.splashShownThisLaunch = true
+  var name = 'member'
+  var p = page(name)
+  var handler = 'go'
+  p.pick({ currentTarget: { dataset: { id: 'membership_vip' } } })
+  p[handler]()
+  assert.strictEqual(p.data.loginLoading, true, name)
+  p[handler]()
+  assert.strictEqual(logins.length, 1, 'duplicate clicks cannot start another login')
+  logins.shift().fail({ errMsg: 'login:fail' }); await drain()
+  assert.strictEqual(p.data.loginLoading, false)
+  assert.strictEqual(p.data.loginError, '登录失败，请重试')
+  assert.strictEqual(api.accountKind(), 'guest')
+  p[handler]()
+  assert.strictEqual(p.data.loginError, '')
+  await success(name)
+  assert.strictEqual(p.data.loginLoading, false)
+  assert.strictEqual(p.data.loginError, '')
+  if (config.mode === 'live') {
+    var loaded = api.profile()
+    assert.strictEqual(typeof loaded.then, 'function')
+    var me = requests.filter(function (item) { return item.url.indexOf('/auth/me') !== -1 }).pop()
+    me.success({ statusCode: 200, data: { id: name, tier: 'free', vip_expires_at: null, regular_expires_at: null } })
+    await drain()
+    assert.strictEqual((await loaded).guest, false)
+    assert.strictEqual((await loaded).tier, 'free')
+    dropIdentity()
+  } else {
+    assert.strictEqual(api.profile().guest, false)
+    dropIdentity()
+  }
+  assert.strictEqual(state.userId(), name)
+  assert.strictEqual(state.token(), 'test-token-' + name)
+  assert.deepStrictEqual(navigation, [], 'success refreshes the original page')
+  var template = fs.readFileSync(require.resolve('../miniprogram/pages/' + name + '/index.wxml'), 'utf8')
+  assert(template.includes('loading="{{loginLoading}}"') && template.includes('disabled="{{loginLoading}}"'))
+  assert(template.includes('loginError'))
   // A freshly loaded state module must recover the session from persistent storage.
   delete require.cache[require.resolve('../miniprogram/api/state')]
   assert.strictEqual(require('../miniprogram/api/state').token(), 'test-token-member')
@@ -140,6 +147,6 @@ async function main() {
     assert.strictEqual(api.profile().tier, 'free')
     Date.now = realNow
   }
-  console.log('WeChat login ' + config.mode + ': three pages, loading/reentry/failure/retry, persistence, Bearer and expiry ok')
+  console.log('WeChat login ' + config.mode + ': guest tabs and protected member action, loading/reentry/failure/retry, persistence, Bearer and expiry ok')
 }
 main().catch(function (error) { console.error(error); process.exitCode = 1 })

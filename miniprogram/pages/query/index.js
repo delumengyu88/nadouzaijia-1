@@ -117,7 +117,7 @@ Page({
       showFailBanner: false, showRetryAll: false
     }
     if (code === 401 || (error && error.message === '请先登录')) {
-      this.setData(Object.assign(base, { needLogin: true, missing: false, loadError: false }))
+      this.setData(Object.assign(base, { needLogin: true, guestExpired: !!require('../../api/state').load().guestExpired, missing: false, loadError: false }))
       return
     }
     if (code === 404) {
@@ -138,9 +138,6 @@ Page({
     this.remote = false
     this.finished = false
     this.refresh()
-  },
-  login: function () {
-    return require('../../utils/login')(this, this.onShow)
   },
   renderSpecial: function (view) {
     if (view === 'queued') {

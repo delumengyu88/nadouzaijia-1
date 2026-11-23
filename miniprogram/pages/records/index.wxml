@@ -8,9 +8,8 @@
 <view class="body">
   <view class="mask" wx:if="{{needLogin}}">
     <view class="dialog">
-      <view class="dialog-title">暂时无法读取查询记录</view>
-      <button class="btn" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">重试</button>
-      <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
+      <view class="dialog-title">{{guestExpired ? '上次访客会话已失效，不能读取旧记录' : '当前会话没有可读取的查询记录'}}</view>
+      <button class="btn" bindtap="goQuery">去查询</button>
     </view>
   </view>
   <view class="result" wx:if="{{failed}}">

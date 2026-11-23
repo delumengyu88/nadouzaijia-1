@@ -35,10 +35,7 @@ Page({
     lines: []
   },
   onShow: function () {
-    require('../../utils/login').onShow(this)
-    if (api.entryFailed && api.accountKind() === 'guest') this.onIdentityError()
     var data = nav.layout('profile', this.query)
-    data.identifying = !!(typeof getApp === 'function' && getApp().identifying)
     var info = readProfile()
     var self = this
     this._seq = (this._seq || 0) + 1
@@ -127,12 +124,7 @@ Page({
       inviteError: ''
     })
   },
-  onIdentityReady: function () { this.setData({ loginError: '' }); this.onShow() },
-  onIdentityError: function () { this.setData({ identifying: false, loginError: '网络异常，可重试' }) },
   retryLoad: function () { this.onShow() },
-  login: function () {
-    return require('../../utils/login')(this, this.onShow)
-  },
   go: function (e) {
     wx.navigateTo({ url: e.currentTarget.dataset.url })
   },

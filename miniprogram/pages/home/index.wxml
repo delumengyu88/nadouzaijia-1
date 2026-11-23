@@ -9,7 +9,7 @@
   <view class="banner run" wx:if="{{banner == 'running'}}" bindtap="openRunning">
     <text>{{bannerText}}</text><text class="chev">›</text>
   </view>
-  <view class="banner" wx:elif="{{banner == 'guest'}}"><text>免费用户</text><button wx:if="{{loginError || !identifying}}" class="login-link" bindtap="login" loading="{{loginLoading}}" disabled="{{loginLoading}}">重试</button></view>
+  <view class="banner" wx:elif="{{banner == 'guest'}}"><text>免费用户</text></view>
   <view class="banner" wx:elif="{{banner == 'free'}}">{{bannerText}}</view>
   <view class="card">
     <view class="card-title">输入片单</view>

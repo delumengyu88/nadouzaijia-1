@@ -38,8 +38,6 @@ Page({
     return !splash.shownThisLaunch()
   },
   onShow: function () {
-    require('../../utils/login').onShow(this)
-    if (api.entryFailed && api.accountKind() === 'guest') this.onIdentityError()
     var show = this.splashVisible()
     if (show) {
       splash.markShownThisLaunch()
@@ -62,7 +60,6 @@ Page({
   paint: function () {
     var data = nav.layout('home', this.query)
     var home = api.homeState()
-    data.identifying = !!(typeof getApp === 'function' && getApp().identifying)
     data.showBrand = true
     data.title = ''
     data.showBack = false
@@ -240,11 +237,6 @@ Page({
     }
     api.setDraft(text)
     wx.navigateTo({ url: '/pages/input/index?auto=1' })
-  },
-  onIdentityReady: function () { this.setData({ loginError: '' }); this.paint() },
-  onIdentityError: function () { this.setData({ identifying: false, loginError: '网络异常，可重试' }) },
-  login: function () {
-    return require('../../utils/login')(this, this.onShow)
   },
   upload: function () {
     var self = this

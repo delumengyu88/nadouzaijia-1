@@ -750,8 +750,7 @@ try {
   home.setData({ draft: '星河旧梦' })
   home.start()
   expect(!home.data.needLogin && api.getDraft() === '星河旧梦', 'guest can prepare a query before identity is ready')
-  await home.login()
-  expect(!api.profile().guest && api.profile().tier === 'free', 'login should enter the free account')
+  expect(api.accountKind() === 'guest', 'preparing a search never changes the guest identity')
   api.setDraft('')
   // Commerce below is an offline prototype flow, separate from real session membership.
   api.switchAccount('free')

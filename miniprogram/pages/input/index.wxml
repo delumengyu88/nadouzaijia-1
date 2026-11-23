@@ -26,6 +26,7 @@
     </view>
   </view>
   <button class="btn block" bindtap="confirm" loading="{{loginLoading}}" disabled="{{loginLoading}}">确认查询</button>
+  <view class="hint" wx:if="{{guestExpired}}">上次访客会话已失效。确认后将开始新的免费查询。</view>
   <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
 </view>
 <view class="body" wx:elif="{{phase == 'limit'}}">
@@ -33,6 +34,7 @@
   <textarea class="area" style="margin:24rpx 32rpx 0;width:auto;display:block;min-height:280rpx;" value="{{raw}}" disabled maxlength="-1" />
   <view class="hint">{{count}}/500</view>
   <button class="btn block" bindtap="confirm" loading="{{loginLoading}}" disabled="{{loginLoading}}">开始查询</button>
+  <view class="hint" wx:if="{{guestExpired}}">上次访客会话已失效。确认后将开始新的免费查询。</view>
   <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
 </view>
 <view class="body" wx:else>

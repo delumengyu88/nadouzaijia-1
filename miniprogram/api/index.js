@@ -24,4 +24,5 @@ client.ensureEntry = function () {
   }
   return client.login()
 }
+client.ensureQuerySession = mode === 'mock' ? client.ensureEntry : require('./auth').querySession
 module.exports = client

@@ -8,7 +8,7 @@ var knownQueries = {}
 var seenOnce = {}
 
 function rememberQuery(id) {
-  if (id) knownQueries[id] = state.userId()
+  if (id) knownQueries[id] = state.queryOwner()
 }
 function queryError(message, statusCode) {
   var error = new Error(message)
@@ -18,11 +18,17 @@ function queryError(message, statusCode) {
 function queryRequest(path, data, method, binary) {
   var base = String(config.apiBase || '').replace(/\/$/, '')
   if (!base) return Promise.reject(queryError('未配置服务地址', 0))
-  var token = state.token()
-  if (!token) return Promise.reject(queryError('请先登录', 401))
+  var readToken = binary ? state.token : state.queryToken
+  var token = readToken()
+  if (!token) {
+    if (!binary && (!method || method === 'GET') && state.pendingGuestToken()) {
+      return require('./auth').querySession().then(function () { return queryRequest(path, data, method, binary) })
+    }
+    return Promise.reject(queryError('请先登录', 401))
+  }
   return new Promise(function (resolve, reject) {
     function sessionChanged() {
-      if (state.token() === token) return false
+      if (readToken() === token) return false
       var error = queryError('登录状态已变化', 0)
       error.sessionChanged = true
       reject(error)
@@ -41,6 +47,11 @@ function queryRequest(path, data, method, binary) {
           if (sessionChanged()) return
           var code = res.statusCode
           if (code >= 200 && code < 300) {
+            if (path === '/api/v1/queries' && method === 'POST') {
+              var headers = res.header || {}
+              var field = Object.keys(headers).find(function (name) { return name.toLowerCase() === 'x-nadou-session-expires-at' })
+              if (field) state.extendGuest(token, headers[field])
+            }
             resolve(binary ? res : res.data || {})
             return
           }
@@ -60,7 +71,7 @@ function queryRequest(path, data, method, binary) {
   })
 }
 function postResult(id, name, failed) {
-  if (!id || knownQueries[id] !== state.userId()) return
+  if (!id || knownQueries[id] !== state.queryOwner()) return
   var body = { name: name }
   if (failed) body.failed = true
   queryRequest('/api/v1/queries/' + encodeURIComponent(id) + '/results', body, 'POST').then(function () {}, function () {})
@@ -168,7 +179,7 @@ class QueryGuard {
 }
 
 function currentJobs() {
-  var key = state.userId() || 'guest'
+  var key = state.queryOwner() || 'guest'
   if (!jobs[key]) jobs[key] = {}
   return jobs[key]
 }
@@ -301,8 +312,8 @@ module.exports = {
   retryItem: retry,
   retryAll: function (id) { return retry(id) },
   markQuerySeen: function (id) {
-    if (!id || knownQueries[id] !== state.userId() || seenOnce[id] === state.userId()) return
-    seenOnce[id] = state.userId()
+    if (!id || knownQueries[id] !== state.queryOwner() || seenOnce[id] === state.queryOwner()) return
+    seenOnce[id] = state.queryOwner()
     queryRequest('/api/v1/queries/' + encodeURIComponent(id) + '/seen', {}, 'POST').then(function () {}, function () {})
   },
   listRecordPage: listRecordPage,
@@ -310,6 +321,7 @@ module.exports = {
     return listRecordPage(limit, 0).then(function (page) { return page.rows })
   },
   exportBook: function (name, queryId) {
+    if (!state.token() && state.queryToken()) return Promise.resolve({ ok: false, message: '当前身份无权导出报告' })
     function build() {
       // Refresh permissions at export time instead of trusting a mock profile or stale report.
       return http.searchProgram(name).then(function (body) {

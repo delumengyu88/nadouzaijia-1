@@ -214,11 +214,53 @@ function userId() {
   return token() ? load().auth.user.id : ''
 }
 
-function token() {
+function queryToken() {
   var auth = load().auth
   if (!auth || !auth.token || !auth.user || !auth.user.id) return ''
-  if (!(Date.parse(auth.expires_at) > Date.now())) { clearSession(); return '' }
+  if (!(Date.parse(auth.expires_at) > Date.now())) {
+    if (auth.user.identity_kind !== 'guest') clearSession()
+    else if (!auth.localExpired) {
+      auth.localExpired = true
+      sessionRevision += 1
+      save()
+    }
+    return ''
+  }
   return auth.token
+}
+
+// A local expiry may predate a server-side renewal whose response was lost.
+function pendingGuestToken() {
+  var auth = load().auth
+  return !queryToken() && auth && auth.user && auth.user.identity_kind === 'guest' ? auth.token : ''
+}
+
+function extendGuest(token, value) {
+  var auth = load().auth
+  if (!auth || auth.token !== token || auth.user.identity_kind !== 'guest') return
+  var expiry = Date.parse(value)
+  if (!(expiry > Date.now() && expiry > Date.parse(auth.expires_at))) return
+  auth.expires_at = value
+  auth.localExpired = false
+  save()
+}
+
+// Guest credentials may read/write their own queries, never private membership operations.
+function token() {
+  var credential = queryToken()
+  return credential && load().auth.user.identity_kind !== 'guest' ? credential : ''
+}
+
+function queryOwner() {
+  if (!queryToken()) return currentId()
+  var user = load().auth.user
+  return (user.identity_kind === 'guest' ? 'guest:' : 'wx:') + user.id
+}
+
+function discardGuest(data) {
+  if (!data.auth || !data.auth.user || data.auth.user.identity_kind !== 'guest') return
+  delete data.accounts['guest:' + data.auth.user.id]
+  data.guestExpired = true
 }
 
 function clearSession(expectedToken) {
@@ -226,6 +268,7 @@ function clearSession(expectedToken) {
   if (expectedToken && (!data.auth || data.auth.token !== expectedToken)) return
   entryDraft = ''
   sessionRevision += 1
+  discardGuest(data)
   data.auth = null
   data.current = 'guest'
   save()
@@ -244,13 +287,13 @@ function syncMembership(account, user) {
 }
 
 function getDraft() {
-  var owner = account()
+  var owner = load().accounts[queryOwner()]
   return owner ? owner.draft || '' : entryDraft
 }
 
 function setDraft(value) {
   var text = String(value || '')
-  var owner = account()
+  var owner = load().accounts[queryOwner()]
   if (!owner) { entryDraft = text; return }
   owner.draft = text
   save()
@@ -258,7 +301,9 @@ function setDraft(value) {
 
 function setSession(auth, acceptEntryDraft) {
   var data = load()
-  var id = 'wx:' + auth.user.id
+  if (!data.auth || auth.user.identity_kind !== 'guest' || data.auth.user.id !== auth.user.id) discardGuest(data)
+  var id = (auth.user.identity_kind === 'guest' ? 'guest:' : 'wx:') + auth.user.id
+  data.guestExpired = false
   sessionRevision += 1
   var account = data.accounts[id] || blankAccount()
   if (acceptEntryDraft && entryDraft) account.draft = entryDraft
@@ -277,10 +322,14 @@ module.exports = {
   account: account,
   currentId: currentId,
   userId: userId,
+  queryToken: queryToken,
+  pendingGuestToken: pendingGuestToken,
+  extendGuest: extendGuest,
+  queryOwner: queryOwner,
   token: token,
   getDraft: getDraft,
   setDraft: setDraft,
-  sessionRevision: function () { token(); return sessionRevision },
+  sessionRevision: function () { queryToken(); return sessionRevision },
   setSession: setSession,
   clearSession: clearSession,
   blankAccount: blankAccount
