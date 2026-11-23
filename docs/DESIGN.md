@@ -72,7 +72,7 @@ Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is loc
 
 ### 小程序公开配置
 
-`GET /api/v1/app/config` 不需要 `Authorization`，未登录也可以读。它只读 `splash_config` 里 id 为 1 的那一行（和工作台 `SplashBook` 同一行），不插入、不更新。不要复用工作台的 `SplashBook.get()`：那个方法在没有行时会写入一条默认记录，而且默认 `enabled` 是 false。
+`GET /api/v1/app/config` 不需要 `Authorization`，未登录也可以读。它只读 `splash_config` 里 id 为 1 的那一行，不插入、不更新。不要复用管理接口的 `SplashBook.get()`：那个方法在没有行时会写入一条默认记录，而且默认 `enabled` 是 false。
 
 响应只有开屏开关和标语。不返回图片名、跳转文案、更新时间、主键，也不返回任何存储路径：
 
@@ -80,7 +80,7 @@ Missing `X-User-Id` is a free caller. An unknown id is 404. **`X-User-Id` is loc
 {"splash_enabled": true, "slogan": "片单检索"}
 ```
 
-表里没有这一行时返回 `splash_enabled: true`、`slogan: ""`，表的行数不变。工作台 `PUT /api/v1/admin/content/splash` 改过 `enabled` 之后，下一次这个 GET 按库里的当前值返回。服务端不做缓存；响应带 `Cache-Control: public, max-age=60`，给调用方自己缓存。
+表里没有这一行时返回 `splash_enabled: true`、`slogan: ""`，表的行数不变。工作台「内容配置」只管理公告和首页示例。管理端保留兼容接口 `PUT /api/v1/admin/content/splash`，配置更新后由小程序读取。服务端不做缓存；响应带 `Cache-Control: public, max-age=60`，给调用方自己缓存。
 
 ### 小程序邀请状态
 
