@@ -550,7 +550,8 @@ function checkMemberRules() {
   expect(xml.indexOf('choice static') !== -1 || xml.indexOf("plan.selectable ? '' : 'static'") !== -1, 'free card is marked static')
   expect(xml.indexOf('class="info-card"') !== -1, 'expiry dates sit in an info card')
   expect(xml.indexOf('\u2014') === -1 && xml.indexOf('¥599') === -1 && xml.indexOf('¥299') === -1, 'page does not hardcode prices or an em dash')
-  expect((xml.match(/class="btn /g) || []).length === 1, 'member page has one solid button')
+  // 体验会员/支付测试卡片里的开通按钮是卡片内通栏按钮（card-wide），不算页面主按钮。
+  expect((xml.match(/class="btn (?!card-wide)/g) || []).length === 1, 'member page has one solid button')
   var viewerXml = fs.readFileSync(path.join(root, 'pages/viewer/index.wxml'), 'utf8')
   expect(viewerXml.indexOf('wx:if="{{downloadEntry}}"') !== -1, 'download entry is conditional')
   expect(viewerXml.indexOf('{{blockedReason}}') !== -1, 'blocked download writes the reason')

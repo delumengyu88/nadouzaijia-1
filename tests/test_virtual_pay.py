@@ -483,7 +483,7 @@ def test_formal_diamond_catalog_and_poll(virtual_setup, session, monkeypatch, cl
     assert [item for item in options if item["id"] == tier] == [
         {
             "id": tier,
-            "title": "钻石会员",
+            "title": "体验会员",
             "membership": "vip",
             "duration_days": 5,
             "amount_fen": 100,

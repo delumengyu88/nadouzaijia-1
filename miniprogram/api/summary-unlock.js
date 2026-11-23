@@ -32,8 +32,8 @@ function offer(tiers, id) {
   if (row.purchasable !== true) return null
   if (id === diamond.id && !diamond.contextProduct(row)) return null
   var price = member.pricedTier(matching, id)
-  return price && { id: id, title: id === diamond.id ? '钻石会员' : labels[id],
-    price: id === diamond.id ? '¥1.00/5天' : member.priceText(price), purchasable: true }
+  return price && { id: id, title: id === diamond.id ? '体验会员' : labels[id],
+    price: id === diamond.id ? '¥1/5 天' : member.priceText(price), purchasable: true }
 }
 
 function options(eligible, tiers) {

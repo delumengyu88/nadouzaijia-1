@@ -74,7 +74,7 @@ Page(require('../../api/splash').page({
         if (!self.activeSession()) return
         if (!productId || self.orderNo) { self.offerUnavailable(item); return }
         self._oneYuanReady = true
-        self.setData({ phase: 'pending', title: '确认开通', card: item === diamond ? '钻石会员' : '支付测试',
+        self.setData({ phase: 'pending', title: '确认开通', card: item === diamond ? '体验会员' : '支付测试',
           priceText: item.price, blurb: item === diamond ? '5 天 · 与 VIP 会员享有相同权益' : '普通会员 1 天',
           payText: '立即支付 ' + item.price, showPay: true })
       })
@@ -116,7 +116,7 @@ Page(require('../../api/splash').page({
     api.getOrder(this.orderNo).then(function (order) {
       if (!page.activeSession()) return
       if (!order || order.product !== diamond.id) {
-        page.setData({ phase: 'orderUnavailable', centerTitle: '暂无可查看的钻石会员订单' })
+        page.setData({ phase: 'orderUnavailable', centerTitle: '暂无可查看的体验会员订单' })
         return
       }
       page.product = diamond.id

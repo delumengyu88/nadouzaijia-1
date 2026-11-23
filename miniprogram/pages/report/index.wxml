@@ -90,13 +90,12 @@
       <view class="summary-plan" wx:for="{{summaryPlans}}" wx:key="id">
         <view class="row-title">{{item.title}}</view>
         <view class="rec-sub">{{item.price ? item.price + ' · ' : ''}}适用 {{item.count}} 条摘要</view>
-        <button wx:if="{{item.pendingPrice}}" class="btn plain slim" bindtap="singleSummary">单次解锁待定价</button>
-        <button wx:if="{{item.purchasable}}" class="btn slim" data-id="{{item.id}}" bindtap="buySummary">选择此方案</button>
+        <button wx:if="{{item.purchasable}}" class="btn card-wide" data-id="{{item.id}}" bindtap="buySummary">选择此方案</button>
       </view>
       <view wx:if="{{summaryPlanError}}" class="rec-sub">解锁方案暂时无法加载。<text class="evidence-link" bindtap="retry">重试</text></view>
       <block wx:if="{{summaryHelp}}">
         <view class="rec-sub">暂未开放在线购买的方案可咨询客服。</view>
-        <button class="btn plain" open-type="contact" bindtap="markNativeTap" session-from="report-summary">联系客服</button>
+        <button class="btn plain card-wide" open-type="contact" bindtap="markNativeTap" session-from="report-summary">联系客服</button>
       </block>
     </view>
   </view>
@@ -123,8 +122,8 @@
     <view class="row-title">有最新记录，可委托取证</view>
     <view class="btn" bindtap="evidence">委托取证</view>
   </view>
-  <button class="btn block plain" wx:if="{{showDownload}}" bindtap="download" loading="{{downloadLoading}}" disabled="{{downloadLoading}}">下载报告</button>
-  <button class="btn block plain" wx:for="{{reportParts}}" wx:key="*this" data-name="{{item}}" bindtap="openPart">打开 {{item}}</button>
+  <button class="btn block plain page-wide" wx:if="{{showDownload}}" bindtap="download" loading="{{downloadLoading}}" disabled="{{downloadLoading}}">下载报告</button>
+  <button class="btn block plain page-wide" wx:for="{{reportParts}}" wx:key="*this" data-name="{{item}}" bindtap="openPart">打开 {{item}}</button>
   <view class="foot-gap"></view>
 </view>
 </view>

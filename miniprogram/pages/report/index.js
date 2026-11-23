@@ -156,7 +156,6 @@ Page(require('../../api/splash').page({
       page.setData({ summaryPlans: plans, summaryHelp: plans.some(function (plan) { return !plan.purchasable }) })
     }, function () { if (current()) page.setData({ summaryPlanError: true }) })
   },
-  singleSummary: function () { wx.showToast({ title: '单次解锁待定价', icon: 'none' }) },
   buySummary: function (event) {
     if (!this.data.summaryHidden || this.data.phase !== 'ready' || this.revision !== state.sessionRevision()) return
     var id = event.currentTarget.dataset.id

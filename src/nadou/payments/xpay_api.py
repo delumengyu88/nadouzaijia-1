@@ -165,7 +165,7 @@ def register_virtual_orders(app: FastAPI, get_session, payer, clock, notifier, w
             product = DIAMOND
             product_id = diamond_product_id()
             if not product_id:
-                raise HTTPException(503, "钻石会员暂未开放支付")
+                raise HTTPException(503, "体验会员暂未开放支付")
         elif payload.tier == LIVE_TEST.code:
             product = LIVE_TEST
             product_id = live_test_product_id(user.id)

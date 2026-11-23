@@ -33,7 +33,7 @@ VIP = PayProduct("membership_vip", "VIP", "vip", 30, 599, 59900)
 # One day of 普通会员 so an experience-version payment can run the grant path.
 TEST = PayProduct("membership_test", "支付测试", "regular", 1, 0, 1, test_only=True)
 
-DIAMOND = PayProduct("membership_diamond", "钻石会员", "vip", 5, 1, 100)
+DIAMOND = PayProduct("membership_diamond", "体验会员", "vip", 5, 1, 100)
 
 LIVE_TEST = PayProduct("membership_test_live", "现网支付测试", "regular", 1, 1, 100, test_only=True)
 
