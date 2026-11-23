@@ -5,6 +5,8 @@ config.mode = 'live'
 config.apiBase = '/test-api'
 config.calibrating = false
 config.trialMode = true
+config.virtualPayment = false
+config.diamondPayment = false
 
 var requests = []
 var storage = {}

@@ -6,6 +6,9 @@ var config = require('../miniprogram/config')
 config.mode = 'live'
 config.trialMode = false
 config.calibrating = false
+// Release defaults turn these on; this script enables each path where it tests it.
+config.virtualPayment = false
+config.diamondPayment = false
 config.apiBase = '/test-api'
 
 var pending = []
