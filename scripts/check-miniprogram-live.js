@@ -277,11 +277,10 @@ async function main() {
   assert(!sheet.data.summaryPlans.some(p => p.purchasable || p.price))
   assert(sheet.data.summaryPlans[1].pendingPrice)
   assert(reportWxml.includes('summary-mosaic') && reportWxml.includes('summary-padlock'))
-  assert(reportWxml.includes('bindtap="singleSummary"'))
-  var priorCalls = calls.length
-  sheet.singleSummary()
-  assert.strictEqual(toasts[toasts.length - 1].title, '单次解锁待定价')
-  assert.strictEqual(calls.length, priorCalls)
+  // 单次解锁还没定价：不画按钮，只留「联系客服」。
+  assert(!reportWxml.includes('单次解锁待定价') && !reportWxml.includes('singleSummary'))
+  assert(reportWxml.includes('session-from="report-summary">联系客服'))
+  assert(reportWxml.includes('class="btn card-wide" data-id="{{item.id}}" bindtap="buySummary">选择此方案'))
   sheet.onHide()
   assert(sheet.refreshSummary)
   assert(!sheet.data.showOpen && !sheet.data.showLocked && !sheet.data.showDownload)

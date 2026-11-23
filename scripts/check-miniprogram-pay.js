@@ -290,7 +290,7 @@ async function checkDiamond() {
   config.virtualPayment = false
   config.diamondPayment = true
   resetTransport()
-  var tier = { id: id, title: '钻石会员', membership: 'vip', duration_days: 5,
+  var tier = { id: id, title: '体验会员', membership: 'vip', duration_days: 5,
     amount_fen: 100, amount_yuan: '1.00', product_id: 'approved-diamond' }
   var catalog = { tiers: [tier] }
   var cashier
@@ -314,7 +314,7 @@ async function checkDiamond() {
   var sign = { env: 0, currencyType: 'CNY', goodsPrice: 100, buyQuantity: 1, outTradeNo: number,
     productId: tier.product_id, attach: id }
   var valid = orderBody('待支付', { order_number: number, tier: id, membership: 'vip', duration_days: 5,
-    amount_fen: '100', title: '钻石会员', isTest: false, virtual_payment: {
+    amount_fen: '100', title: '体验会员', isTest: false, virtual_payment: {
       mode: 'short_series_goods', signData: JSON.stringify(sign), paySig: 'fixture', signature: 'fixture' } })
 
   for (var invalid of [{membership:'regular'},{duration_days:1},{amount_fen:59900},{id:'membership_test_live'},{product_id:''}]) {
@@ -336,7 +336,7 @@ async function checkDiamond() {
   page.pay()
   assert.strictEqual(pending.length,1)
   respond(200,catalog); await drain()
-  assert.strictEqual(page.data.card,'钻石会员')
+  assert.strictEqual(page.data.card,'体验会员')
   assert.strictEqual(page.data.priceText,'¥1.00')
   assert(page.data.blurb.includes('VIP') && page.data.blurb.includes('5 天'))
   assert.strictEqual(pending.length,0)
@@ -366,7 +366,7 @@ async function checkDiamond() {
   contextualURL(pending[0]); respond(200, context)
   var offers = summary.options(eligible, await reading)
   assert.deepStrictEqual(offers.filter(p => p.purchasable).map(p => p.id), [id])
-  assert.strictEqual(offers.find(p => p.id === id).price, '¥1.00/5天')
+  assert.strictEqual(offers.find(p => p.id === id).price, '¥1/5 天')
   assert.strictEqual(offers.find(p => p.pendingPrice).price, '')
   for (var delta of [{purchasable:false}, {product_id:''}, {unlock_product:'membership_regular'}, {amount_fen:1}]) {
     assert(!summary.options(eligible, [Object.assign({},contextRow,delta)]).some(p => p.id === id))

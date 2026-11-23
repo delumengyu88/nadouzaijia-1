@@ -604,3 +604,21 @@ button::after {
 /* Disabled (loading) buttons keep their own colours instead of WeChat's grey default. */
 button.btn[disabled] { background:#1D4E9E !important; color:#fff !important; opacity:.6; }
 button.btn.ghost[disabled], button.btn.plain[disabled] { background:#fff !important; color:#1D4E9E !important; opacity:.6; }
+
+/* 原生 button 在 style v2 下默认 184px 宽。主按钮统一通栏，与委托取证「提交申请」
+   （pages/evidence button.btn.evidence-submit）同一盒模型。
+   page-wide：页面级按钮，左右各留 32rpx；card-wide：卡片内按钮，占满卡片内容宽度。 */
+button.btn.page-wide {
+  box-sizing: border-box;
+  width: calc(100% - 64rpx);
+  max-width: none;
+  margin: 24rpx 32rpx 0;
+  padding: 0;
+}
+button.btn.card-wide {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin: 16rpx 0 0;
+  padding: 0;
+}
