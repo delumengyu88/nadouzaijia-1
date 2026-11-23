@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from nadou.config import Settings, get_settings
 from nadou.payments import xpay, xpay_push
-from nadou.payments.catalog import LIVE_TEST
+from nadou.payments.catalog import DIAMOND, LIVE_TEST
 from nadou.payments.crypto import load_private_key, load_public_key
 
 logger = logging.getLogger("nadou.payments")
@@ -107,10 +107,29 @@ def live_test_product_id(user_id: str) -> str | None:
         xpay_push.configured_key()
     except HTTPException:
         return None
-    products = settings.xpay_products
-    product_id = products.get(LIVE_TEST.code)
+    return _unique_product_id(LIVE_TEST.code)
+
+
+def diamond_product_id() -> str | None:
+    settings = get_settings()
+    if (
+        settings.xpay_env != 0
+        or not settings.wx_appid
+        or not settings.wx_appsecret.get_secret_value()
+    ):
+        return None
+    try:
+        xpay.configured()
+    except HTTPException:
+        return None
+    return _unique_product_id(DIAMOND.code)
+
+
+def _unique_product_id(sku: str) -> str | None:
+    products = get_settings().xpay_products
+    product_id = products.get(sku)
     if not product_id or product_id != product_id.strip() or len(product_id) > 128:
         return None
-    if any(code != LIVE_TEST.code and value == product_id for code, value in products.items()):
+    if any(code != sku and value == product_id for code, value in products.items()):
         return None
     return product_id

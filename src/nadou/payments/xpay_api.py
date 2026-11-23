@@ -15,8 +15,8 @@ from nadou.auth import WeChatLogin
 from nadou.config import get_settings
 from nadou.models import Order, User, VirtualOrder
 from nadou.payments import xpay, xpay_push
-from nadou.payments.catalog import LIVE_TEST, product_by_code, product_for_sale
-from nadou.payments.config import live_test_product_id, user_may_use_test_tier
+from nadou.payments.catalog import DIAMOND, LIVE_TEST, product_by_code, product_for_sale
+from nadou.payments.config import diamond_product_id, live_test_product_id, user_may_use_test_tier
 from nadou.payments.service import _view
 from nadou.user_orders import UserOrders
 
@@ -154,9 +154,14 @@ def register_virtual_orders(app: FastAPI, get_session, payer, clock, notifier, w
         session: Session = Depends(get_session, scope="function"),
     ):
         gateway = xpay.configured()
-        xpay_push.configured_key()
+        # The formal diamond order can confirm and acknowledge delivery through trusted polling.
+        if payload.tier != DIAMOND.code:
+            xpay_push.configured_key()
         test_allowed = user_may_use_test_tier(user.id)
-        if payload.tier == LIVE_TEST.code:
+        if payload.tier == DIAMOND.code:
+            product = DIAMOND
+            product_id = diamond_product_id()
+        elif payload.tier == LIVE_TEST.code:
             product = LIVE_TEST
             product_id = live_test_product_id(user.id)
             if not product_id:

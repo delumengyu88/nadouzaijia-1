@@ -15,6 +15,7 @@ from nadou.admin.orders import EntitlementIssuer, OrderGrantWriter, OrderLookup
 from nadou.config import get_settings
 from nadou.models import Order, User
 from nadou.payments.catalog import (
+    DIAMOND,
     LIVE_TEST,
     PayProduct,
     product_by_code,
@@ -23,6 +24,7 @@ from nadou.payments.catalog import (
 )
 from nadou.payments.config import (
     WeChatPaySettings,
+    diamond_product_id,
     live_test_product_id,
     load_pay_settings,
     user_may_use_test_tier,
@@ -58,6 +60,8 @@ class PaymentService:
 
     def list_tiers(self, user: User, *, virtual: bool = False) -> dict:
         tiers = [product.public() for product in products_for(user_may_use_test_tier(user.id))]
+        if virtual and (product_id := diamond_product_id()):
+            tiers.append({**DIAMOND.public(), "product_id": product_id})
         if virtual and (product_id := live_test_product_id(user.id)):
             tiers.append({**LIVE_TEST.public(), "product_id": product_id})
         return {"tiers": tiers}
