@@ -11,6 +11,7 @@ var nextError = false
 var querySeq = 0
 var withGenerated = false
 var pendingVerification = false
+var summaryReply = null
 var store = {}
 global.wx = {
   getStorageSync: function (k) { return store[k] }, setStorageSync: function (k, v) { store[k] = v },
@@ -31,6 +32,7 @@ global.wx = {
     }
     calls.push(opt)
     if (nextError) { nextError = false; opt.fail(); return }
+    if (summaryReply) { opt.success({ statusCode: 200, data: summaryReply }); return }
     if (pendingVerification) {
       opt.success({ statusCode: 200, data: { program_name: opt.data.name, outcome: 'unverified',
         platform_groups: [], locked_records: [], unverified_source_count: 1 } })
@@ -261,6 +263,45 @@ async function main() {
   api.advanceQuery(listed.id); await drain()
   assert.strictEqual(api.getQuery(listed.id).items[0].evidencePlatform, '真实测试平台')
   withGenerated = false
+  summaryReply = { program_name: '摘要节目', outcome: 'hit', platform_count: 1,
+    summary_only_count: 1, summary_hidden_count: 1, platform_groups: [], locked_records: [], evidence_platforms: [] }
+  var summaryJob = await api.createQuery(['摘要节目'])
+  api.advanceQuery(summaryJob.id); await drain()
+  assert.strictEqual(api.getQuery(summaryJob.id).items[0].line, '命中 1 条 · 涉及 1 个平台')
+  sheet.query = { name: '摘要节目' }
+  sheet.load(); await drain()
+  assert.strictEqual(sheet.data.header, '命中 1 条 · 涉及 1 个平台')
+  assert(sheet.data.note.includes('1 条仅显示命中数量'))
+  assert(!sheet.data.showOpen && !sheet.data.showLocked && !sheet.data.showDownload)
+
+  var declaredSummary = { record_id: 'summary1', summary_only: true, access: 'summary', platform: '测试平台',
+    network_type: 'IPTV', frame_count: 3, checked_on: '2026-08-01', checked_at: '2026-08-01T01:00:00Z',
+    timestamps: ['00:02:14'], thumbnail_url: 'https://img.invalid/restricted', hd_url: 'https://img.invalid/restricted',
+    can_download_report: true, can_download_screenshot: true }
+  summaryReply.summary_hidden_count = 0
+  summaryReply.platform_groups = [{ records: [declaredSummary] }]
+  var safe = (await api.searchProgram('摘要节目')).records[0]
+  assert.deepStrictEqual(safe, { record_id: 'summary1', access: 'summary', locked: false, summary_only: true,
+    platform: '测试平台', network_type: 'IPTV', frame_count: 3, checked_on: '2026-08-01',
+    can_download_report: false, can_download_screenshot: false })
+  sheet.load(); await drain()
+  var summaryRow = sheet.data.groups[0].rows[0]
+  assert(sheet.data.showOpen && !sheet.data.showLocked && !sheet.data.showDownload && sheet.data.summaryOnlyReport)
+  assert.strictEqual(summaryRow.date, '2026-08-01')
+  assert.strictEqual(summaryRow.network, 'IPTV')
+  assert.strictEqual(summaryRow.frames, '命中 3 帧')
+  assert.deepStrictEqual(sheet.data.evidencePlatforms, [])
+  var summaryRequests = calls.length
+  sheet.openShot({ currentTarget: { dataset: { id: 'summary1' } } })
+  sheet.download()
+  assert.strictEqual(calls.length, summaryRequests)
+  shot = viewer(); shot.onLoad({ name: '摘要节目', id: 'summary1' }); await drain()
+  assert(shot.data.missing && !shot.data.canSave && !shot.data.image && !shot.data.downloadEntry)
+  summaryReply.platform_groups[0].records.push({ record_id: 'normal', access: 'full', can_download_report: true })
+  sheet.load(); await drain()
+  assert.strictEqual(sheet.data.header, '命中 2 条 · 涉及 1 个平台')
+  assert(sheet.data.showDownload && !sheet.data.summaryOnlyReport)
+  summaryReply = null
   pendingVerification = true
   var pendingJob = await api.createQuery(['待核验测试'])
   api.advanceQuery(pendingJob.id); await drain()

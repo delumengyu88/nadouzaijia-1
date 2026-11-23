@@ -182,6 +182,8 @@ Page(require('../../api/splash').page({
   },
   openShot: function (e) {
     var id = e.currentTarget.dataset.id
+    var groups = this.data.groups || []
+    if (!groups.some(function (group) { return group.rows.some(function (row) { return row.id === id && !row.summaryOnly }) })) return
     var example = this.data.example ? '1' : '0'
     wx.navigateTo({ url: '/pages/viewer/index?id=' + id + '&name=' + encodeURIComponent(this.data.name) + '&example=' + example })
   },
@@ -210,7 +212,7 @@ Page(require('../../api/splash').page({
   },
   download: function () {
     var revision = state.sessionRevision()
-    if (this.data.phase === 'unverified' || this.data.example || this.data.downloadLoading || (this.revision !== undefined && this.revision !== revision)) return
+    if (this.data.summaryOnlyReport || this.data.phase === 'unverified' || this.data.example || this.data.downloadLoading || (this.revision !== undefined && this.revision !== revision)) return
     this.partsFolder = ''
     this.setData({ downloadLoading: true, reportParts: [] })
     var book = api.exportBook(this.data.name, (this.query && this.query.id) || '')

@@ -185,8 +185,8 @@ function describe(item) {
   var platforms = (body.evidence_platforms || []).slice()
   var row = { name: item.name, hit: hit, missed: !hit, failed: false,
     badge: hit ? '已命中' : '未命中', badgeCls: hit ? 'ok' : 'muted',
-    line: !hit ? '当前索引未收录该节目名。' : body.outcome === 'recent_only' ? '有最新记录，可委托取证' :
-      '命中 ' + body.records.length + ' 条 · 涉及 ' + body.platform_count + ' 个平台' }
+    line: !hit ? '当前索引未收录该节目名。' : require('./shape').summaryHitLine(body) ||
+      (body.outcome === 'recent_only' ? '有最新记录，可委托取证' : '命中 ' + body.records.length + ' 条 · 涉及 ' + body.platform_count + ' 个平台') }
   if (body.evidence_program_name) row.evidenceName = body.evidence_program_name
   var platform = platforms.filter(function (p, i) { return platforms.indexOf(p) === i }).join('、')
   if (platform) row.evidencePlatform = platform
