@@ -80,6 +80,9 @@ assert.deepStrictEqual(p.data.items.map(function (i) { return i.name }), ['长�
 })
 assert.deepStrictEqual(importedNames([['名称', '上传节目名', '节目名称'], ['甲', '乙', '丙']]), ['丙'])
 assert.deepStrictEqual(importedNames([['剧名', '上传节目名'], ['甲', '乙']]), ['乙'])
+// 标题行里的「名称」不能抢走下面真正的「节目名称」表头。
+assert.deepStrictEqual(importedNames([['名称', '2026 片单'], ['序号', '节目名称', '版权方'], [1, '星河旧梦', '云豆传媒']]), ['星河旧梦'])
+assert.deepStrictEqual(importedNames([['片单'], ['序号', '片名'], [1, '星河旧梦']]), ['星河旧梦'])
 
 var COL = '没找到节目名那一列，请把节目名所在列的表头改成『节目名称』，或改用粘贴。'
 var READ = '文件读取失败，请重新选择文件'

@@ -246,8 +246,9 @@ class SheetReader {
   static clean(value) {
     return String(value == null ? '' : value).replace(/[\s\u3000\ufeff]+/g, ' ').trim()
   }
+  // 前 10 行里优先取排位靠前的表头（「节目名称」胜过「名称」），同级取靠上的一行。
   static header(rows) {
-    var first = null
+    var best = null
     for (var h = 0; h < Math.min(rows.length, 10); h++) {
       var labels = (rows[h] || []).map(function (cell) {
         return SheetReader.clean(cell).normalize('NFKC').replace(/\s/g, '')
@@ -256,15 +257,14 @@ class SheetReader {
       var hitExport = uploaded >= 0 && labels.includes('匹配节目名') && labels.includes('命中画面截图')
       var owner = labels.indexOf('版权方')
       if (hitExport) return { row: h, name: uploaded, owner: owner, hitExport: true }
-      if (first) continue
-      for (var alias of NAME_HEADERS) {
-        var column = labels.indexOf(alias)
+      for (var rank = 0; rank < NAME_HEADERS.length && (!best || rank < best.rank); rank++) {
+        var column = labels.indexOf(NAME_HEADERS[rank])
         if (column < 0) continue
-        first = { row: h, name: column, owner: owner, hitExport: false }
+        best = { row: h, name: column, owner: owner, hitExport: false, rank: rank }
         break
       }
     }
-    return first
+    return best
   }
   // 返回 { ok: true, items: [{ name, owner }] } 或 { ok: false, code }。
   static titles(rows) {
