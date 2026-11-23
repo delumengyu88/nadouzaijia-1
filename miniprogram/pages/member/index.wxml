@@ -31,9 +31,9 @@
 </view>
 </block>
 <view class="info-card" wx:if="{{showDiamondOffer}}">
-  <view class="info-name">钻石会员</view>
+  <view class="info-name">体验会员</view>
   <view class="info-line">¥1.00 / 5 天 · 与 VIP 会员享有相同权益</view>
-  <button class="btn" bindtap="openDiamond">开通钻石会员 ¥1.00</button>
+  <button class="btn" bindtap="openDiamond">开通体验会员 ¥1.00</button>
 </view>
 <view class="info-card" wx:if="{{showTestOffer}}">
   <view class="info-name">支付测试 ¥1.00</view>

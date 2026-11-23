@@ -468,7 +468,7 @@ module.exports = {
       if (!result.ok) return { ok: false, code: result.code, message: result.message }
       var order = result.order
       if (order.product === testOffer.id) return testOffer.unavailable()
-      if (order.product === diamond.id) return diamond.unavailable()
+      if (diamond.isOrderProduct(order.product)) return diamond.unavailable()
       if (order.code === 'granted' || order.code === 'granting' || order.code === 'grant_error') {
         return { ok: false, code: order.code, message: '请勿重复支付', order: order }
       }
@@ -503,7 +503,7 @@ module.exports = {
       if (!result.ok) return { ok: false, code: result.code, message: result.message, order: result.code === 'unconfigured' ? null : PayClient.failedView(orderNo, result) }
       var order = result.order
       if (order.product === testOffer.id) return testOffer.unavailable()
-      if (order.product === diamond.id) return diamond.unavailable()
+      if (diamond.isOrderProduct(order.product)) return diamond.unavailable()
       if (order.code !== 'pending') return { ok: false, code: order.code, message: '订单已支付，不能再次支付', order: order }
       if (!pay) return { ok: false, code: 'no_params', message: '请重新下单', order: order }
       var paying = Object.assign({}, order, { status: 'paying', code: 'paying', showPay: false, allowRepay: false })

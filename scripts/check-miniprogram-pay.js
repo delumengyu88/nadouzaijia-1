@@ -287,8 +287,8 @@ async function checkDiamond() {
   config.virtualPayment = false
   config.diamondPayment = true
   resetTransport()
-  var tier = { id: id, title: '钻石会员', membership: 'vip', duration_days: 5,
-    amount_fen: 100, amount_yuan: '1.00', product_id: 'approved-diamond' }
+  var tier = { id: id, title: '体验会员', membership: 'vip', duration_days: 5,
+    amount_fen: 100, amount_yuan: '1.00', product_id: 'membership_trial' }
   var catalog = { tiers: [tier] }
   var cashier
   wx.requestVirtualPayment = function (input) { cashier = input }
@@ -304,17 +304,17 @@ async function checkDiamond() {
   var link = ''
   wx.navigateTo = function (opt) { link = opt.url }
   center.openDiamond()
-  assert.strictEqual(link,'/pages/pay/index?product=membership_diamond')
+  assert.strictEqual(link,'/pages/pay/index?product=membership_trial')
   assert.strictEqual(pending.length,0)
   center.onHide(); assert(!center.data.showDiamondOffer)
   var number = 'XV-diamond-local'
   var sign = { env: 0, currencyType: 'CNY', goodsPrice: 100, buyQuantity: 1, outTradeNo: number,
     productId: tier.product_id, attach: id }
   var valid = orderBody('待支付', { order_number: number, tier: id, membership: 'vip', duration_days: 5,
-    amount_fen: '100', title: '钻石会员', isTest: false, virtual_payment: {
+    amount_fen: '100', title: '体验会员', isTest: false, virtual_payment: {
       mode: 'short_series_goods', signData: JSON.stringify(sign), paySig: 'fixture', signature: 'fixture' } })
 
-  for (var invalid of [{membership:'regular'},{duration_days:1},{amount_fen:59900},{id:'membership_test_live'},{product_id:''}]) {
+  for (var invalid of [{membership:'regular'},{duration_days:1},{amount_fen:59900},{id:'membership_test_live'},{product_id:''},{product_id:'membership_diamond'}]) {
     var action = diamond.discover()
     respond(200, {tiers:[Object.assign({}, tier, invalid)]})
     assert.strictEqual(await action,null)
@@ -333,7 +333,7 @@ async function checkDiamond() {
   page.pay()
   assert.strictEqual(pending.length,1)
   respond(200,catalog); await drain()
-  assert.strictEqual(page.data.card,'钻石会员')
+  assert.strictEqual(page.data.card,'体验会员')
   assert.strictEqual(page.data.priceText,'¥1.00')
   assert(page.data.blurb.includes('VIP') && page.data.blurb.includes('5 天'))
   assert.strictEqual(pending.length,0)
@@ -359,6 +359,11 @@ async function checkDiamond() {
   respond(200,Object.assign({},valid,{status:'已发放',granted:true})); await drain()
   assert.strictEqual(history.data.phase,'granted')
   assert.strictEqual(cashier,savedPayment)
+  var legacy = createPage()
+  legacy.onLoad({id:number})
+  respond(200,Object.assign({},valid,{tier:'membership_diamond',title:'钻石会员'})); await drain()
+  assert.strictEqual(legacy.data.phase,'diamondOrder')
+  assert.strictEqual(legacy.data.showPay,false)
   var ordinary = createPage()
   ordinary.onLoad({product:'membership_vip'}); ordinary.pay()
   assert.strictEqual(ordinary.data.phase,'trial')

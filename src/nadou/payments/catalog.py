@@ -1,6 +1,6 @@
 """Server-side membership prices. Callers never supply the amount."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,10 @@ VIP = PayProduct("membership_vip", "VIP", "vip", 30, 599, 59900)
 # One day of 普通会员 so an experience-version payment can run the grant path.
 TEST = PayProduct("membership_test", "支付测试", "regular", 1, 0, 1, test_only=True)
 
-DIAMOND = PayProduct("membership_diamond", "钻石会员", "vip", 5, 1, 100)
+TRIAL = PayProduct("membership_trial", "体验会员", "vip", 5, 1, 100)
+
+# Historical orders retain the SKU originally signed by WeChat.
+_LEGACY_DIAMOND = replace(TRIAL, code="membership_diamond", title="钻石会员")
 
 LIVE_TEST = PayProduct("membership_test_live", "现网支付测试", "regular", 1, 1, 100, test_only=True)
 
@@ -62,8 +65,10 @@ def product_for_sale(code: str, *, test_enabled: bool) -> PayProduct | None:
 def product_by_code(code: str | None) -> PayProduct | None:
     if code is None:
         return None
-    if code == DIAMOND.code:
-        return DIAMOND
+    if code == _LEGACY_DIAMOND.code:
+        return _LEGACY_DIAMOND
+    if code == TRIAL.code:
+        return TRIAL
     return LIVE_TEST if code == LIVE_TEST.code else _BY_CODE.get(code)
 
 

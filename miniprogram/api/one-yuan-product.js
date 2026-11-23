@@ -16,6 +16,7 @@ function oneYuanProduct(spec) {
       var row = rows[0]
       if (row.membership !== spec.membership || !oneYuan(row.amount_fen) || row.amount_yuan !== '1.00' ||
           row.duration_days !== spec.days || typeof row.product_id !== 'string' || !row.product_id.trim()) return null
+      if (spec.productId && row.product_id !== spec.productId) return null
       return row.product_id
     }, function () { return null })
   }

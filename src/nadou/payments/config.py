@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from nadou.config import Settings, get_settings
 from nadou.payments import xpay, xpay_push
-from nadou.payments.catalog import DIAMOND, LIVE_TEST
+from nadou.payments.catalog import LIVE_TEST, TRIAL
 from nadou.payments.crypto import load_private_key, load_public_key
 
 logger = logging.getLogger("nadou.payments")
@@ -110,7 +110,7 @@ def live_test_product_id(user_id: str) -> str | None:
     return _unique_product_id(LIVE_TEST.code)
 
 
-def diamond_product_id() -> str | None:
+def trial_product_id() -> str | None:
     settings = get_settings()
     if (
         not settings.diamond_refund_route_verified
@@ -124,7 +124,8 @@ def diamond_product_id() -> str | None:
         xpay_push.configured_key()
     except HTTPException:
         return None
-    return _unique_product_id(DIAMOND.code)
+    product_id = _unique_product_id(TRIAL.code)
+    return product_id if product_id == TRIAL.code else None
 
 
 def _unique_product_id(sku: str) -> str | None:

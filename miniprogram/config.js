@@ -7,7 +7,7 @@ const base = {
   mode: 'live',
   trialMode: true,
   liveOneYuanTest: false, // 白名单现网一元测试构建单独开启。
-  diamondPayment: false, // 仅开启服务端已上架的正式钻石会员。
+  diamondPayment: false, // 仅开启服务端已上架的正式体验会员。
   virtualPayment: false, // 虚拟支付启用后走独立下单与查单接口。
   calibrating: true, // 数据校准期间仍提交查询，隐藏结果并停用支付和报告。
   apiBase: PRODUCTION_API_BASE
