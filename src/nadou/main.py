@@ -56,9 +56,13 @@ def create_app(
         urls = urls or FakeSignedUrlProvider()
         frames = frames or SignedDerivedFrameSource(urls, GeneratedFrameReader())
     else:
-        # The deployed app has no authorized asset reader or public image signer.
+        # No public image signer. Frames come only from the private W2 COS export when
+        # NADOU_FRAMES_COS_* is configured; otherwise none are served.
         urls = None
-        frames = None
+        if frames is None:
+            from nadou.cos_frames import CosFrameSource
+
+            frames = CosFrameSource.from_settings(get_settings(), database)
     clock = now or (lambda: datetime.now(_BEIJING))
     alerts = notifier if notifier is not None else NotifierFactory.from_settings(get_settings())
     app = FastAPI(title="那豆在架")

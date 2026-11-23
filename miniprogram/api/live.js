@@ -35,7 +35,8 @@ function queryRequest(path, data, method, binary) {
       wx.request({
         url: url,
         method: method || 'GET',
-        timeout: 15000,
+        // Reports embed up to a few hundred screenshots (several MB): allow 60 s to download.
+        timeout: binary ? 60000 : 15000,
         data: data || {},
         responseType: binary ? 'arraybuffer' : 'text',
         dataType: binary ? 'text' : 'json',

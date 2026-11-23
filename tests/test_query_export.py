@@ -299,19 +299,19 @@ def solid_png(color: tuple[int, int, int], size=(800, 450)) -> bytes:
 
 
 def assert_watermark(jpeg: bytes):
+    """A small mark in the bottom-right corner: lighter text pixels inside its box."""
     image = Image.open(BytesIO(jpeg))
     assert image.format == "JPEG"
     assert image.width == FrameImage.WIDTH
     assert len(jpeg) <= FrameImage.TARGET_BYTES
-    corner = image.crop((image.width - 240, image.height - 120, image.width - 4, image.height - 4))
-    pixels = corner.load()
-    white = 0
-    for y in range(corner.height):
-        for x in range(corner.width):
-            red, green, blue = pixels[x, y][:3]
-            if red > 230 and green > 230 and blue > 230:
-                white += 1
-    assert white > 20
+    x0, y0, x1, y1 = FrameImage.mark_box(image.width, image.height)
+    assert x1 - x0 <= image.width * 0.25 and y1 - y0 <= image.height * 0.12
+    assert x1 > image.width * 0.95 and y1 > image.height * 0.9
+    gray = image.convert("L")
+    inside = gray.crop((x0, y0, x1, y1))
+    # The text is lighter than the darkened backing around it.
+    low, high = inside.getextrema()
+    assert high - low > 40
 
 
 def test_rejects_callers_who_cannot_export(session, clock, client):
@@ -1165,3 +1165,23 @@ def test_stop_words_cannot_be_exported_as_hits(session, clock):
     _, rows, _ = hit_table(workbook["命中结果"])
     assert {row[4] for row in rows} == set(titles[2:])
     workbook.close()
+
+
+def test_watermark_is_small_semi_transparent_and_stays_in_its_corner():
+    for color in ((128, 128, 128), (250, 250, 250), (10, 10, 10)):
+        image = Image.new("RGB", (600, 338), color)
+        before = image.copy()
+        FrameImage._watermark(image)
+        from PIL import ImageChops
+
+        changed = ImageChops.difference(image, before).getbbox()
+        x0, y0, x1, y1 = FrameImage.mark_box(600, 338)
+        assert changed is not None
+        assert changed[0] >= x0 and changed[1] >= y0
+        assert changed[2] <= x1 + 2 and changed[3] <= y1 + 2
+        # Font height about 3.5 % of the width; the whole mark well under a quarter of it.
+        assert 16 <= FrameImage._mark_size(600) <= 24
+        assert (x1 - x0) < 600 * 0.22 and (y1 - y0) < 338 * 0.12
+        # Semi-transparent: no pixel is pure white or fully covered by the backing.
+        top = max(px for px in image.crop((x0, y0, x1, y1)).convert("L").getdata())
+        assert top < 250 or color[0] >= 250

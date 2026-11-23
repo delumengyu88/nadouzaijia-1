@@ -143,23 +143,52 @@ class FrameImage:
         height = max(1, round(image.height * FrameImage.WIDTH / image.width))
         return image.resize((FrameImage.WIDTH, height), Image.Resampling.LANCZOS)
 
+    # Small, semi-transparent corner mark: a deterrent that does not hide the picture.
+    MARK_HEIGHT = 0.035  # font size as a share of image width
+    MARK_MARGIN = 0.015  # gap to the right and bottom edges, as a share of width
+    MARK_TEXT_ALPHA = 145  # about 57 %
+    MARK_SHADOW_ALPHA = 90
+    MARK_BACKING_ALPHA = 56  # light translucent backing, about 22 %
+
+    @staticmethod
+    def mark_box(width: int, height: int) -> tuple[int, int, int, int]:
+        """Where the mark (with its backing) sits for an image of this size."""
+        font = WatermarkFont.load(FrameImage._mark_size(width))
+        probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        left, top, right, bottom = probe.textbbox((0, 0), FrameImage.MARK, font=font)
+        pad = max(2, round(width * 0.006))
+        margin = max(4, round(width * FrameImage.MARK_MARGIN))
+        x1 = width - margin
+        y1 = height - margin
+        x0 = x1 - (right - left) - 2 * pad
+        y0 = y1 - (bottom - top) - 2 * pad
+        return x0, y0, x1, y1
+
+    @staticmethod
+    def _mark_size(width: int) -> int:
+        return max(12, round(width * FrameImage.MARK_HEIGHT))
+
     @staticmethod
     def _watermark(image: Image.Image) -> None:
-        font = WatermarkFont.load(max(64, image.width // 8))
+        font = WatermarkFont.load(FrameImage._mark_size(image.width))
         overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
-        bbox = draw.textbbox((0, 0), FrameImage.MARK, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        x = image.width - text_width - 28
-        y = image.height - text_height - 28
-        pad = 10
+        left, top, _right, _bottom = draw.textbbox((0, 0), FrameImage.MARK, font=font)
+        x0, y0, x1, y1 = FrameImage.mark_box(image.width, image.height)
+        pad = max(2, round(image.width * 0.006))
         draw.rounded_rectangle(
-            (x - pad, y - pad, x + text_width + pad, y + text_height + pad),
-            radius=8,
-            fill=(0, 0, 0, 150),
+            (x0, y0, x1, y1),
+            radius=max(2, pad),
+            fill=(0, 0, 0, FrameImage.MARK_BACKING_ALPHA),
         )
-        draw.text((x, y), FrameImage.MARK, font=font, fill=(255, 255, 255, 255))
+        x = x0 + pad - left
+        y = y0 + pad - top
+        draw.text(
+            (x + 1, y + 1), FrameImage.MARK, font=font, fill=(0, 0, 0, FrameImage.MARK_SHADOW_ALPHA)
+        )
+        draw.text(
+            (x, y), FrameImage.MARK, font=font, fill=(255, 255, 255, FrameImage.MARK_TEXT_ALPHA)
+        )
         merged = Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
         image.paste(merged)
 

@@ -3,8 +3,10 @@
 var config = require('../config')
 var state = require('../api/state')
 
-var PARALLEL = 3
-var LIMIT = 30
+// Rows load top to bottom. A band can hold well over 100 records (about 30 KB per frame),
+// so the cap covers a full result page instead of only the first screens.
+var PARALLEL = 4
+var LIMIT = 200
 
 function folder() {
   return wx.env.USER_DATA_PATH + '/nadou-frames'
