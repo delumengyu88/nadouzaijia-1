@@ -329,7 +329,7 @@ class Order(Base):
         CheckConstraint(
             "product IS NULL OR product IN "
             "('membership_regular', 'membership_vip', 'membership_test', 'membership_dev', "
-            "'membership_test_live')",
+            "'membership_test_live', 'membership_diamond')",
             name="ck_orders_product",
         ),
         UniqueConstraint("wechat_transaction_id", name="uq_orders_wechat_transaction_id"),

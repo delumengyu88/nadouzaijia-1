@@ -15,6 +15,11 @@
     <view class="result-primary" bindtap="back">返回</view>
   </view>
 </view>
+<view class="body" wx:if="{{phase == 'diamondOrder'}}">
+  <view class="card"><view class="row-title">{{card}} · {{centerTitle}}</view><view class="ex-line">{{priceText}} · 订单号 {{orderNo}}</view>
+    <button class="btn" loading="{{payLoading}}" disabled="{{payLoading}}" bindtap="refreshDiamondOrder">刷新订单状态</button>
+  </view>
+</view>
 <view class="body" wx:if="{{phase == 'pending'}}">
   <view class="card">
     <view class="choice-top">
@@ -30,7 +35,7 @@
   <button class="btn block" loading="{{payLoading}}" disabled="{{payLoading}}" bindtap="pay">{{payText}}</button>
   <view class="hint">支付即表示同意《会员服务协议》</view>
 </view>
-<view class="body" wx:elif="{{phase == 'loadingTestOffer'}}"><view class="note">正在核对测试商品…</view></view>
+<view class="body" wx:elif="{{phase == 'loadingTestOffer'}}"><view class="note">正在核对商品…</view></view>
 <view class="body" wx:elif="{{phase == 'paying'}}">
   <view class="center-box">
     <view class="center-title">正在拉起微信支付</view>

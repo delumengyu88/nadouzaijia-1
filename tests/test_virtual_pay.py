@@ -129,7 +129,11 @@ def buy(client, tier="membership_vip"):
 
 @pytest.mark.parametrize(
     ("tier", "price", "days"),
-    [("membership_vip", 59900, 30), ("membership_test_live", 100, 1)],
+    [
+        ("membership_vip", 59900, 30),
+        ("membership_test_live", 100, 1),
+        ("membership_diamond", 100, 5),
+    ],
 )
 def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
     virtual_setup, session, monkeypatch, tier, price, days
@@ -140,6 +144,8 @@ def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
     client = virtual_setup
     if tier == "membership_test_live":
         authorize_live_test(monkeypatch)
+    elif tier == "membership_diamond":
+        configure_diamond(monkeypatch)
     number = buy(client, tier)
     remote = payment(number, price=price)
     refund_id = "refund-" + number
@@ -178,6 +184,12 @@ def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
     }
     assert signed_event(client, {**delivered, "Env": 1}, monkeypatch).status_code == 409
     assert session.query(Entitlement).count() == 0
+    if tier == "membership_diamond":
+        from nadou.models import VirtualOrder
+
+        monkeypatch.setattr(xpay, "provider_call", lambda *_: {})
+        assert client.post("/api/v1/xpay/orders/" + number + "/sync").json()["status"] == "已发放"
+        assert session.query(VirtualOrder).one().delivery_confirmed
     for _ in range(2):
         response = signed_event(client, delivered, monkeypatch)
         assert response.status_code == 200 and response.text == "success"
@@ -187,10 +199,9 @@ def test_encrypted_delivery_and_confirmed_full_refund_are_idempotent(
 
     original = session.query(Entitlement).one()
     original_expiry = original.expires_at
-    if tier == "membership_test_live":
-        from nadou.admin.members import EntitlementBook
+    from nadou.admin.members import EntitlementBook
 
-        assert not EntitlementBook.revenue_entitlements(session)
+    assert bool(EntitlementBook.revenue_entitlements(session)) == (tier != "membership_test_live")
     renewal_no = buy(client, tier)
     assert (
         signed_event(client, {**delivered, "OutTradeNo": renewal_no}, monkeypatch).text == "success"
@@ -440,3 +451,115 @@ def test_live_one_yuan_discovery_and_authoritative_price(virtual_setup, session,
     assert sign_data["attach"] == tier and sign_data["productId"] == "official-product"
     stored = session.query(Order).one()
     assert stored.amount == 1 and stored.tier == "regular" and stored.amount_fen == 100
+
+
+def configure_diamond(monkeypatch):
+    from pydantic import SecretStr
+
+    cfg = get_settings()
+    monkeypatch.setattr(cfg, "wx_appid", "test-app")
+    monkeypatch.setattr(cfg, "wx_appsecret", SecretStr(secrets.token_hex(16)))
+    monkeypatch.setattr(cfg, "diamond_refund_route_verified", True)
+    monkeypatch.setattr(cfg, "xpay_products", {"membership_diamond": "official-product"})
+    monkeypatch.setattr(cfg, "wechat_pay_test_tier", False)
+    monkeypatch.setattr(cfg, "wechat_pay_test_users", "")
+    return cfg
+
+
+def test_formal_diamond_catalog_and_poll(virtual_setup, session, monkeypatch, clock):
+    import json
+    from datetime import timedelta
+
+    from nadou.models import Entitlement, OrderIssuance
+    from nadou.payments import xpay
+    from nadou.payments.catalog import excluded_from_workbench_stats
+
+    configure_diamond(monkeypatch)
+    tier = "membership_diamond"
+    client = virtual_setup
+    path = "/api/v1/pay/tiers"
+    assert tier not in [item["id"] for item in client.get(path).json()["tiers"]]
+    options = client.get(path, params={"channel": "virtual"}).json()["tiers"]
+    assert [item for item in options if item["id"] == tier] == [
+        {
+            "id": tier,
+            "title": "钻石会员",
+            "membership": "vip",
+            "duration_days": 5,
+            "amount_fen": 100,
+            "amount_yuan": "1.00",
+            "product_id": "official-product",
+        }
+    ]
+    assert client.post("/api/v1/pay/orders", json={"tier": tier}).status_code == 400
+    response = client.post(
+        "/api/v1/xpay/orders",
+        json={
+            "tier": tier,
+            "code": "fresh",
+            "amount_fen": 1,
+            "duration_days": 900,
+        },
+    )
+    assert response.status_code == 200
+    order = response.json()
+    assert order["isTest"] is False and not excluded_from_workbench_stats(tier)
+    sign = json.loads(order["virtual_payment"]["signData"])
+    assert (sign["goodsPrice"], sign["buyQuantity"], sign["env"]) == (100, 1, 0)
+    assert (sign["productId"], sign["attach"]) == ("official-product", tier)
+    number = order["order_number"]
+    saved = session.query(Order).filter_by(order_number=number).one()
+    assert (saved.tier, saved.duration_days, saved.amount, saved.amount_fen) == ("vip", 5, 1, 100)
+    monkeypatch.setattr(xpay, "query_order", lambda *_: payment(number, price=100))
+    acks = []
+    monkeypatch.setattr(xpay, "provider_call", lambda *args: acks.append(args[1]) or {})
+    for _ in range(2):
+        result = client.post("/api/v1/xpay/orders/" + number + "/sync")
+        assert result.status_code == 200 and result.json()["status"] == "已发放"
+    assert acks == ["/xpay/notify_provide_goods"]
+    right = session.query(Entitlement).one()
+    assert right.kind == "vip" and right.expires_at == clock + timedelta(days=5)
+    assert session.query(OrderIssuance).filter_by(order_id=saved.id).count() == 1
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["env", "offer", "key", "login", "map", "duplicate", "push-token", "push-aes", "route"],
+)
+def test_diamond_unavailable_never_creates_order(virtual_setup, session, monkeypatch, missing):
+    from pydantic import SecretStr
+
+    cfg = configure_diamond(monkeypatch)
+    tier = "membership_diamond"
+    if missing == "env":
+        monkeypatch.setattr(cfg, "xpay_env", 1)
+    elif missing == "route":
+        monkeypatch.setattr(cfg, "diamond_refund_route_verified", False)
+    elif missing == "push-token":
+        monkeypatch.setattr(cfg, "xpay_push_token", SecretStr(""))
+    elif missing == "push-aes":
+        monkeypatch.setattr(cfg, "xpay_push_aes", SecretStr("invalid"))
+    elif missing == "offer":
+        monkeypatch.setattr(cfg, "xpay_offer", "")
+    elif missing == "key":
+        monkeypatch.setattr(cfg, "xpay_live_key", SecretStr(""))
+    elif missing == "login":
+        monkeypatch.setattr(cfg, "wx_appsecret", SecretStr(""))
+    else:
+        monkeypatch.setattr(
+            cfg,
+            "xpay_products",
+            {}
+            if missing == "map"
+            else {
+                tier: "duplicate",
+                "membership_test_live": "duplicate",
+            },
+        )
+    client = virtual_setup
+    rows = client.get("/api/v1/pay/tiers", params={"channel": "virtual"}).json()["tiers"]
+    assert tier not in [row["id"] for row in rows]
+    assert (
+        client.post("/api/v1/xpay/orders", json={"tier": tier, "code": "fresh"}).status_code == 503
+    )
+    assert not session.query(Order).count()
