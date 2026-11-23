@@ -113,7 +113,9 @@ class PublicHome:
         date_generated are not part of this census; those filters apply only
         when a date is shown on an example.
         """
-        matching = select(IndexRecord.task_id).where(IndexRecord.hit_type == "consensus")
+        matching = select(IndexRecord.task_id).where(
+            IndexRecord.hit_type == "consensus", IndexRecord.summary_grant.is_(None)
+        )
         if not get_settings().demo_data:
             matching = matching.where(
                 IndexRecord.task_id == Task.task_id,

@@ -45,27 +45,38 @@
   </view>
   <view class="card" wx:if="{{showOpen}}" style="padding-top:8rpx;">
     <block wx:for="{{groups}}" wx:for-item="group" wx:key="platform">
-      <view class="rec" wx:for="{{group.rows}}" wx:for-item="row" wx:key="id" data-id="{{row.id}}" bindtap="openShot">
-        <view class="thumb {{row.plainThumb ? 'thumb-plain' : ''}}">
-          <image wx:if="{{row.image}}" src="{{row.image}}" data-id="{{row.id}}" data-src="{{row.image}}" binderror="imageFailed" mode="aspectFill" style="width:100%;height:100%;" />
-          <block wx:elif="{{row.mock}}"><view class="moon"></view><view class="hill"></view></block>
-          <block wx:if="{{!row.plainThumb}}">
-            <text class="thumb-badge" wx:if="{{row.badge}}">{{row.badge}}</text>
-            <text class="thumb-wm">那豆在架</text>
-            <text class="thumb-time">{{row.time}}</text>
-          </block>
-        </view>
-        <view class="rec-main">
-          <view class="rec-title">{{row.title}}</view>
-          <view class="rec-platform {{row.unknown ? 'unknown' : ''}}">
-            {{row.platform}}
-            <text class="qmark" wx:if="{{row.unknown}}" catchtap="ask">?</text>
+      <block wx:for="{{group.rows}}" wx:for-item="row" wx:key="id">
+        <view wx:if="{{row.summaryOnly}}" class="rec">
+          <view class="rec-main">
+            <view class="rec-title">命中摘要</view>
+            <view wx:if="{{row.platform}}" class="rec-platform">{{row.platform}}</view>
+            <view wx:if="{{row.network}}" class="rec-sub">{{row.network}}</view>
+            <view wx:if="{{row.frames}}" class="rec-sub">{{row.frames}}</view>
+            <view wx:if="{{row.date}}" class="rec-date">排查日期 {{row.date}}</view>
           </view>
-          <view class="rec-sub" wx:if="{{row.sub}}">{{row.sub}}</view>
-          <view class="ex-sub" wx:if="{{row.category}}">{{row.category}}</view>
-          <view class="rec-date" wx:if="{{row.date || row.ageLabel}}"><text wx:if="{{row.date}}">{{row.date}}</text><text class="age-tag" wx:if="{{row.ageLabel}}">{{row.ageLabel}}</text></view>
         </view>
-      </view>
+        <view class="rec" wx:else data-id="{{row.id}}" bindtap="openShot">
+          <view class="thumb {{row.plainThumb ? 'thumb-plain' : ''}}">
+            <image wx:if="{{row.image}}" src="{{row.image}}" data-id="{{row.id}}" data-src="{{row.image}}" binderror="imageFailed" mode="aspectFill" style="width:100%;height:100%;" />
+            <block wx:elif="{{row.mock}}"><view class="moon"></view><view class="hill"></view></block>
+            <block wx:if="{{!row.plainThumb}}">
+              <text class="thumb-badge" wx:if="{{row.badge}}">{{row.badge}}</text>
+              <text class="thumb-wm">那豆在架</text>
+              <text class="thumb-time">{{row.time}}</text>
+            </block>
+          </view>
+          <view class="rec-main">
+            <view class="rec-title">{{row.title}}</view>
+            <view class="rec-platform {{row.unknown ? 'unknown' : ''}}">
+              {{row.platform}}
+              <text class="qmark" wx:if="{{row.unknown}}" catchtap="ask">?</text>
+            </view>
+            <view class="rec-sub" wx:if="{{row.sub}}">{{row.sub}}</view>
+            <view class="ex-sub" wx:if="{{row.category}}">{{row.category}}</view>
+            <view class="rec-date" wx:if="{{row.date || row.ageLabel}}"><text wx:if="{{row.date}}">{{row.date}}</text><text class="age-tag" wx:if="{{row.ageLabel}}">{{row.ageLabel}}</text></view>
+          </view>
+        </view>
+      </block>
     </block>
   </view>
   <view class="lock-box" wx:if="{{showLocked}}">

@@ -18,7 +18,9 @@ class OpenRecordOut(BaseModel):
     record_id: str
     age_bucket: Literal["lt_30", "d30_89", "d90_179", "ge_180"]
     locked: Literal[False]
-    access: Literal["lowres", "full", "screenshot"]
+    access: Literal["lowres", "full", "screenshot", "summary"]
+    summary_only: bool | None = None
+    checked_on: str | None = None
     can_download_report: bool
     can_download_screenshot: bool
     platform: str | None = None
@@ -78,6 +80,8 @@ class SearchOut(BaseModel):
     platform_count: int
     unverified_source_count: int
     locked_summary: LockedSummaryOut
+    summary_only_count: int | None = None
+    summary_hidden_count: int | None = None
     platform_groups: list[PlatformGroupOut]
     locked_records: list[LockedRecordOut]
     # Recognized platforms of visible rows that may prefill 委托取证.

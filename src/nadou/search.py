@@ -20,6 +20,7 @@ from nadou.schemas import (
     TierCounts,
 )
 from nadou.signed_url import SignedUrlProvider
+from nadou.summary_source import approved_summary
 from nadou.text import RecordAge
 
 
@@ -65,9 +66,14 @@ class ProgramSearch:
         kept: list[tuple[int | None, IndexRecord, Task | None]] = []
         platforms: set[str] = set()
         unverified = 0
+        summary_ids = set()
         for record in rows:
             task = tasks.get(record.task_id)
-            if not self.visible(record, task):
+            if approved_summary(record, task):
+                if RecordAge.days(task.created_at, self.now) < 30:
+                    continue
+                summary_ids.add(record.id)
+            elif not self.visible(record, task):
                 continue
             when = self.tier_time(task, record)
             age = RecordAge.days(when, self.now) if when is not None else None
@@ -92,6 +98,7 @@ class ProgramSearch:
         evidence_platforms: list[str] = []
         locked_records: list[LockedRecordOut] = []
         locked_ages: list[int] = []
+        summary_hidden = 0
         any_old = False
         any_recent = False
         for age, record, task in kept:
@@ -103,6 +110,27 @@ class ProgramSearch:
             else:
                 any_recent = True
             decision = EntitlementPolicy.decide(age, self._grants_for(grants, canonical, record.id))
+            if record.id in summary_ids:
+                if not decision.locked and decision.reveal_fields:
+                    open_records.append(
+                        OpenRecordOut(
+                            record_id=record.id,
+                            age_bucket=decision.age_bucket,
+                            locked=False,
+                            access="summary",
+                            summary_only=True,
+                            can_download_report=False,
+                            can_download_screenshot=False,
+                            platform=task.platform_name,
+                            network_type=task.network_type,
+                            hit_label=self.HIT_LABEL,
+                            checked_on=task.created_at.astimezone(RecordAge.TZ).date().isoformat(),
+                            frame_count=record.frame_count,
+                        )
+                    )
+                else:
+                    summary_hidden += 1
+                continue
             presented = self._present(record, task, decision, user_id)
             if isinstance(presented, LockedRecordOut):
                 if decision.locked:
@@ -135,11 +163,16 @@ class ProgramSearch:
             platform_count=len(platforms),
             unverified_source_count=unverified,
             locked_summary=self._summary_out(summary),
+            summary_only_count=len(summary_ids) or None,
+            summary_hidden_count=summary_hidden if summary_ids else None,
             platform_groups=self._group_by_platform(open_records),
             locked_records=locked_records,
             evidence_platforms=evidence_platforms,
             evidence_program_name=canonical
-            if any(self.reportable(record) for _age, record, _task in kept)
+            if any(
+                record.id not in summary_ids and self.reportable(record)
+                for _age, record, _task in kept
+            )
             else "",
         )
 
@@ -199,7 +232,7 @@ class ProgramSearch:
 
     @classmethod
     def visible(cls, record: IndexRecord, task: Task | None) -> bool:
-        if not cls.confirmed(record) or not cls.included(task):
+        if record.summary_grant is not None or not cls.confirmed(record) or not cls.included(task):
             return False
         if get_settings().demo_data:
             return True

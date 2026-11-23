@@ -20,6 +20,7 @@ from nadou.normalize import ProgramNormalizer
 from nadou.platform_names import PlatformNames
 from nadou.program_titles import ProgramTitleGuard
 from nadou.search import ProgramSearch, UnknownUser
+from nadou.summary_source import approved_summary
 from nadou.text import RecordAge
 
 
@@ -534,17 +535,24 @@ class QueryExport:
         programs = ProgramNormalizer()
         names: set[str] = set()
         for item in items:
-            if item.resolution in {"pending", "failed"} or (
-                get_settings().demo_data and item.resolution not in RecordWindow.HIT_RESOLUTIONS
-            ):
-                continue
             canonical = self._title(programs, item)
             if canonical and ProgramTitleGuard.is_billable(canonical):
                 names.add(canonical)
         by_program, tasks = self._load(names)
+        restricted = {
+            name
+            for name, records in by_program.items()
+            if any(approved_summary(row, tasks.get(row.task_id)) for row in records)
+            and not any(ProgramSearch.visible(row, tasks.get(row.task_id)) for row in records)
+        }
+        if items and all(self._title(programs, item) in restricted for item in items):
+            raise ExportForbidden("该节目仅授权在线展示摘要")
         hits: list[HitRow] = []
         rest: list[RestRow] = []
         for item in items:
+            if self._title(programs, item) in restricted:
+                rest.append(RestRow(item.uploaded_name, "仅限在线摘要", "未提供报告下载"))
+                continue
             if item.resolution == "pending":
                 rest.append(RestRow(item.uploaded_name, RestStatus.PENDING, item.detail or ""))
                 continue

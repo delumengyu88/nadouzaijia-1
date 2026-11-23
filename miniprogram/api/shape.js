@@ -25,6 +25,18 @@ function safeUrl(value) {
   return imageUrl(value)
 }
 
+function count(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0
+}
+
+// Visible summaries are already in records. Restricted summaries contribute only a count.
+function summaryHitLine(search) {
+  if (!search.summary_only_count) return ''
+  var normal = (search.records || []).filter(function (rec) { return !rec.summary_only }).length
+  var line = '命中 ' + (normal + search.summary_only_count) + ' 条'
+  return search.platform_count > 0 ? line + ' · 涉及 ' + search.platform_count + ' 个平台' : line
+}
+
 function sanitizeSearch(body) {
   var src = body || {}
   var unresolved = src.outcome === 'unverified' || (src.outcome === 'miss' && src.unverified_source_count > 0)
@@ -53,6 +65,16 @@ function sanitizeSearch(body) {
         locked: true,
         lock_reason: String(rec.lock_reason || '')
       })
+      return
+    }
+    if (rec.summary_only === true || rec.access === 'summary') {
+      var item = { record_id: String(rec.record_id || ''), locked: false, access: 'summary', summary_only: true,
+        can_download_report: false, can_download_screenshot: false }
+      if (typeof rec.platform === 'string' && rec.platform) item.platform = rec.platform
+      if (typeof rec.network_type === 'string' && rec.network_type) item.network_type = rec.network_type
+      if (typeof rec.checked_on === 'string' && DATE.test(rec.checked_on)) item.checked_on = rec.checked_on
+      if (Number.isSafeInteger(rec.frame_count) && rec.frame_count >= 0) item.frame_count = rec.frame_count
+      records.push(item)
       return
     }
     var open = {
@@ -96,6 +118,8 @@ function sanitizeSearch(body) {
   return {
     program_name: String(src.program_name || ''),
     outcome: src.outcome || 'miss',
+    summary_only_count: count(src.summary_only_count),
+    summary_hidden_count: Math.min(count(src.summary_only_count), count(src.summary_hidden_count)),
     platform_count: typeof src.platform_count === 'number' ? src.platform_count : 0,
     unverified_source_count: typeof src.unverified_source_count === 'number' ? src.unverified_source_count : 0,
     locked_summary: {
@@ -121,6 +145,7 @@ function sanitizeSearch(body) {
 
 module.exports = {
   imageUrl: imageUrl,
+  summaryHitLine: summaryHitLine,
   emptySummary: emptySummary,
   sanitizeSearch: sanitizeSearch
 }

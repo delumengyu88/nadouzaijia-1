@@ -56,6 +56,10 @@ class NadouCommand:
             from nadou.query_retention import run
 
             raise SystemExit(run(args[1:]))
+        if args[:1] == ["publish-reviewed-summary"]:
+            from nadou.summary_source import run
+
+            raise SystemExit(run(args[1:]))
         if args[:1] == ["import-approved-hitlist"]:
             from nadou.hitlist import import_approved
 

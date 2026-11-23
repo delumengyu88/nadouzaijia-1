@@ -25,6 +25,11 @@ function findRow(id) {
 }
 
 function toRow(rec, programName, mock, publicExample) {
+  if (rec.summary_only) {
+    return { id: rec.record_id, summaryOnly: true, platform: rec.platform || '', unknown: !rec.platform,
+      network: rec.network_type || '', date: rec.checked_on || '',
+      frames: rec.frame_count === undefined ? '' : '命中 ' + rec.frame_count + ' 帧' }
+  }
   var extra = mock ? (findRow(rec.record_id) || {}) : {}
   var platform = rec.platform || extra.platform
   var unknown = !platform || platform === OTHER || platform === '平台未识别'
@@ -76,7 +81,7 @@ function evidencePlatforms(search, opens) {
   if (Array.isArray(search.evidence_platforms)) return search.evidence_platforms.slice()
   var names = []
   opens.forEach(function (row) {
-    if (!row.unknown && names.indexOf(row.platform) === -1) names.push(row.platform)
+    if (!row.summaryOnly && !row.unknown && names.indexOf(row.platform) === -1) names.push(row.platform)
   })
   return names
 }
@@ -102,15 +107,15 @@ function present(search, meta) {
   var range = window.start && window.end ? window.start + ' 至 ' + window.end : ''
   var showOpen = opens.length > 0 && !info.forceLocked
   var showLocked = lockedCount > 0 && !info.forceOpen
-  var header = ''
-  if (showOpen) {
+  var header = require('../api/shape').summaryHitLine(search)
+  if (!header && showOpen) {
     header = '命中 ' + (opens.length + lockedCount) + ' 条 · 涉及 ' + search.platform_count + ' 个平台'
-  } else if (info.queried) {
+  } else if (!header && info.queried) {
     header = '查询于 ' + info.queried
   }
   var memberText = info.expired ? '续费会员' : '开通会员'
   if (catalogMock) memberText += ' · ¥299/30天起'
-  var note = ''
+  var note = search.summary_hidden_count ? '其中 ' + search.summary_hidden_count + ' 条仅显示命中数量。' : ''
 
   return {
     name: name,
@@ -137,7 +142,8 @@ function present(search, meta) {
     memberText: memberText,
     singleText: catalogMock ? '单节目解锁（含 30 天以上）¥199' : '单节目解锁',
     showEvidence: evidence > 0,
-    showDownload: showOpen && !search.example && !!info.canExport,
+    summaryOnlyReport: search.summary_only_count > 0 && !(search.records || []).some(function (row) { return !row.summary_only }),
+    showDownload: showOpen && opens.some(function (row) { return !row.summaryOnly }) && !search.example && !!info.canExport,
     showHint: showLocked && !info.expired,
     expired: !!info.expired,
     note: note

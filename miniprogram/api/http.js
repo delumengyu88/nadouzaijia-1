@@ -225,7 +225,7 @@ function emptyToNull(value) {
 }
 
 function adaptRecord(rec) {
-  if (!rec || rec.locked === true || rec.locked === 'true') return null
+  if (!rec || rec.locked === true || rec.locked === 'true' || rec.summary_only === true || rec.access === 'summary') return null
   return {
     record_id: rec.record_id == null ? '' : String(rec.record_id),
     platform: rec.platform == null ? '' : String(rec.platform),

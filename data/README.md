@@ -17,3 +17,9 @@
 对外查询使用 `APP_ENV=production`、`NADOU_DATA_SOURCE=export`、`NADOU_ALLOW_DEV_SEED=0`。来源清单由有权批准该工作簿用于本项目的人提供，每行用 `task_id,sha256` 对应一个已完成的项目任务和获准版本。仅计算文件摘要无法证明使用授权。
 
 在获准导入的项目环境中执行 `python -m nadou import-approved-hitlist --manifest 清单.csv --workbook 共识表.xlsx --task-id 任务编号`。命令在同一事务内核对摘要、导入共识页并切换任务的有效版本。仅有任务元数据、待复核行、测试任务、生成的日期或失效版本均不能用作正式命中。没有可核验的命中时显示「数据待核验」。缺少经过授权的派生截图时，报告注明「暂无截图」。
+
+### 单条人工复核摘要
+
+`publish-reviewed-summary` 用于权利方明确同意展示的一条节目摘要。运维人员先逐项核对原始人工反馈、指定任务、节目、平台与帧数，在私有 JSON 清单保存 `scope=single_program_summary`、`review=pass`、`rights_holder`、`task_id`、`program`、`platform`、`frame_count`、`w2_sha256`、`tasks_sha256` 和 `feedback_sha256`。反馈摘要由运维人员对核验过的原文件计算，人工审核结论来自权利方及原反馈。校验只读 W2 快照和任务 CSV。
+
+`python -m nadou publish-reviewed-summary --manifest 私有清单.json --w2 只读快照.db --task-csv 任务清单.csv --feedback-sha256 已实算的反馈摘要` 默认核验后回滚。加 `--apply` 仅更新对应既有索引行；生产须使用已备份验证的数据库与已审版本。授权留存清单、来源、反馈和行指纹，均不在用户接口返回。检索按既有权益分层，开放字段限于节目、命中数、平台、网络、日期、帧数。图片、视频、原报告和公开示例继续受限。

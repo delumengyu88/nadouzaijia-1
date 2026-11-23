@@ -85,6 +85,10 @@ Page(require('../../api/splash').page({
         if (!rec.locked && rec.record_id === query.id) row = rec
       })
     }
+    if (row && row.summary_only) {
+      this.setData({ loading: false, missing: true, image: '', canSave: false, downloadEntry: false })
+      return
+    }
     var real = !mockMode()
     var extra = real ? {} : present.findRow(query.id) || {}
     var prof = require('../../config').mode === 'live' ? require('../../api/identity').syncAccess() : api.profile()

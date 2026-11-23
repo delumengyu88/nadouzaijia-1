@@ -22,6 +22,7 @@ from nadou.models import Entitlement, IndexRecord, MemberQuery, QueryProgram, Ta
 from nadou.normalize import ProgramNormalizer
 from nadou.program_titles import ProgramTitleGuard
 from nadou.search import ProgramSearch
+from nadou.summary_source import approved_summary
 from nadou.text import RecordAge
 
 _SPACE = re.compile(r"\s+")
@@ -121,7 +122,10 @@ class ResultSummary:
         platforms: set[tuple[str, str]] = set()
         for record in records:
             task = tasks.get(record.task_id)
-            if not ProgramSearch.visible(record, task):
+            if approved_summary(record, task):
+                if RecordAge.days(task.created_at, now) < 30:
+                    continue
+            elif not ProgramSearch.visible(record, task):
                 continue
             if not ProgramSearch.reportable(record):
                 continue
