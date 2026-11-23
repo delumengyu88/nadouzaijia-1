@@ -1,4 +1,5 @@
 var testOffer = require('../../api/live-test-offer')
+var diamond = require('../../api/diamond')
 var api = require('../../api/index')
 var state = require('../../api/state')
 var nav = require('../../utils/nav')
@@ -51,23 +52,30 @@ Page(require('../../api/splash').page({
     this.programName = decode(query.name)
     this.orderNo = query.id || ''
     this.livePayFlow = require('../../config').mode === 'live'
-    if (this.livePayFlow && (this.orderNo ? /^XV/.test(this.orderNo) : require('../../config').virtualPayment)) {
+    if (this.livePayFlow && (this.orderNo ? /^XV/.test(this.orderNo) : (require('../../config').virtualPayment || this.product === diamond.id))) {
       this.setData({paymentNote: require('../../api/xpay').paymentNote()})
     }
     this._session = this.livePayFlow ? state.token() : ''
     this._pollToken = 0
     var layout = nav.layout('pay', this.query)
     this.setData({ statusBarHeight: layout.statusBarHeight, navHeight: layout.navHeight, showBack: true })
-    if (testOffer.dedicated() && this.product !== testOffer.id && !this.orderNo) { this.testUnavailable(); return }
-    if (this.product === testOffer.id) {
+    if (testOffer.dedicated() && this.product !== testOffer.id && !this.orderNo) { this.offerUnavailable(testOffer); return }
+    if (this.product === testOffer.id || this.product === diamond.id) {
+      var item = this.product === diamond.id ? diamond : testOffer
       this.setData({ phase: 'loadingTestOffer', title: '确认开通', showPay: false })
       var self = this
-      testOffer.discover().then(function (productId) {
+      item.discover().then(function (productId) {
         if (!self.activeSession()) return
-        if (!productId || self.orderNo) { self.testUnavailable(); return }
-        self.setData({ phase: 'pending', title: '确认开通', card: '支付测试', priceText: testOffer.price,
-          blurb: '普通会员 1 天', payText: '立即支付 ' + testOffer.price, showPay: true })
+        if (!productId || self.orderNo) { self.offerUnavailable(item); return }
+        self._oneYuanReady = true
+        self.setData({ phase: 'pending', title: '确认开通', card: item === diamond ? '钻石会员' : '支付测试',
+          priceText: item.price, blurb: item === diamond ? '5 天 · 与 VIP 会员享有相同权益' : '普通会员 1 天',
+          payText: '立即支付 ' + item.price, showPay: true })
       })
+      return
+    }
+    if (require('../../config').trialMode && diamond.enabled() && /^XV/.test(this.orderNo)) {
+      this.readDiamondOrder()
       return
     }
     if (require('../../config').trialMode || require('../../config').calibrating) {
@@ -79,6 +87,41 @@ Page(require('../../api/splash').page({
       return
     }
     this.open()
+  },
+  readDiamondOrder: function () {
+    var page = this
+    this.setData({ phase: 'loadingTestOffer', title: '订单详情', showPay: false })
+    api.getOrder(this.orderNo).then(function (order) {
+      if (!page.activeSession()) return
+      if (!order || order.product !== diamond.id) {
+        page.setData({ phase: 'orderUnavailable', centerTitle: '暂无可查看的钻石会员订单' })
+        return
+      }
+      page.product = diamond.id
+      page._readDiamond = true
+      page.showDiamondOrder(order)
+    }, function () {
+      if (page.activeSession()) page.setData({ phase: 'orderUnavailable', centerTitle: '订单暂时无法读取' })
+    })
+  },
+  showDiamondOrder: function (order) {
+    if (order.status === 'pending' || order.status === 'granting') {
+      this.setData({ phase: 'diamondOrder', title: '订单详情', card: order.card,
+        orderNo: order.orderNo, priceText: order.priceText, centerTitle: order.serverStatus, payLoading: false, showPay: false })
+    } else this.apply(order)
+  },
+  refreshDiamondOrder: function () {
+    if (!this._readDiamond || !this.activeSession() || this.data.phase !== 'diamondOrder' || this.data.payLoading) return
+    var page = this
+    this.setData({ payLoading: true })
+    api.settle(this.orderNo).then(function (result) {
+      if (!page.activeSession()) return
+      page.setData({ payLoading: false })
+      if (result.ok && result.order && result.order.product === diamond.id) page.showDiamondOrder(result.order)
+      else wx.showToast({ title: '暂时无法确认订单状态', icon: 'none' })
+    }, function () {
+      if (page.activeSession()) page.setData({ payLoading: false })
+    })
   },
   onShow: function () { this.activeSession() },
   activeSession: function () {
@@ -200,14 +243,16 @@ Page(require('../../api/splash').page({
       centerSub: order.centerSub || ''
     })
   },
-  testUnavailable: function () {
-    this.setData({ phase: 'unavailable', title: '暂时无法购买', resultSub: testOffer.unavailable().message, payLoading: false, showPay: false })
+  offerUnavailable: function (offer) {
+    this.setData({ phase: 'unavailable', title: '暂时无法购买', resultSub: offer.unavailable().message, payLoading: false, showPay: false })
   },
   pay: function () {
     if (!this.activeSession()) return
     if (testOffer.dedicated() && this.product !== testOffer.id) return
     if (this.product === testOffer.id && (!testOffer.enabled() || !this.data.showPay || this.data.phase !== 'pending')) return
-    if (require('../../utils/trial').blockPayment()) return
+    if (this.product === diamond.id) {
+      if (!diamond.enabled() || !this._oneYuanReady || this.orderNo || this.data.phase !== 'pending' || !this.data.showPay) return
+    } else if (require('../../utils/trial').blockPayment()) return
     if (this.livePayFlow) {
       if (this.data.payLoading) return
       if (this.data.phase === 'paying' || this.data.phase === 'confirming' || this.data.phase === 'granting' || this.data.phase === 'granted') return
@@ -239,7 +284,8 @@ Page(require('../../api/splash').page({
         })
         return
       }
-      if (result.code === 'test_unavailable') { self.testUnavailable(); return }
+      if (result.code === 'diamond_unavailable') { self.offerUnavailable(diamond); return }
+      if (result.code === 'test_unavailable') { self.offerUnavailable(testOffer); return }
       if (result.code === 'unsupported') {
         self.setData({ phase: 'unavailable', title: '当前设备无法支付', resultSub: result.message, payLoading: false, showPay: false })
         return
