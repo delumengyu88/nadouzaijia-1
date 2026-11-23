@@ -563,3 +563,55 @@ def test_diamond_unavailable_never_creates_order(virtual_setup, session, monkeyp
         client.post("/api/v1/xpay/orders", json={"tier": tier, "code": "fresh"}).status_code == 503
     )
     assert not session.query(Order).count()
+
+
+@pytest.mark.parametrize("sku,price", [("membership_vip", 59900), ("membership_diamond", 100)])
+def test_paid_vip_from_summary_opens_text_once_without_granting_media(
+    session, clock, tmp_path, monkeypatch, request, sku, price
+):
+    from pydantic import SecretStr
+
+    from nadou.models import Entitlement
+    from nadou.payments import xpay
+    from nadou.summary_source import publish
+    from tests.test_single_summary import source
+
+    permit, w2, tasks, feedback = source(session, clock, tmp_path, monkeypatch)
+    publish(session, permit, w2, tasks, feedback)
+    session.commit()
+    client = request.getfixturevalue("virtual_setup")
+    cfg = get_settings()
+    monkeypatch.setattr(cfg, "wx_appid", "only-local-app")
+    monkeypatch.setattr(cfg, "wx_appsecret", SecretStr("only-local-secret"))
+    params = {"channel": "virtual", "program_name": permit.program}
+    options = client.get("/api/v1/pay/tiers", params=params).json()["tiers"]
+    assert [(row["id"], row["purchasable"]) for row in options] == [("membership_vip", True)]
+    order_input = {"tier": sku, "program_name": permit.program, "code": "isolated"}
+    if sku == "membership_diamond":
+        assert client.post("/api/v1/xpay/orders", json=order_input).status_code == 409
+        configure_diamond(monkeypatch)
+        options = client.get("/api/v1/pay/tiers", params=params).json()["tiers"]
+        diamond = next(row for row in options if row["id"] == sku)
+        assert diamond["purchasable"] and diamond["unlock_product"] == "membership_vip"
+        assert diamond["duration_days"] == 5 and diamond["amount_fen"] == price
+        assert diamond["product_id"] == "official-product"
+    response = client.post("/api/v1/xpay/orders", json=order_input)
+    assert response.status_code == 200 and response.json()["amount_fen"] == price
+    number = response.json()["order_number"]
+    monkeypatch.setattr(xpay, "query_order", lambda *args: payment(number, price=price))
+    monkeypatch.setattr(xpay, "provider_call", lambda *args: {})
+    for _ in range(2):
+        assert client.post(f"/api/v1/xpay/orders/{number}/sync").json()["granted"]
+    assert (
+        session.query(Entitlement).filter_by(user_id="test-default-free", kind="vip").count() == 1
+    )
+    assert client.get("/api/v1/pay/tiers", params=params).json()["tiers"] == []
+    assert client.post("/api/v1/xpay/orders", json=order_input).status_code == 409
+    result = client.get("/api/v1/programs/search", params={"name": permit.program}).json()
+    row = result["platform_groups"][0]["records"][0]
+    assert (
+        row["summary_only"]
+        and not row["can_download_report"]
+        and not row["can_download_screenshot"]
+    )
+    assert not (set(row) & {"hd_url", "thumbnail_url", "timestamps", "checked_at"})

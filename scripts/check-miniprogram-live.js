@@ -264,14 +264,26 @@ async function main() {
   assert.strictEqual(api.getQuery(listed.id).items[0].evidencePlatform, '真实测试平台')
   withGenerated = false
   summaryReply = { program_name: '摘要节目', outcome: 'hit', platform_count: 1,
-    summary_only_count: 1, summary_hidden_count: 1, platform_groups: [], locked_records: [], evidence_platforms: [] }
+    summary_only_count: 1, summary_hidden_count: 1, platform_groups: [], locked_records: [], evidence_platforms: [],
+    summary_unlocks_by_product: { membership_regular: 0, membership_vip: 1, single_program_30d: 1 } }
   var summaryJob = await api.createQuery(['摘要节目'])
   api.advanceQuery(summaryJob.id); await drain()
   assert.strictEqual(api.getQuery(summaryJob.id).items[0].line, '命中 1 条 · 涉及 1 个平台')
   sheet.query = { name: '摘要节目' }
   sheet.load(); await drain()
   assert.strictEqual(sheet.data.header, '命中 1 条 · 涉及 1 个平台')
-  assert(sheet.data.note.includes('1 条仅显示命中数量'))
+  assert.strictEqual(sheet.data.summaryHidden, 1)
+  assert.deepStrictEqual(sheet.data.summaryPlans.map(p => p.id), ['membership_vip', 'single_program_30d'])
+  assert(!sheet.data.summaryPlans.some(p => p.purchasable || p.price))
+  assert(sheet.data.summaryPlans[1].pendingPrice)
+  assert(reportWxml.includes('summary-mosaic') && reportWxml.includes('summary-padlock'))
+  assert(reportWxml.includes('bindtap="singleSummary"'))
+  var priorCalls = calls.length
+  sheet.singleSummary()
+  assert.strictEqual(toasts[toasts.length - 1].title, '单次解锁待定价')
+  assert.strictEqual(calls.length, priorCalls)
+  sheet.onHide()
+  assert(sheet.refreshSummary)
   assert(!sheet.data.showOpen && !sheet.data.showLocked && !sheet.data.showDownload)
 
   var declaredSummary = { record_id: 'summary1', summary_only: true, access: 'summary', platform: '测试平台',
@@ -284,7 +296,8 @@ async function main() {
   assert.deepStrictEqual(safe, { record_id: 'summary1', access: 'summary', locked: false, summary_only: true,
     platform: '测试平台', network_type: 'IPTV', frame_count: 3, checked_on: '2026-08-01',
     can_download_report: false, can_download_screenshot: false })
-  sheet.load(); await drain()
+  sheet.onShow(); await drain()
+  assert.strictEqual(sheet.data.summaryHidden, 0)
   var summaryRow = sheet.data.groups[0].rows[0]
   assert(sheet.data.showOpen && !sheet.data.showLocked && !sheet.data.showDownload && sheet.data.summaryOnlyReport)
   assert.strictEqual(summaryRow.date, '2026-08-01')

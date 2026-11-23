@@ -115,7 +115,7 @@ function present(search, meta) {
   }
   var memberText = info.expired ? '续费会员' : '开通会员'
   if (catalogMock) memberText += ' · ¥299/30天起'
-  var note = search.summary_hidden_count ? '其中 ' + search.summary_hidden_count + ' 条仅显示命中数量。' : ''
+  var summaryHidden = search.summary_hidden_count || 0
 
   return {
     name: name,
@@ -146,7 +146,8 @@ function present(search, meta) {
     showDownload: showOpen && opens.some(function (row) { return !row.summaryOnly }) && !search.example && !!info.canExport,
     showHint: showLocked && !info.expired,
     expired: !!info.expired,
-    note: note
+    summaryHidden: summaryHidden, summaryPlans: require('../api/summary-unlock').options(search.summary_unlocks_by_product),
+    summaryHelp: summaryHidden > 0, summaryPlanError: false, note: ''
   }
 }
 

@@ -348,6 +348,63 @@ async function checkDiamond() {
   respond(200,Object.assign({},valid,{status:'已发放',granted:true})); await drain()
   assert.strictEqual(page.data.phase,'granted')
 
+  var summary = require('../miniprogram/api/summary-unlock')
+  var programName = '节目&上下集'
+  var contextRow = Object.assign({}, tier, { purchasable: true, unlock_product: 'membership_vip' })
+  var vip = { id: 'membership_vip', amount_fen: 59900, duration_days: 30, purchasable: true }
+  var context = { tiers: [contextRow, vip] }
+  var eligible = { membership_vip: 1, single_program_30d: 1 }
+  function contextualURL(request) {
+    var query = new URL(request.url, 'https://fixture.invalid').searchParams
+    assert.strictEqual(query.get('program_name'), programName)
+    assert.strictEqual(query.get('channel'), 'virtual')
+  }
+  var reading = summary.catalog(programName)
+  contextualURL(pending[0]); respond(200, context)
+  var offers = summary.options(eligible, await reading)
+  assert.deepStrictEqual(offers.filter(p => p.purchasable).map(p => p.id), [id])
+  assert.strictEqual(offers.find(p => p.id === id).price, '¥1.00/5天')
+  assert.strictEqual(offers.find(p => p.pendingPrice).price, '')
+  for (var delta of [{purchasable:false}, {product_id:''}, {unlock_product:'membership_regular'}, {amount_fen:1}]) {
+    assert(!summary.options(eligible, [Object.assign({},contextRow,delta)]).some(p => p.id === id))
+  }
+  var contextPage = createPage()
+  contextPage.onLoad({source:'summary', product:id, name:encodeURIComponent(programName)})
+  contextPage.pay()
+  assert.strictEqual(pending.length,1)
+  contextualURL(pending[0]); respond(200, context); await drain()
+  assert(contextPage.data.showPay)
+  contextPage.pay(); contextualURL(pending[0]); respond(200,context); await drain()
+  assert.strictEqual(pending[0].method, 'POST')
+  assert(pending[0].url.endsWith('/xpay/orders'))
+  assert.strictEqual(pending[0].data.program_name, programName)
+  respond(409,{}); await drain()
+  assert.strictEqual(contextPage.data.phase, 'unavailable')
+  // The same result-card action must preserve the exact selected program and never open an unpaid single SKU.
+  var savedDef = pageDef
+  require('../miniprogram/pages/report/index')
+  var report = Object.assign({}, pageDef, { revision: state.sessionRevision(),
+    data: { phase: 'ready', name: programName, summaryHidden: 1, summaryPlans: offers } })
+  pageDef = savedDef
+  link = ''
+  report.buySummary({currentTarget:{dataset:{id:'single_program_30d'}}})
+  assert.strictEqual(link,'')
+  report.buySummary({currentTarget:{dataset:{id:id}}})
+  var destination = new URL(link,'https://fixture.invalid')
+  assert.strictEqual(destination.searchParams.get('source'),'summary')
+  assert.strictEqual(destination.searchParams.get('name'),programName)
+  assert.strictEqual(destination.searchParams.get('product'),id)
+  var noProof = createPage()
+  noProof.onLoad({source:'summary',product:id,name:programName}); respond(200,catalog); await drain()
+  assert.strictEqual(noProof.data.showPay,false)
+  var blockedPlans = ['membership_vip', 'single_program_30d', 'single_program_90d']
+  for (var blocked of blockedPlans) {
+    var blockedPage = createPage()
+    blockedPage.onLoad({source:'summary',product:blocked,name:programName}); blockedPage.pay()
+    assert.strictEqual(blockedPage.data.showPay,false)
+    assert.strictEqual(pending.length,0)
+  }
+
   var savedPayment = cashier
   var history = createPage()
   history.onLoad({id:number})

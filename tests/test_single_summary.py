@@ -14,12 +14,12 @@ from nadou.summary_source import SummaryPermission, approved_summary, file_hash,
 from tests.test_query_export import add_query, add_record, add_user, embedded_images, make_client
 
 
-def source(session, clock, tmp_path, monkeypatch):
+def source(session, clock, tmp_path, monkeypatch, age=70):
     monkeypatch.setenv("APP_ENV", "production")
     get_settings.cache_clear()
     task = "synthetic-one"
     title = "合成节目"
-    date = (clock - timedelta(days=70)).replace(microsecond=0)
+    date = (clock - timedelta(days=age)).replace(microsecond=0)
     name = "专网-广东移动-合成节目.mp4"
     for tid, rid in [(task, "r-one"), ("another-task", "other-record")]:
         add_record(
@@ -230,3 +230,55 @@ def test_summary_import_checks_source_feedback_and_all_frames_before_commit(
     with pytest.raises(ValueError):
         publish(session, p, w, cs, feedback)
     assert row.summary_grant is None
+
+
+@pytest.mark.parametrize("age", [74, 100])
+def test_summary_offers_follow_entitlements_and_never_sell_pending_single(
+    session, clock, tmp_path, monkeypatch, age
+):
+    permission, w2, meta, feedback = source(session, clock, tmp_path, monkeypatch, age)
+    publish(session, permission, w2, meta, feedback)
+    session.commit()
+    client = make_client(session, clock)
+    name = permission.program
+    free = client.auth("free")
+    applicable = {"membership_vip": 1, "single_program_30d": 1}
+    if age >= 90:
+        applicable.update(membership_regular=1, single_program_90d=1)
+
+    def search(as_user):
+        body = client.get(
+            "/api/v1/programs/search", params={"name": name}, headers=client.auth(as_user)
+        ).json()
+        return body["summary_unlocks_by_product"], body["platform_groups"]
+
+    for user in ("free", "picture"):
+        assert search(user) == (applicable, [])
+    for covered in ("vip", "program"):
+        offers, groups = search(covered)
+        assert not offers and groups[0]["records"][0]["summary_only"]
+    if age >= 90:
+        assert not search("regular")[0]
+
+    for channel in ("virtual", "jsapi"):
+        response = client.get(
+            "/api/v1/pay/tiers", params={"channel": channel, "program_name": name}, headers=free
+        )
+        options = {row["id"]: row for row in response.json()["tiers"]}
+        assert set(options) == {sku for sku in applicable if sku.startswith("membership_")}
+        assert options["membership_vip"]["amount_fen"] == 59900
+        assert all(row["purchasable"] is False for row in options.values())
+        endpoint = "/api/v1/xpay/orders" if channel == "virtual" else "/api/v1/pay/orders"
+
+        def create(tier, uid):
+            return client.post(
+                endpoint,
+                json={"tier": tier, "program_name": name, "code": "isolated"},
+                headers=client.auth(uid),
+            )
+
+        assert create("single_program_30d", "free").status_code == 409
+        assert create("membership_vip", "vip").status_code == 409
+        assert create("membership_vip", "free").status_code == 503
+        if age < 90:
+            assert create("membership_regular", "free").status_code == 409

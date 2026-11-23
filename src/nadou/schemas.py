@@ -82,6 +82,7 @@ class SearchOut(BaseModel):
     locked_summary: LockedSummaryOut
     summary_only_count: int | None = None
     summary_hidden_count: int | None = None
+    summary_unlocks_by_product: dict[str, int] | None = None
     platform_groups: list[PlatformGroupOut]
     locked_records: list[LockedRecordOut]
     # Recognized platforms of visible rows that may prefill 委托取证.

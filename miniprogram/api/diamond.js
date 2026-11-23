@@ -10,4 +10,4 @@ function unavailable() {
 var product = require('./one-yuan-product')({ id: id, days: 5, membership: 'vip', isTest: false,
   enabled: enabled, unavailable: unavailable })
 module.exports = { id: id, price: '¥1.00', enabled: enabled, unavailable: unavailable,
-  discover: product.discover, checkout: product.checkout }
+  contextProduct: product.contextProduct, discover: product.discover, checkout: product.checkout }

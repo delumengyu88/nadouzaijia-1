@@ -6,17 +6,26 @@ var xpay = require('./xpay')
 function oneYuanProduct(spec) {
   function oneYuan(fen) { return fen === 100 || fen === '100' }
 
-  function discover() {
+  function matchedProduct(row) {
+    if (!row || row.id !== spec.id || row.membership !== spec.membership || !oneYuan(row.amount_fen) ||
+        row.amount_yuan !== '1.00' || row.duration_days !== spec.days ||
+        typeof row.product_id !== 'string' || !row.product_id.trim()) return null
+    return row.product_id
+  }
+
+  function contextProduct(row) {
+    return row && row.purchasable === true && row.unlock_product === 'membership_vip' && matchedProduct(row)
+  }
+
+  function discover(programName) {
     var token = state.token()
     if (!spec.enabled() || !token) return Promise.resolve(null)
-    return request('/api/v1/pay/tiers?channel=virtual').then(function (body) {
+    var path = '/api/v1/pay/tiers?channel=virtual' + (programName ? '&program_name=' + encodeURIComponent(programName) : '')
+    return request(path).then(function (body) {
       if (!spec.enabled() || token !== state.token() || !Array.isArray(body.tiers)) return null
       var rows = body.tiers.filter(function (row) { return row && row.id === spec.id })
       if (rows.length !== 1) return null
-      var row = rows[0]
-      if (row.membership !== spec.membership || !oneYuan(row.amount_fen) || row.amount_yuan !== '1.00' ||
-          row.duration_days !== spec.days || typeof row.product_id !== 'string' || !row.product_id.trim()) return null
-      return row.product_id
+      return programName ? contextProduct(rows[0]) : matchedProduct(rows[0])
     }, function () { return null })
   }
 
@@ -32,9 +41,9 @@ function oneYuanProduct(spec) {
     } catch (err) { return false }
   }
 
-  function checkout(normalize) {
+  function checkout(normalize, programName) {
     var token = state.token()
-    return discover().then(function (productId) {
+    return discover(programName).then(function (productId) {
       if (!productId || !spec.enabled() || !token || state.token() !== token) return spec.unavailable()
       return xpay.checkout(spec.id, function (method, path, data) {
         if (!spec.enabled() || state.token() !== token) return Promise.resolve(spec.unavailable())
@@ -42,11 +51,11 @@ function oneYuanProduct(spec) {
           if (!spec.enabled() || state.token() !== token || !validOrder(body, productId)) return spec.unavailable()
           return normalize(body)
         }, spec.unavailable)
-      })
+      }, programName)
     })
   }
 
-  return { discover: discover, checkout: checkout }
+  return { discover: discover, checkout: checkout, contextProduct: contextProduct }
 }
 
 module.exports = oneYuanProduct

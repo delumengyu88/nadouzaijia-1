@@ -119,6 +119,7 @@ function sanitizeSearch(body) {
     program_name: String(src.program_name || ''),
     outcome: src.outcome || 'miss',
     summary_only_count: count(src.summary_only_count),
+    summary_unlocks_by_product: require('./summary-unlock').counts(src.summary_unlocks_by_product, Math.min(count(src.summary_only_count), count(src.summary_hidden_count))),
     summary_hidden_count: Math.min(count(src.summary_only_count), count(src.summary_hidden_count)),
     platform_count: typeof src.platform_count === 'number' ? src.platform_count : 0,
     unverified_source_count: typeof src.unverified_source_count === 'number' ? src.unverified_source_count : 0,

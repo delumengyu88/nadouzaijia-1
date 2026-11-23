@@ -437,15 +437,17 @@ module.exports = {
   },
   programMeta: function (name) { return { name: name, type: '', year: '' } },
   tierOfAccount: function () { return require('./identity').syncAccess().tier },
-  checkout: function (product) {
+  checkout: function (product, programName) {
     var tier = typeof product === 'string' ? product : ''
-    if (tier === diamond.id) return diamond.checkout(PayClient.normalize)
+    if (tier === diamond.id) return diamond.checkout(PayClient.normalize, programName)
     if (tier === testOffer.id) return testOffer.checkout(PayClient.normalize)
     if (testOffer.dedicated()) return Promise.resolve(testOffer.unavailable())
     var token = state.token()
+    var body = { tier: tier }
+    if (programName) body.program_name = programName
     var pending = require('../config').virtualPayment
-      ? xpay.checkout(tier, PayClient.request)
-      : PayClient.request('POST', '/api/v1/pay/orders', { tier: tier })
+      ? xpay.checkout(tier, PayClient.request, programName)
+      : PayClient.request('POST', '/api/v1/pay/orders', body)
     return pending.then(function (result) {
       if (result.ok) PayClient.remember(result.order, result.pay, token)
       return result

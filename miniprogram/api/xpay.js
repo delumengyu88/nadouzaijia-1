@@ -46,7 +46,7 @@ function configurationError(error) {
   return messages[error && error.errCode] || ''
 }
 
-function checkout(tier, request) {
+function checkout(tier, request, programName) {
   var unsupported = clientError()
   if (unsupported) return Promise.resolve({ ok: false, code: 'unsupported', message: unsupported })
   var token = state.token()
@@ -59,7 +59,9 @@ function checkout(tier, request) {
   }).then(function (code) {
     if (state.token() !== token) return { ok: false, code: 'session_changed', message: '登录状态已变化' }
     if (!code) return { ok: false, code: 'login_failed', message: '微信登录失败，请重试' }
-    return request('POST', '/api/v1/xpay/orders', { tier: tier, code: code }).then(function (result) {
+    var body = { tier: tier, code: code }
+    if (programName) body.program_name = programName
+    return request('POST', '/api/v1/xpay/orders', body).then(function (result) {
       if (result.ok && (!result.pay || result.pay.mode !== 'short_series_goods')) {
         return { ok: false, code: 'invalid', message: '虚拟支付参数不完整' }
       }

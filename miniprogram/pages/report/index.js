@@ -6,6 +6,7 @@ var present = require('../../utils/present').present
 var config = require('../../config')
 var httpApi = require('../../api/http')
 var reportFiles = require('../../utils/report-file')
+var summaryUnlock = require('../../api/summary-unlock')
 
 function mockMode() {
   return (config.mode || 'mock') === 'mock'
@@ -33,13 +34,15 @@ Page(require('../../api/splash').page({
     nav.later(280, function () { self.load() })
   },
   onShow: function () {
-    if (this.query && this.query.example !== '1' && this.revision !== state.sessionRevision()) {
+    if (this.query && this.query.example !== '1' && (this.revision !== state.sessionRevision() || this.refreshSummary)) {
+      this.refreshSummary = false
       this.releaseExport()
       this.setData({ phase: 'loading', reportParts: [], appliedId: '', showDownload: false, downloadLoading: false, groups: [], records: [] })
       this.load()
     }
     this.refreshApplication()
   },
+  onHide: function () { this.refreshSummary = !!this.data.summaryHidden },
   onIdentityReady: function () { this.onShow() },
   onUnload: function () { this.disposed = true; this.releaseExport() },
   releaseExport: function () {
@@ -71,6 +74,7 @@ Page(require('../../api/splash').page({
   load: function () {
     if (this.disposed || calibration.blockReport(this.query)) return
     var revision = this.revision = state.sessionRevision()
+    var seq = this._searchSeq = (this._searchSeq || 0) + 1
     var query = this.query || {}
     var name = decode(query.name)
     if (!name) {
@@ -83,7 +87,7 @@ Page(require('../../api/splash').page({
     else if (query.view === 'expired' || query.view === 'locked') search = api.searchProgram(name, { locked: true })
     else search = api.searchProgram(name)
     var self = this
-    function current() { return !self.disposed && (query.example === '1' || revision === state.sessionRevision()) }
+    function current() { return !self.disposed && seq === self._searchSeq && (query.example === '1' || revision === state.sessionRevision()) }
     function apply(result) {
       if (!current()) return
       self.applySearch(result, name, query)
@@ -138,7 +142,27 @@ Page(require('../../api/splash').page({
     view.navHeight = layout.navHeight
     this.setData(view)
     this.refreshApplication()
+    if (view.summaryHidden && view.summaryPlans.length && config.mode === 'live' && !config.liveOneYuanTest) this.loadSummaryPlans(search, name)
     if (config.mode === 'live' && view.showLocked && !require('../../api/live-test-offer').dedicated()) this.loadOffers(name)
+  },
+  loadSummaryPlans: function (search, name) {
+    var page = this, revision = state.sessionRevision(), seq = this._searchSeq
+    function current() {
+      return !page.disposed && seq === page._searchSeq && revision === state.sessionRevision() && page.data.phase === 'ready' && page.data.name === name
+    }
+    summaryUnlock.catalog(name).then(function (tiers) {
+      if (!current()) return
+      var plans = summaryUnlock.options(search.summary_unlocks_by_product, tiers)
+      page.setData({ summaryPlans: plans, summaryHelp: plans.some(function (plan) { return !plan.purchasable }) })
+    }, function () { if (current()) page.setData({ summaryPlanError: true }) })
+  },
+  singleSummary: function () { wx.showToast({ title: '单次解锁待定价', icon: 'none' }) },
+  buySummary: function (event) {
+    if (!this.data.summaryHidden || this.data.phase !== 'ready' || this.revision !== state.sessionRevision()) return
+    var id = event.currentTarget.dataset.id
+    var plan = (this.data.summaryPlans || []).find(function (item) { return item.id === id && item.purchasable })
+    if (!plan || !summaryUnlock.allowed(id)) return
+    wx.navigateTo({ url: '/pages/pay/index?source=summary&product=' + encodeURIComponent(id) + '&name=' + encodeURIComponent(this.data.name) })
   },
   loadOffers: function (name) {
     var page = this
