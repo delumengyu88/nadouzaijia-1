@@ -1,5 +1,6 @@
 var testOffer = require('../../api/live-test-offer')
 var diamond = require('../../api/diamond')
+var summaryUnlock = require('../../api/summary-unlock')
 var api = require('../../api/index')
 var state = require('../../api/state')
 var nav = require('../../utils/nav')
@@ -50,6 +51,7 @@ Page(require('../../api/splash').page({
   onLoad: function (query) {
     this.product = query.product || 'membership_vip'
     this.programName = decode(query.name)
+    this.summaryPurchase = query.source === 'summary'
     this.orderNo = query.id || ''
     this.livePayFlow = require('../../config').mode === 'live'
     if (this.livePayFlow && (this.orderNo ? /^XV/.test(this.orderNo) : (require('../../config').virtualPayment || this.product === diamond.id))) {
@@ -59,12 +61,16 @@ Page(require('../../api/splash').page({
     this._pollToken = 0
     var layout = nav.layout('pay', this.query)
     this.setData({ statusBarHeight: layout.statusBarHeight, navHeight: layout.navHeight, showBack: true })
+    if (this.summaryPurchase && (!query.product || !this.programName.trim() || this.orderNo || !summaryUnlock.allowed(this.product))) {
+      this.setData({ phase: 'unavailable', title: '当前方案不可购买', resultSub: '请返回本节目报告刷新解锁方案。', showPay: false })
+      return
+    }
     if (testOffer.dedicated() && this.product !== testOffer.id && !this.orderNo) { this.offerUnavailable(testOffer); return }
     if (this.product === testOffer.id || this.product === diamond.id) {
       var item = this.product === diamond.id ? diamond : testOffer
       this.setData({ phase: 'loadingTestOffer', title: '确认开通', showPay: false })
       var self = this
-      item.discover().then(function (productId) {
+      item.discover(this.summaryPurchase ? this.programName : undefined).then(function (productId) {
         if (!self.activeSession()) return
         if (!productId || self.orderNo) { self.offerUnavailable(item); return }
         self._oneYuanReady = true
@@ -86,7 +92,23 @@ Page(require('../../api/splash').page({
       this.showPreset(query.view)
       return
     }
+    if (this.summaryPurchase) {
+      this.readSummaryOffer()
+      return
+    }
     this.open()
+  },
+  readSummaryOffer: function () {
+    var page = this
+    this.setData({ phase: 'loadingTestOffer', title: '确认开通', showPay: false })
+    summaryUnlock.catalog(this.programName).then(function (rows) {
+      if (!page.activeSession()) return
+      var offer = summaryUnlock.offer(rows, page.product)
+      if (!offer) throw new Error('当前方案不可购买')
+      page.setData({ phase: 'pending', card: offer.title, priceText: offer.price, payText: '立即支付', showPay: true })
+    }).catch(function () {
+      if (page.activeSession()) page.setData({ phase: 'unavailable', title: '当前方案不可购买', resultSub: '请返回本节目报告刷新解锁方案。', showPay: false })
+    })
   },
   readDiamondOrder: function () {
     var page = this
@@ -248,6 +270,7 @@ Page(require('../../api/splash').page({
   },
   pay: function () {
     if (!this.activeSession()) return
+    if (this.summaryPurchase && (!this.data.showPay || this.data.phase !== 'pending' || !summaryUnlock.allowed(this.product))) return
     if (testOffer.dedicated() && this.product !== testOffer.id) return
     if (this.product === testOffer.id && (!testOffer.enabled() || !this.data.showPay || this.data.phase !== 'pending')) return
     if (this.product === diamond.id) {
@@ -257,7 +280,7 @@ Page(require('../../api/splash').page({
       if (this.data.payLoading) return
       if (this.data.phase === 'paying' || this.data.phase === 'confirming' || this.data.phase === 'granting' || this.data.phase === 'granted') return
       this.setData({ payLoading: true })
-      var pending = this.orderNo ? api.startPay(this.orderNo) : api.checkout(this.product, this.programName)
+      var pending = this.orderNo ? api.startPay(this.orderNo) : api.checkout(this.product, this.summaryPurchase ? this.programName : undefined)
       this.afterOrder(pending)
       return
     }

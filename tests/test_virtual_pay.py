@@ -594,6 +594,7 @@ def test_paid_vip_from_summary_opens_text_once_without_granting_media(
         diamond = next(row for row in options if row["id"] == sku)
         assert diamond["purchasable"] and diamond["unlock_product"] == "membership_vip"
         assert diamond["duration_days"] == 5 and diamond["amount_fen"] == price
+        assert diamond["product_id"] == "official-product"
     response = client.post("/api/v1/xpay/orders", json=order_input)
     assert response.status_code == 200 and response.json()["amount_fen"] == price
     number = response.json()["order_number"]

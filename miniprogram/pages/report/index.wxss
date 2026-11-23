@@ -7,3 +7,12 @@
 .thumb.thumb-plain { background: #d5dde8; }
 .age-tag { margin-left: 12rpx; color: #1D4E9E; background: #e7f0ff; border-radius: 6rpx; padding: 0 8rpx; font-size: 20rpx; }
 .example-empty { color: #9aa3af; font-size: 26rpx; line-height: 1.6; }
+
+.card.summary-lock { padding: 0; overflow: hidden; }
+.summary-veil { position: relative; overflow: hidden; background: #edf2f8; padding: 28rpx; text-align: center; }
+.summary-mosaic { position: absolute; inset: 0; opacity: .4; background-color: #c4d2df; background-image: linear-gradient(45deg, #e8eef5 25%, transparent 25%, transparent 75%, #e8eef5 75%), linear-gradient(45deg, #e8eef5 25%, transparent 25%, transparent 75%, #e8eef5 75%); background-position: 0 0, 10rpx 10rpx; background-size: 20rpx 20rpx; }
+.summary-padlock { position: relative; width: 28rpx; margin: 0 auto 12rpx; }
+.summary-locked-title { position: relative; font-size: 30rpx; font-weight: 600; color: #244468; }
+.summary-content { padding: 24rpx 28rpx; }
+.summary-plan { border-top: 1px solid #edf0f4; margin-top: 20rpx; padding-top: 20rpx; }
+.summary-content .btn { margin: 16rpx 0 0; }

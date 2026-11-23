@@ -30,8 +30,17 @@ def membership_options(
         else:
             ready = load_pay_settings(settings) is not None
         options.append({**product.public(), "purchasable": bool(user.wechat_openid) and ready})
-    if virtual and user.wechat_openid and eligible.get(VIP.code) and diamond_product_id():
-        options.append({**DIAMOND.public(), "purchasable": True, "unlock_product": VIP.code})
+    if virtual and user.wechat_openid and eligible.get(VIP.code):
+        product_id = diamond_product_id()
+        if product_id:
+            options.append(
+                {
+                    **DIAMOND.public(),
+                    "purchasable": True,
+                    "unlock_product": VIP.code,
+                    "product_id": product_id,
+                }
+            )
     return options
 
 

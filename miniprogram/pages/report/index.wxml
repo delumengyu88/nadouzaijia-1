@@ -79,6 +79,27 @@
       </block>
     </block>
   </view>
+  <view class="card summary-lock" wx:if="{{summaryHidden}}">
+    <view class="summary-veil">
+      <view aria-hidden="true" class="summary-mosaic"></view>
+      <view aria-hidden="true" class="summary-padlock"><view class="lock-shackle"></view><view class="lock-body"></view></view>
+      <view class="summary-locked-title">{{summaryHidden}} 条命中摘要待解锁</view>
+    </view>
+    <view class="summary-content">
+      <view class="rec-sub">解锁后可查看排查日期、平台、网络类型和命中帧数。</view>
+      <view class="summary-plan" wx:for="{{summaryPlans}}" wx:key="id">
+        <view class="row-title">{{item.title}}</view>
+        <view class="rec-sub">{{item.price ? item.price + ' · ' : ''}}适用 {{item.count}} 条摘要</view>
+        <button wx:if="{{item.pendingPrice}}" class="btn plain slim" bindtap="singleSummary">单次解锁待定价</button>
+        <button wx:if="{{item.purchasable}}" class="btn slim" data-id="{{item.id}}" bindtap="buySummary">选择此方案</button>
+      </view>
+      <view wx:if="{{summaryPlanError}}" class="rec-sub">解锁方案暂时无法加载。<text class="evidence-link" bindtap="retry">重试</text></view>
+      <block wx:if="{{summaryHelp}}">
+        <view class="rec-sub">暂未开放在线购买的方案可咨询客服。</view>
+        <button class="btn plain" open-type="contact" bindtap="markNativeTap" session-from="report-summary">联系客服</button>
+      </block>
+    </view>
+  </view>
   <view class="lock-box" wx:if="{{showLocked}}">
     <view class="fake-rows">
       <view class="fake-row" wx:for="{{fakeRows}}" wx:key="id">
