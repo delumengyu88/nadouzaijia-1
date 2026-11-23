@@ -17,7 +17,7 @@ function decode(value) {
   try { return decodeURIComponent(value) } catch (err) { return value }
 }
 
-Page({
+Page(require('../../api/splash').page({
   data: { title: '截图', showBack: true, loading: true, missing: false },
   onLoad: function (query) {
     if (calibration.blockReport(query)) return
@@ -141,12 +141,12 @@ Page({
       if (!this.data.image) { wx.showToast({ title: '截图暂不可用', icon: 'none' }); return }
       wx.downloadFile({ url: this.data.image, success: function (res) {
         if (page.disposed || revision !== state.sessionRevision()) return
-        if (res.statusCode === 200) wx.saveImageToPhotosAlbum({ filePath: res.tempFilePath })
+        if (res.statusCode === 200) require('../../api/splash').callNative(wx.saveImageToPhotosAlbum, { filePath: res.tempFilePath })
         else wx.showToast({ title: '截图下载失败', icon: 'none' })
       }, fail: function () { wx.showToast({ title: '截图下载失败', icon: 'none' }) } })
       return
     }
-    wx.saveImageToPhotosAlbum({
+    require('../../api/splash').callNative(wx.saveImageToPhotosAlbum, {
       filePath: '/assets/frame.png',
       success: function () { wx.showToast({ title: '已保存到相册', icon: 'none' }) },
       fail: function () { wx.showToast({ title: '未能保存，请允许相册权限', icon: 'none' }) }
@@ -156,4 +156,4 @@ Page({
     if (require('../../utils/trial').blockPayment()) return
     wx.switchTab({ url: '/pages/member/index' })
   }
-})
+}))

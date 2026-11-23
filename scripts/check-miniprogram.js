@@ -422,7 +422,7 @@ function instantiate(rel) {
   if (!def) throw new Error('page not registered ' + rel)
   var page = {
     data: Object.assign({}, def.data || {}),
-    getTabBar: function () { return { setData: function () {} } }
+    getTabBar: function () { return { setData: function (change) { if (change.posterHidden !== undefined) wx._tabBarLog.push(change.posterHidden ? 'hide' : 'show') } } }
   }
   Object.keys(def).forEach(function (key) {
     if (typeof def[key] === 'function') page[key] = def[key].bind(page)
@@ -583,9 +583,10 @@ try {
   var splashEnd = splashCss.indexOf('.member-status', splashAt)
   splashCss = splashCss.slice(splashAt, splashEnd)
   expect(splashCss.indexOf('#1D4E9E') === -1 && splashCss.indexOf('#163E80') === -1, 'splash has no bright blue fallback')
-  expect(splashCss.indexOf('#0a1630') !== -1 && splashCss.indexOf('#050b1a') !== -1, 'image failure uses the dark fallback')
-  expect(homeWxml.indexOf('splash-mark.png') !== -1, 'splash logo is the P01 mark')
-  expect(homeWxml.indexOf('splash-skip-hit') !== -1, 'skip hit target wraps the visible pill')
+  expect(!splashCss.includes('#0a1630') && !splashCss.includes('#050b1a'), 'no dark fallback artwork')
+  var posterMarkup = fs.readFileSync(path.join(root, 'components/launch-poster/view.wxml'), 'utf8')
+  expect(posterMarkup.indexOf('splash-mark.png') !== -1, 'splash logo is the P01 mark')
+  expect(posterMarkup.indexOf('splash-skip-hit') !== -1, 'skip hit target wraps the visible pill')
   var layoutSplash = require(path.join(root, 'pages/home/splash-layout')).layoutSplash
   function gapOf(frame) { return frame.splashGlassTop - frame.splashTextBottom }
   var iphone8 = layoutSplash({ windowWidth: 375, windowHeight: 667, statusBarHeight: 20 },
@@ -599,16 +600,11 @@ try {
   var iphone14 = layoutSplash({ windowWidth: 390, windowHeight: 844, statusBarHeight: 47 },
     { top: 51, height: 32, left: 296 })
   expect(Math.abs(iphone14.splashTitleSize - 96 * 390 / 750) < 1, 'iPhone 14 keeps the P01 title size')
-  var poster = fs.readFileSync(path.join(root, 'assets/p01-splash-bg.webp'))
-  expect(poster.length < 200 * 1024, 'splash artwork stays under 200KB')
-  var vp8 = poster.indexOf('VP8 ')
-  var dim = poster.readUInt16LE(vp8 + 14)
-  var dimH = poster.readUInt16LE(vp8 + 16)
-  expect((dim & 0x3fff) === 750 && (dimH & 0x3fff) === 1624, 'splash artwork is 750x1624')
-  flush()
-  expect(home.data.showSplash && !api.splashSeen(), 'image timeout must not write splashSeen')
-  home.splashFailed()
-  expect(home.data.showSplash && home.data.splashFailed && !api.splashSeen(), 'image error stays on the dark splash')
+  var poster = fs.readFileSync(path.join(root, 'assets/p01-splash-bg.png'))
+  expect(poster.readUInt32BE(0) === 0x89504e47 && poster.readUInt32BE(16) === 750 && poster.readUInt32BE(20) === 1624, 'bundled PNG is 750x1624')
+  expect(!home.data.posterReady && home.data.showSplash, 'text-only fallback is never visible before the image loads')
+  home.splashLoaded()
+  expect(home.data.posterReady, 'only a decoded poster reveals the P01 artwork')
   cover('P01')
   home.finishSplash()
   expect(!home.data.showSplash && home.data.showAnnounce && !api.splashSeen(), 'skip ends splash without writing storage')
@@ -631,10 +627,9 @@ try {
   global.setInterval = function (fn, ms) { ticks.push({ fn: fn, ms: ms }); return 1 }
   try {
     var timed = open('pages/home/index', {}, 'show')
+    timed.splashLoaded()
     expect(ticks.length === 1 && ticks[0].ms === 1000, 'splash countdown is one second')
     flush()
-    timed.splashFailed()
-    expect(timed.data.showSplash && timed.data.splashFailed && !api.splashSeen(), 'failed image keeps the countdown')
     var step
     for (step = 0; step < 4; step++) ticks[0].fn()
     expect(timed.data.showSplash && timed.data.seconds === 1 && !api.splashSeen(), 'countdown has not finished early')
@@ -647,101 +642,41 @@ try {
     global.setInterval = savedInterval
   }
 
-  var splashApi = require(path.join(root, 'api/splash'))
-  boot('guest', { splash: false, announce: false })
-  expect(splashApi.shouldShow(true) === true && splashApi.shouldShow(undefined) === true, 'switch on shows splash')
-  expect(splashApi.shouldShow(false) === false, 'switch off does not show')
+  var launchPoster = require(path.join(root, 'api/splash'))
   api.markSplashSeen()
-  expect(splashApi.shouldShow(true) === true, 'splashSeen storage is not a display condition')
-  boot('guest', { splash: false, announce: false })
-  var splashSource = fs.readFileSync(path.join(root, 'api/splash.js'), 'utf8')
-  expect(splashSource.indexOf('http://') === -1 && splashSource.indexOf('https://') === -1, 'splash config has no hardcoded host')
-  expect(splashSource.indexOf("'/api/v1/app/config'") !== -1, 'splash config path')
-  function drain() { return new Promise(function (resolve) { setImmediate(resolve) }) }
-  function useSplashRequest(mode, request) {
-    useSplashRequest.prev = { mode: defaults.mode, request: wx.request, base: defaults.apiBase }
-    defaults.mode = mode
-    wx.request = request
+  var appInstance = getApp()
+  var activeHome = open('pages/home/index', {}, 'show')
+  var deep = open('pages/legal-doc/index', {id:'privacy'}, 'show')
+  var deepTitle = deep.data.title
+  activeHome.onHide()
+  appInstance.onHide()
+  appInstance.onShow({scene:1017})
+  deep.onShow()
+  expect(deep.data.showSplash && launchPoster.tabHidden(), 'trial entry can reopen directly on a deep link')
+  deep.finishSplash()
+  expect(deep.data.title === deepTitle && !!deepTitle && !launchPoster.tabHidden(), 'target and parameters survive without redirects')
+  var mine = open('pages/profile/index', {}, 'show')
+  expect(!mine.data.showSplash, 'internal tab switch does not show another poster')
+  for (var scene of [1001, 1089, 1047, 1007]) {
+    appInstance.onHide(); appInstance.onShow({scene:scene}); mine.onShow()
+    expect(mine.data.showSplash, 'external entrance reopens on the profile tab: ' + scene)
+    mine.finishSplash()
   }
-  function restoreSplashRequest() {
-    defaults.mode = useSplashRequest.prev.mode
-    wx.request = useSplashRequest.prev.request
-    defaults.apiBase = useSplashRequest.prev.base
-  }
-  try {
-    var calls = 0
-    useSplashRequest('mock', function () { calls++ })
-    var mocked = open('pages/home/index', {}, 'show')
-    await drain()
-    expect(calls === 0 && mocked.data.showSplash && !api.splashSeen(), 'mock mode shows splash without a request')
-    restoreSplashRequest()
-
-    var seenReq = {}
-    useSplashRequest('hybrid', function (opts) {
-      seenReq = { url: opts.url, timeout: opts.timeout, auth: opts.header && opts.header.Authorization }
-      opts.fail({ errMsg: 'request:fail' })
-    })
-    var enabled = await splashApi.loadEnabled()
-    expect(seenReq.url === '/test-api/api/v1/app/config', 'config uses apiBase and /api/v1/app/config')
-    expect(seenReq.timeout === 1500, 'config timeout is 1.5s')
-    expect(!seenReq.auth, 'config needs no login')
-    expect(enabled === true, 'config error counts as splash enabled')
-    restoreSplashRequest()
-
-    useSplashRequest('hybrid', function (opts) { opts.success({ statusCode: 503, data: {} }) })
-    expect(await splashApi.loadEnabled() === true, 'config http error counts as splash enabled')
-    restoreSplashRequest()
-
-    useSplashRequest('hybrid', function (opts) { opts.success({ statusCode: 200, data: {} }) })
-    expect(await splashApi.loadEnabled() === true, 'missing splash_enabled counts as enabled')
-    restoreSplashRequest()
-
-    useSplashRequest('hybrid', function (opts) { opts.success({ statusCode: 200, data: { splash_enabled: 'false' } }) })
-    expect(await splashApi.loadEnabled() === true, 'only boolean false disables splash')
-    restoreSplashRequest()
-
-    useSplashRequest('hybrid', function () {})
-    var pendingEnabled = splashApi.loadEnabled()
-    flush()
-    expect(await pendingEnabled === true, 'config timeout counts as splash enabled')
-    restoreSplashRequest()
-
-    var leaked = 0
-    useSplashRequest('hybrid', function () { leaked++ })
-    defaults.apiBase = ''
-    expect(await splashApi.loadEnabled() === true, 'unconfigured base counts as splash enabled')
-    expect(leaked === 0, 'unconfigured base must not request')
-    restoreSplashRequest()
-
-    useSplashRequest('hybrid', function (opts) {
-      opts.success({ statusCode: 200, data: { splash_enabled: false } })
-    })
-    boot('guest', { splash: false, announce: false })
-    var switched = open('pages/home/index', {}, 'show')
-    expect(switched.data.showSplash, 'splash shows before config returns')
-    await drain()
-    expect(!switched.data.showSplash && !api.splashSeen(), 'explicit false hides splash and does not mark seen')
-    var switchedAgain = open('pages/home/index', {}, 'show')
-    await drain()
-    expect(!switchedAgain.data.showSplash && !api.splashSeen(), 'explicit false stays hidden without marking seen')
-    restoreSplashRequest()
-
-    useSplashRequest('hybrid', function (opts) { opts.fail({ errMsg: 'request:fail timeout' }) })
-    boot('guest', { splash: false, announce: false })
-    var errored = open('pages/home/index', {}, 'show')
-    await drain()
-    expect(errored.data.showSplash && !api.splashSeen(), 'config error still shows splash')
-    restoreSplashRequest()
-
-    useSplashRequest('hybrid', function () {})
-    boot('guest', { splash: false, announce: false })
-    var hung = open('pages/home/index', {}, 'show')
-    flush()
-    await drain()
-    expect(hung.data.showSplash && !api.splashSeen(), 'config timeout still shows splash')
-  } finally {
-    if (useSplashRequest.prev) restoreSplashRequest()
-  }
+  var native
+  launchPoster.callNative(function (opts) { native = opts }, {})
+  appInstance.onHide(); native.complete(); appInstance.onShow({scene:1089}); mine.onShow()
+  expect(!mine.data.showSplash, 'a native payment or permission return with the old scene does not replay')
+  appInstance.onHide(); appInstance.onShow({scene:1038}); mine.onShow()
+  expect(!mine.data.showSplash, 'returning from another mini program does not replay')
+  try { launchPoster.callNative(function () { throw new Error('native failed') }, {}) } catch (error) {}
+  appInstance.onHide(); appInstance.onShow({scene:1017}); mine.onShow()
+  expect(mine.data.showSplash, 'a thrown native call cannot block the next explicit entry')
+  flush()
+  expect(!mine.data.posterReady && !mine.data.showSplash, 'image failure dismisses the overlay without a text-only poster')
+  app.pages.filter(function (route) { return route !== 'pages/splash/index' }).forEach(function (route) {
+    var markup = fs.readFileSync(path.join(root, route + '.wxml'), 'utf8')
+    expect(markup.includes('components/launch-poster/view.wxml'), route + ' must retain the launch overlay on direct entry')
+  })
 
   boot('guest')
   home = open('pages/home/index', {}, 'show')

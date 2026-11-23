@@ -28,7 +28,7 @@ function selectedPlan(plans, selected) {
   return found
 }
 
-Page({
+Page(require('../../api/splash').page({
   data: {
     title: '会员中心',
     selected: '',
@@ -166,4 +166,4 @@ Page({
     if (this.data.guest) return require('../../utils/login')(this, this.onShow)
     wx.navigateTo({ url: '/pages/invite/index' })
   }
-})
+}))

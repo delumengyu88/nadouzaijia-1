@@ -31,7 +31,7 @@ var CARDS = {
   membership_test: '支付测试'
 }
 
-Page({
+Page(require('../../api/splash').page({
   pollInterval: 2000,
   pollLimit: 10,
   data: {
@@ -295,7 +295,7 @@ Page({
           self.setData({ phase: 'unavailable', title: '暂时无法购买', resultSub: reason, payLoading: false, showPay: false })
           return
         }
-        wx.requestVirtualPayment(Object.assign({}, pay, { success: done, fail: function (error) {
+        require('../../api/splash').callNative(wx.requestVirtualPayment, Object.assign({}, pay, { success: done, fail: function (error) {
           var message = virtual.configurationError(error)
           if (!message) { done(); return }
           if (once || !self.activeSession()) return
@@ -304,7 +304,7 @@ Page({
         } }))
         return
       }
-      wx.requestPayment({
+      require('../../api/splash').callNative(wx.requestPayment, {
         timeStamp: pay.timeStamp,
         nonceStr: pay.nonceStr,
         package: pay.package,
@@ -499,4 +499,4 @@ Page({
     }
     wx.switchTab({ url: '/pages/member/index' })
   }
-})
+}))

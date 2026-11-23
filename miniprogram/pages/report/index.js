@@ -16,7 +16,7 @@ function decode(value) {
   try { return decodeURIComponent(value) } catch (err) { return value }
 }
 
-Page({
+Page(require('../../api/splash').page({
   data: { title: '', showBack: true, phase: 'loading', downloadLoading: false },
   onLoad: function (query) {
     if (calibration.blockReport(query)) return
@@ -262,7 +262,7 @@ Page({
       if (!current()) return
       if (!book.parts || !book.parts.length) {
         stop()
-        wx.openDocument({ filePath: path, fileType: 'xlsx', showMenu: true, fail: failed })
+        require('../../api/splash').callNative(wx.openDocument, { filePath: path, fileType: 'xlsx', showMenu: true, fail: failed })
         return
       }
       fs.unzip({ zipFilePath: path, targetPath: folder, fail: failed, success: function () {
@@ -283,6 +283,6 @@ Page({
     var name = event.currentTarget.dataset.name
     if (!this.partsFolder || this.disposed || this.revision !== state.sessionRevision() ||
         (this.data.reportParts || []).indexOf(name) === -1) return
-    wx.openDocument({ filePath: this.partsFolder + '/' + name, fileType: 'xlsx', showMenu: true })
+    require('../../api/splash').callNative(wx.openDocument, { filePath: this.partsFolder + '/' + name, fileType: 'xlsx', showMenu: true })
   }
-})
+}))

@@ -1,3 +1,4 @@
+<view hidden="{{showSplash}}" aria-hidden="{{showSplash}}">
 <view class="nav" style="padding-top: {{statusBarHeight}}px;">
   <view class="nav-bar">
     <view class="nav-back" bindtap="back">‹</view>
@@ -48,7 +49,7 @@
       </view>
       <view class="order-side" wx:if="{{item.statusText}}">
         <text class="order-status {{item.statusKind}}">{{item.statusText}}</text>
-        <button wx:if="{{item.service}}" class="order-service" open-type="contact" session-from="order:{{item.orderNo}}" catchtap="noop">联系客服</button>
+        <button wx:if="{{item.service}}" class="order-service" open-type="contact" session-from="order:{{item.orderNo}}" catchtap="markNativeTap">联系客服</button>
       </view>
       <text class="chev" wx:if="{{!live}}">›</text>
     </view>
@@ -61,3 +62,5 @@
     <view class="login-error" wx:if="{{loginError}}">{{loginError}}</view>
   </view>
 </view>
+</view>
+<include src="../../components/launch-poster/view.wxml" />

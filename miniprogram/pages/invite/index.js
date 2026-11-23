@@ -2,7 +2,7 @@ var api = require('../../api/index')
 var session = require('../../api/state')
 var nav = require('../../utils/nav')
 
-Page({
+Page(require('../../api/splash').page({
   data: { title: '兑换邀请码', showBack: true, phase: 'loading', code: '', fieldError: false, loginLoading: false, loginError: '' },
   onLoad: function (query) {
     this._query = query || {}
@@ -134,4 +134,4 @@ Page({
   },
   profile: function () { wx.switchTab({ url: '/pages/profile/index' }) },
   home: function () { wx.switchTab({ url: '/pages/home/index' }) }
-})
+}))

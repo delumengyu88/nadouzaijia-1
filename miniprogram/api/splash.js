@@ -1,73 +1,126 @@
 var state = require('./state')
-var request = require('./request')
+var layout = require('../pages/home/splash-layout').layoutSplash
+var owner = null
+var hidden = false
+var nativeReturn = false
+var nativePending = 0
+var nativeTapUntil = 0
 
-var CONFIG_PATH = '/api/v1/app/config'
-var CONFIG_TIMEOUT = 1500
+// Explicit WeChat entry points: recent, search, shared cards, QR codes and trial codes.
+// Other foreground transitions (including payment return scenes) keep the current page.
+var entryScenes = [1001, 1005, 1006, 1007, 1008, 1010, 1011, 1012, 1013, 1017, 1023, 1027,
+  1036, 1037, 1044, 1047, 1048, 1049, 1053, 1059, 1065, 1089, 1090, 1096, 1103, 1104, 1106, 1167, 1187, 1194]
 
-function seen() {
-  return !!state.load().splashSeen
-}
-
-function markSeen() {
-  var session = state.load()
-  session.splashSeen = true
-  state.save()
-}
-
-function launchData() {
+function launch() {
+  if (typeof getApp !== 'function') return null
   var app = getApp()
-  if (!app.globalData) app.globalData = {}
-  return app.globalData
+  return app && app.globalData
 }
-
-// 只存在这次进程里。冷启动时 App.onLaunch 会清掉，不写本地存储。
-function shownThisLaunch() {
-  return !!launchData().splashShownThisLaunch
+function cold(data) {
+  owner = null
+  hidden = false
+  nativeReturn = false
+  nativePending = 0
+  nativeTapUntil = 0
+  data.splashShownThisLaunch = false
 }
-
-function markShownThisLaunch() {
-  launchData().splashShownThisLaunch = true
+function background() {
+  hidden = true
+  nativeReturn = nativePending > 0 || Date.now() < nativeTapUntil
+  if (owner) owner.finishSplash()
 }
-
-// 开屏要不要出现，只看这里：后台明确关闭才不展示，其余都展示。
-// 同一次冷启动里已经展示过，由 App 内存标记另外判断。
-function shouldShow(enabled) {
-  return enabled !== false
+function foreground(data, options) {
+  if (hidden && !nativeReturn && options && entryScenes.indexOf(Number(options.scene)) >= 0) {
+    data.splashShownThisLaunch = false
+  }
+  hidden = false
+  nativeReturn = false
+  nativeTapUntil = 0
 }
-
-function readEnabled(body) {
-  if (!body || typeof body !== 'object') return true
-  return body.splash_enabled === false ? false : true
-}
-
-// 接口未上线、失败、超时或字段缺失都当作开启。只有明确的 false 才关闭。
-// mock 不请求网络，直接开启。调用方应先把开屏画出来，再根据结果决定要不要收起。
-function loadEnabled() {
-  if (require('../config').mode === 'mock') return Promise.resolve(true)
-  return new Promise(function (resolve) {
-    var settled = false
-    function finish(value) {
-      if (settled) return
-      settled = true
-      resolve(value)
+function nativeTap() { nativeTapUntil = Date.now() + 1200 }
+function callNative(method, options) {
+  nativePending += 1
+  var done = false
+  function release() {
+    if (done) return
+    done = true
+    nativePending = Math.max(0, nativePending - 1)
+  }
+  var wrapped = Object.assign({}, options)
+  ;['success', 'fail', 'complete'].forEach(function (key) {
+    wrapped[key] = function (result) {
+      release()
+      if (options[key]) return options[key].call(this, result)
     }
-    var timer = setTimeout(function () { finish(true) }, CONFIG_TIMEOUT)
-    request(CONFIG_PATH, {}, { public: true, timeout: CONFIG_TIMEOUT }).then(function (body) {
-      clearTimeout(timer)
-      finish(readEnabled(body))
-    }, function () {
-      clearTimeout(timer)
-      finish(true)
-    })
   })
+  try { return method.call(wx, wrapped) }
+  catch (error) { release(); throw error }
 }
-
+function tabHidden() {
+  var data = launch()
+  return !!(owner || (data && data.splashShownThisLaunch === false))
+}
+function repaintTab(page) {
+  var tab = page.getTabBar && page.getTabBar()
+  if (tab && tab.setData) tab.setData({ posterHidden: tabHidden() })
+}
+function show(page) {
+  var data = launch()
+  if (!data || data.splashShownThisLaunch !== false) { repaintTab(page); return }
+  if (owner && owner !== page) owner.finishSplash()
+  data.splashShownThisLaunch = true
+  owner = page
+  var sys = {}, menu = null
+  try { sys = wx.getSystemInfoSync() || {} } catch (err) {}
+  try { menu = wx.getMenuButtonBoundingClientRect() } catch (err) {}
+  page.setData(Object.assign(layout(sys, menu), { showSplash: true, posterReady: false, seconds: 5 }))
+  repaintTab(page)
+  page.posterLoadTimer = setTimeout(function () {
+    if (owner === page && !page.data.posterReady) page.finishSplash()
+  }, 2000)
+}
+function finish() {
+  if (owner !== this) return
+  owner = null
+  clearTimeout(this.posterLoadTimer)
+  if (this.posterTimer) clearInterval(this.posterTimer)
+  this.posterTimer = null
+  this.setData({ showSplash: false, posterReady: false })
+  repaintTab(this)
+}
+function loaded() {
+  if (owner !== this || this.data.posterReady) return
+  var page = this
+  clearTimeout(page.posterLoadTimer)
+  page.setData({ posterReady: true })
+  page.posterTimer = setInterval(function () {
+    if (owner !== page) return
+    if (page.data.seconds <= 1) page.finishSplash()
+    else page.setData({ seconds: page.data.seconds - 1 })
+  }, 1000)
+}
+function page(def) {
+  var showPage = def.onShow, hidePage = def.onHide, unloadPage = def.onUnload
+  def.holdPosterTouch = function () {}
+  def.finishSplash = finish
+  def.splashLoaded = loaded
+  def.markNativeTap = nativeTap
+  def.onShow = function () {
+    show(this)
+    if (showPage) return showPage.call(this)
+  }
+  def.onHide = function () {
+    if (owner === this) finish.call(this)
+    if (hidePage) return hidePage.call(this)
+  }
+  def.onUnload = function () {
+    if (owner === this) finish.call(this)
+    if (unloadPage) return unloadPage.call(this)
+  }
+  return def
+}
 module.exports = {
-  seen: seen,
-  markSeen: markSeen,
-  shownThisLaunch: shownThisLaunch,
-  markShownThisLaunch: markShownThisLaunch,
-  shouldShow: shouldShow,
-  loadEnabled: loadEnabled,
-  readEnabled: readEnabled
+  cold: cold, background: background, foreground: foreground, page: page, callNative: callNative, tabHidden: tabHidden,
+  seen: function () { return !!state.load().splashSeen },
+  markSeen: function () { state.load().splashSeen = true; state.save() }
 }

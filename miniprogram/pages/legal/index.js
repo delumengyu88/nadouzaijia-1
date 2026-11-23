@@ -1,7 +1,7 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
 
-Page({
+Page(require('../../api/splash').page({
   data: { title: '协议与隐私', showBack: true, rows: [] },
   onLoad: function () {
     var data = nav.layout('legal', this.query)
@@ -17,4 +17,4 @@ Page({
   open: function (e) {
     wx.navigateTo({ url: '/pages/legal-doc/index?id=' + e.currentTarget.dataset.id })
   }
-})
+}))

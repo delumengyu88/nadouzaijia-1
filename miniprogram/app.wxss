@@ -346,8 +346,8 @@ button::after {
 }
 
 .splash-cover {
-  position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 10000; overflow: hidden;
-  color: #FFFFFF; background: linear-gradient(180deg, #0a1630, #050b1a);
+  position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 1500; overflow: hidden;
+  color: #FFFFFF;
 }
 .splash-bg { position: absolute; left: 0; }
 .splash-copy { position: absolute; left: 0; width: 100%; text-align: center; }

@@ -1,7 +1,7 @@
 var api = require('../../api/index')
 var nav = require('../../utils/nav')
 
-Page({
+Page(require('../../api/splash').page({
   data: { title: '协议', showBack: true, paragraphs: [] },
   onLoad: function (query) {
     var doc = api.agreement(query.id)
@@ -18,4 +18,4 @@ Page({
     if (getCurrentPages().length > 1) wx.navigateBack()
     else wx.switchTab({ url: '/pages/profile/index' })
   }
-})
+}))

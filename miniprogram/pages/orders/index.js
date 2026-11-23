@@ -44,7 +44,7 @@ function presentOrder(item) {
   }
 }
 
-Page({
+Page(require('../../api/splash').page({
   data: {
     title: '我的订单',
     showBack: true,
@@ -152,4 +152,4 @@ Page({
     wx.navigateTo({ url: '/pages/pay/index?id=' + e.currentTarget.dataset.id })
   },
   noop: function () {}
-})
+}))

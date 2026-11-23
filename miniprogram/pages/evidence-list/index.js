@@ -2,7 +2,7 @@ var api = require('../../api/index')
 var nav = require('../../utils/nav')
 var state = require('../../api/state')
 
-Page({
+Page(require('../../api/splash').page({
   data: { title: '取证申请', showBack: true, rows: [], loading: true, empty: false, loadError: '' },
   onIdentityReady: function () { this.onShow() },
   onShow: function () {
@@ -54,4 +54,4 @@ Page({
     wx.navigateTo({ url: '/pages/evidence/index?kind=normal' })
   },
   retry: function () { this.onShow() }
-})
+}))

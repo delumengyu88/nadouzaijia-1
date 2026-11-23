@@ -15,7 +15,7 @@ function trimEnds(value) {
   return String(value || '').replace(/^[\s\u3000]+|[\s\u3000]+$/g, '')
 }
 
-Page({
+Page(require('../../api/splash').page({
   data: {
     title: '委托取证',
     showBack: true,
@@ -160,4 +160,4 @@ Page({
   closeDuplicate: function () {
     this.setData({ showDuplicate: false })
   }
-})
+}))

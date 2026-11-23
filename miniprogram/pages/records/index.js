@@ -21,7 +21,7 @@ function decorate(rows, offset) {
   })
 }
 
-Page({
+Page(require('../../api/splash').page({
   data: { title: '查询记录', showBack: true, rows: [], empty: false, loading: false, failed: false, needLogin: false },
   onIdentityReady: function () { this.onShow() },
   onShow: function () {
@@ -106,4 +106,4 @@ Page({
     this.returning = true
     wx.navigateTo({ url: '/pages/evidence/index?fromRecord=1&kind=normal&name=' + encodeURIComponent(row.name) })
   }
-})
+}))

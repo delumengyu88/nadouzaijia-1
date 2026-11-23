@@ -25,7 +25,7 @@ Component({
       }
       var self = this
       try {
-        wx.openPrivacyContract({
+        require('../../api/splash').callNative(wx.openPrivacyContract, {
           fail: function () { self.contractFailed() }
         })
       } catch (err) {
