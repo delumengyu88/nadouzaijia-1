@@ -3,17 +3,20 @@
 import hashlib
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from threading import Lock
+from time import monotonic
 from uuid import uuid4
 
 import httpx
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import case, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from nadou.config import get_settings
 from nadou.models import Entitlement, User, UserSession
+from nadou.text import RecordAge
 
 
 class _RedactWeChatQuery(logging.Filter):
@@ -104,8 +107,31 @@ def require_active(user: User, now: datetime) -> None:
         raise HTTPException(403, "account is disabled")
 
 
+class GuestIssueLimit:
+    """Per-worker burst protection for anonymous account creation only."""
+
+    def __init__(self, burst: int = 100, per_second: int = 10) -> None:
+        self.burst = burst
+        self.per_second = per_second
+        self.available = float(burst)
+        self.updated = monotonic()
+        self.lock = Lock()
+
+    def admit(self) -> None:
+        with self.lock:
+            now = monotonic()
+            self.available = min(
+                self.burst, self.available + (now - self.updated) * self.per_second
+            )
+            self.updated = now
+            if self.available < 1:
+                raise HTTPException(429, "新游客较多，请稍后重试", headers={"Retry-After": "1"})
+            self.available -= 1
+
+
 class UserSessions:
     TTL = timedelta(days=7)
+    GUEST_TTL = timedelta(days=30)
 
     @staticmethod
     def issue(session: Session, user: User, now: datetime) -> str:
@@ -115,14 +141,16 @@ class UserSessions:
                 token_hash=hashlib.sha256(token.encode()).hexdigest(),
                 user_id=user.id,
                 created_at=now,
-                expires_at=now + UserSessions.TTL,
+                expires_at=now + (UserSessions.GUEST_TTL if user.is_guest else UserSessions.TTL),
             )
         )
         session.flush()
         return token
 
     @staticmethod
-    def resolve(session: Session, authorization: str | None, now: datetime) -> User:
+    def credentials(
+        session: Session, authorization: str | None, now: datetime
+    ) -> tuple[User, UserSession, str]:
         scheme, _, token = (authorization or "").partition(" ")
         token = token.strip()
         row = None
@@ -134,10 +162,57 @@ class UserSessions:
                 401, "authentication required", headers={"WWW-Authenticate": "Bearer"}
             )
         require_active(user, now)
+        return user, row, token
+
+    @staticmethod
+    def resolve(
+        session: Session, authorization: str | None, now: datetime, *, allow_guest: bool = False
+    ) -> User:
+        user, _, _ = UserSessions.credentials(session, authorization, now)
+        if user.is_guest and not allow_guest:
+            raise HTTPException(403, "游客仅可免费查询和查看本机查询记录")
         return user
+
+    @staticmethod
+    def renew_guest(session: Session, user: User, row: UserSession, now: datetime) -> datetime:
+        if not user.is_guest or row.user_id != user.id:
+            raise HTTPException(409, "当前已有账号会话")
+        target = (now + UserSessions.GUEST_TTL).astimezone(UTC)
+        # Concurrent queries may finish out of order. Never shorten a valid lease.
+        expires_at = session.scalar(
+            update(UserSession)
+            .where(UserSession.token_hash == row.token_hash, UserSession.expires_at > now)
+            .values(
+                expires_at=case(
+                    (UserSession.expires_at < target, target), else_=UserSession.expires_at
+                )
+            )
+            .returning(UserSession.expires_at)
+            .execution_options(synchronize_session=False)
+        )
+        if expires_at is None:
+            raise HTTPException(401, "游客会话已失效", headers={"WWW-Authenticate": "Bearer"})
+        return expires_at
+
+    @staticmethod
+    def response(session: Session, user: User, token: str, expires_at: datetime, now: datetime):
+        return {
+            "token": token,
+            "token_type": "bearer",
+            "expires_at": expires_at.astimezone(RecordAge.TZ).isoformat(),
+            "user": user_profile(session, user, now),
+        }
 
 
 def user_profile(session: Session, user: User, now: datetime) -> dict:
+    if user.is_guest:
+        return {
+            "id": user.id,
+            "identity_kind": "guest",
+            "tier": "free",
+            "vip_expires_at": None,
+            "regular_expires_at": None,
+        }
     grants = session.scalars(
         select(Entitlement).where(
             Entitlement.user_id == user.id,

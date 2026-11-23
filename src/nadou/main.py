@@ -2,12 +2,13 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints
 from sqlalchemy.orm import Session
 
 from nadou.admin.api import AdminApi
@@ -16,7 +17,7 @@ from nadou.admin.errors import WorkbenchError
 from nadou.admin.invites import InviteRedemption
 from nadou.admin.notify import NotifierFactory
 from nadou.admin.schemas import InviteRedeemIn
-from nadou.auth import UserSessions, WeChatLogin, require_active, user_profile
+from nadou.auth import GuestIssueLimit, UserSessions, WeChatLogin, require_active, user_profile
 from nadou.config import get_settings
 from nadou.db import Database
 from nadou.devtools.trial_tools import register_trial_tools
@@ -33,6 +34,10 @@ from nadou.signed_url import FakeSignedUrlProvider, SignedUrlProvider
 from nadou.user_orders import UserOrders
 
 _BEIJING = ZoneInfo("Asia/Shanghai")
+
+
+class GuestSessionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
 class WeChatLoginIn(BaseModel):
@@ -81,6 +86,34 @@ def create_app(
     ) -> User:
         return UserSessions.resolve(session, authorization, clock())
 
+    def query_user(
+        authorization: str | None = Header(default=None),
+        session: Session = Depends(get_session, scope="function"),
+    ) -> User:
+        return UserSessions.resolve(session, authorization, clock(), allow_guest=True)
+
+    issue_limit = GuestIssueLimit()
+
+    @app.post("/api/v1/auth/guest/session")
+    def guest_session(
+        payload: GuestSessionIn,
+        response: Response,
+        authorization: str | None = Header(default=None),
+        session: Session = Depends(get_session, scope="function"),
+    ):
+        now = clock()
+        response.headers["Cache-Control"] = "no-store"
+        if authorization is not None:
+            user, row, token = UserSessions.credentials(session, authorization, now)
+            expires = UserSessions.renew_guest(session, user, row, now)
+            return UserSessions.response(session, user, token, expires, now)
+        issue_limit.admit()
+        user = User(id=str(uuid4()), is_guest=True, created_at=now)
+        session.add(user)
+        session.flush()
+        token = UserSessions.issue(session, user, now)
+        return UserSessions.response(session, user, token, now + UserSessions.GUEST_TTL, now)
+
     @app.post("/api/v1/auth/wechat/login")
     def wechat_login(
         payload: WeChatLoginIn,
@@ -91,16 +124,11 @@ def create_app(
         user = WeChatLogin.user(session, openid, now)
         require_active(user, now)
         token = UserSessions.issue(session, user, now)
-        return {
-            "token": token,
-            "token_type": "bearer",
-            "expires_at": (now + UserSessions.TTL).isoformat(),
-            "user": user_profile(session, user, now),
-        }
+        return UserSessions.response(session, user, token, now + UserSessions.TTL, now)
 
     @app.get("/api/v1/auth/me")
     def me(
-        user: User = Depends(current_user),
+        user: User = Depends(query_user),
         session: Session = Depends(get_session, scope="function"),
     ):
         return user_profile(session, user, clock())
@@ -118,7 +146,7 @@ def create_app(
     def search_program(
         name: str,
         session: Session = Depends(get_session, scope="function"),
-        user: User = Depends(current_user),
+        user: User = Depends(query_user),
     ):
         try:
             return ProgramSearch(session, urls, clock()).search(name, user.id)
@@ -150,7 +178,7 @@ def create_app(
     PublicHome.register(app, get_session, clock)
     InviteState.register(app, get_session, clock)
     UserEvidence.register(app, get_session, clock, alerts)
-    QueryRecords.register(app, get_session, clock)
+    QueryRecords.register(app, get_session, clock, query_user)
     PaymentApi.register(app, get_session, clock, alerts, grant_writer)
     UserOrders.register(app, get_session, clock)
     # Experience-build only. Delete this line with src/nadou/devtools before review.

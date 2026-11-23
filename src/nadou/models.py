@@ -77,6 +77,9 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(AwareDateTime, nullable=False)
+    is_guest: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     phone: Mapped[str | None] = mapped_column(String(32), unique=True)
     wechat_openid: Mapped[str | None] = mapped_column(String(64), unique=True)
     display_name: Mapped[str | None] = mapped_column(String(64))

@@ -10,7 +10,7 @@ detection time is not replaced with today.
 import re
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -257,21 +257,24 @@ class QueryRecords:
     MAX_LIMIT = 100
 
     @staticmethod
-    def register(app: FastAPI, get_session, clock) -> None:
-        def reader(
-            authorization: str | None = Header(default=None),
-            session: Session = Depends(get_session, scope="function"),
-        ) -> User:
-            return UserSessions.resolve(session, authorization, clock())
-
+    def register(app: FastAPI, get_session, clock, reader) -> None:
         @app.post("/api/v1/queries", status_code=201)
         def create_query(
             payload: CreateQueryIn,
-            user: User = Depends(reader),
+            response: Response,
+            authorization: str | None = Header(default=None),
             session: Session = Depends(get_session, scope="function"),
         ):
+            now = clock()
+            user, row, _ = UserSessions.credentials(session, authorization, now)
             try:
-                return QueryRecords.create(session, user, payload, clock())
+                result = QueryRecords.create(session, user, payload, now)
+                if user.is_guest:
+                    expires = UserSessions.renew_guest(session, user, row, now)
+                    response.headers["X-Nadou-Session-Expires-At"] = expires.astimezone(
+                        RecordAge.TZ
+                    ).isoformat()
+                return result
             except QueryRejected as exc:
                 raise HTTPException(status_code=400, detail=exc.detail) from None
 
@@ -442,7 +445,7 @@ class QueryRecords:
     @staticmethod
     def _detail(session: Session, user: User, query: MemberQuery, now) -> dict:
         programs = QueryRecords._programs(session, query.id)
-        items = [QueryRecords._item(session, user.id, program, now) for program in programs]
+        items = [QueryRecords._item(session, user, program, now) for program in programs]
         done_count = sum(1 for program in programs if program.resolution != "pending")
         total = len(programs)
         hits = sum(1 for item in items if item["hit"])
@@ -488,17 +491,17 @@ class QueryRecords:
         }
 
     @staticmethod
-    def _item(session: Session, user_id: str, program: QueryProgram, now) -> dict:
+    def _item(session: Session, user: User, program: QueryProgram, now) -> dict:
         resolution, detail = ResultSummary.display_status(session, program, now)
         badge, badge_cls, hit, missed, failed = ResultSummary.flags(resolution)
         evidence_name = None
         evidence_platform = None
-        if resolution in ResultSummary.HIT_RESOLUTIONS:
+        if not user.is_guest and resolution in ResultSummary.HIT_RESOLUTIONS:
             canonical = ProgramNormalizer.canonical(program.uploaded_name)
             if get_settings().demo_data:
                 canonical = program.matched_name or canonical
             evidence_name, evidence_platform = ResultSummary.evidence(
-                session, user_id, canonical, now
+                session, user.id, canonical, now
             )
         return {
             "name": program.uploaded_name,

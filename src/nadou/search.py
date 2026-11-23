@@ -149,6 +149,8 @@ class ProgramSearch:
         user = self.session.get(User, user_id)
         if user is None:
             raise UnknownUser(user_id)
+        if user.is_guest:
+            return []
         rows = self.session.scalars(select(Entitlement).where(Entitlement.user_id == user_id)).all()
         return [row for row in rows if row.expires_at > self.now]
 
