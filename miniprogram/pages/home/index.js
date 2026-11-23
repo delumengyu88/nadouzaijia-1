@@ -25,6 +25,7 @@ Page(require('../../api/splash').page({
     if (api.entryFailed && api.accountKind() === 'guest') this.onIdentityError()
     this.paint()
     if (!mockMode()) this.loadHome()
+    this.loadRecent()
   },
   paint: function () {
     var data = nav.layout('home', this.query)
@@ -135,7 +136,7 @@ Page(require('../../api/splash').page({
     api.setDraft(text)
     wx.navigateTo({ url: '/pages/input/index?auto=1' })
   },
-  onIdentityReady: function () { this.setData({ loginError: '' }); this.paint() },
+  onIdentityReady: function () { this.setData({ loginError: '' }); this.paint(); this.loadRecent() },
   onIdentityError: function () { this.setData({ identifying: false, loginError: '网络异常，可重试' }) },
   login: function () {
     return require('../../utils/login')(this, this.onShow)
@@ -156,6 +157,103 @@ Page(require('../../api/splash').page({
         })
       }
     })
+  },
+
+  loadRecent: function () {
+    var self = this
+    var seq = (this._recentSeq || 0) + 1
+    this._recentSeq = seq
+    function apply(view) {
+      if (self._recentSeq !== seq) return
+      self.setData({ recent: view || null })
+    }
+    function hide() { apply(null) }
+    if (mockMode()) {
+      if (api.accountKind() === 'guest') { hide(); return }
+    } else if (!require('../../api/state').token()) {
+      hide()
+      return
+    }
+    var listed
+    try { listed = api.listRecordPage(20, 0) } catch (error) { hide(); return }
+    function fromPage(page) {
+      if (self._recentSeq !== seq) return
+      var hit = require('../../utils/bands').pickRecentHit(page && page.rows)
+      if (!hit) { hide(); return }
+      var search
+      try { search = api.searchProgram(hit.name) } catch (error) { hide(); return }
+      function fromSearch(body) {
+        if (self._recentSeq !== seq) return
+        var view = require('../../utils/bands').homePreview(body, 3)
+        if (!view) { hide(); return }
+        view.queryId = hit.id
+        apply(view)
+        if (view.framesReady) self.loadRecentFrames(view, seq)
+      }
+      if (search && typeof search.then === 'function') search.then(fromSearch, hide)
+      else fromSearch(search)
+    }
+    if (listed && typeof listed.then === 'function') listed.then(fromPage, hide)
+    else fromPage(listed)
+  },
+  loadRecentFrames: function (view, seq) {
+    var page = this
+    var rows = (view.rows || []).map(function (row) { return { id: row.id, view: row.view } })
+    function alive() { return page._recentSeq === seq && page.data.recent }
+    require('../../utils/frame-loader').load(rows, function (id, path) {
+      var recent = page.data.recent
+      if (!recent || !recent.rows) return
+      var index = -1
+      recent.rows.forEach(function (row, i) { if (row.id === id) index = i })
+      if (index < 0) return
+      var update = {}
+      update['recent.rows[' + index + '].src'] = path
+      page.setData(update)
+    }, alive)
+  },
+  recentRow: function (event) {
+    var rows = (this.data.recent && this.data.recent.rows) || []
+    var index = Number(event.currentTarget.dataset.row)
+    var row = rows[index]
+    return row ? { row: row, r: index } : null
+  },
+  toggleRecentRow: function (event) {
+    var found = this.recentRow(event)
+    if (!found) return
+    var update = {}
+    update['recent.rows[' + found.r + '].expanded'] = !found.row.expanded
+    this.setData(update)
+  },
+  openRecentFrame: function (event) {
+    var found = this.recentRow(event)
+    if (!found) return
+    var row = found.row
+    if (row.clear && row.src) {
+      this.setData({ zoomSrc: row.src })
+      return
+    }
+    if (row.blur) {
+      var page = this
+      wx.showModal({
+        title: '模糊预览',
+        content: '图片已在服务端打码，开通会员后可查看清晰截图并放大。',
+        cancelText: '知道了',
+        confirmText: '开通会员',
+        confirmColor: '#1D4E9E',
+        success: function (res) { if (res && res.confirm) page.buyRecentMember() }
+      })
+    }
+  },
+  closeRecentZoom: function () { this.setData({ zoomSrc: '' }) },
+  buyRecentMember: function () {
+    wx.navigateTo({ url: '/pages/pay/index?product=membership_regular' + (this.data.recent && this.data.recent.name ? '&name=' + encodeURIComponent(this.data.recent.name) : '') })
+  },
+  openRecent: function () {
+    var recent = this.data.recent
+    if (!recent || !recent.name) return
+    var url = '/pages/report/index?name=' + encodeURIComponent(recent.name)
+    if (recent.queryId) url += '&id=' + encodeURIComponent(recent.queryId)
+    wx.navigateTo({ url: url })
   },
   openExample: function (e) {
     var name = e.currentTarget.dataset.name

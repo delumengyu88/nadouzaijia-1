@@ -20,9 +20,37 @@ global.getApp = function () { return app }
 var api = require('../miniprogram/api')
 var state = require('../miniprogram/api/state')
 function drain() { return new Promise(function (resolve) { setImmediate(resolve) }) }
+function fulfillBackground(opt) {
+  var url = opt.url || ''
+  if (url.indexOf('/api/v1/app/home') !== -1) {
+    opt.success({ statusCode: 200, data: { platformTotal: null, examples: [], announcements: [] } })
+    return true
+  }
+  if (url.indexOf('/api/v1/queries') !== -1) {
+    opt.success({ statusCode: 200, data: { items: [], total: 0 } })
+    return true
+  }
+  if (url.indexOf('/api/v1/programs/search') !== -1) {
+    opt.success({ statusCode: 200, data: { outcome: 'miss', records: [] } })
+    return true
+  }
+  return false
+}
+function takeRequest(part) {
+  var idx = -1
+  requests.forEach(function (opt, i) {
+    if (idx < 0 && String(opt.url).indexOf(part) !== -1) idx = i
+  })
+  assert(idx >= 0, 'missing request ' + part)
+  return requests.splice(idx, 1)[0]
+}
 function dropIdentity() {
+
   for (var i = requests.length - 1; i >= 0; i--) {
-    if (requests[i].url.indexOf('/auth/me') !== -1) requests.splice(i, 1)
+    var url = requests[i].url
+    if (url.indexOf('/auth/me') !== -1 || url.indexOf('/api/v1/queries') !== -1 || url.indexOf('/api/v1/programs/search') !== -1 || url.indexOf('/api/v1/app/home') !== -1) {
+      requests.splice(i, 1)
+    }
   }
 }
 function page(name) {
@@ -37,8 +65,7 @@ function takeLoginRequest() {
   // Home loads public content without a session. That request is not the login call.
   while (requests.length && requests[0].url.indexOf('/api/v1/auth/wechat/login') === -1) {
     var extra = requests.shift()
-    assert(extra.url.indexOf('/api/v1/app/home') !== -1, 'unexpected request ' + extra.url)
-    extra.success({ statusCode: 200, data: { platformTotal: null, examples: [], announcements: [] } })
+    assert(fulfillBackground(extra), 'unexpected request ' + extra.url)
   }
   return requests.shift()
 }
@@ -57,9 +84,16 @@ function success(id) {
     requests.forEach(function (opt) {
       if (opt.url.indexOf('/api/v1/invite-codes/state') !== -1) {
         opt.success({ statusCode: 200, data: { guest: false, bound: false, bindText: '兑换邀请码' } })
+      } else {
+        fulfillBackground(opt)
       }
     })
-    requests = requests.filter(function (opt) { return opt.url.indexOf('/api/v1/invite-codes/state') === -1 })
+    requests = requests.filter(function (opt) {
+      return opt.url.indexOf('/api/v1/invite-codes/state') === -1 &&
+        opt.url.indexOf('/api/v1/app/home') === -1 &&
+        opt.url.indexOf('/api/v1/queries') === -1 &&
+        opt.url.indexOf('/api/v1/programs/search') === -1
+    })
     return drain()
   })
 }
@@ -108,7 +142,7 @@ async function main() {
   assert.strictEqual(require('../miniprogram/api/state').token(), 'test-token-member')
   dropIdentity()
   var search = require('../miniprogram/api/http').searchProgram('测试节目')
-  var req = requests.shift()
+  var req = takeRequest('/api/v1/programs/search')
   assert.strictEqual(req.header.Authorization, 'Bearer test-token-member')
   assert(!req.header['X-User-Id'])
   req.success({ statusCode: 401, data: {} })
@@ -116,11 +150,12 @@ async function main() {
   assert.strictEqual(state.token(), '')
   assert.strictEqual(api.accountKind(), 'guest')
   var pending = api.login(); logins.shift().success({ code: 'bad-code' }); await drain()
-  requests.shift().success({ statusCode: 503, data: {} })
+  takeRequest('/api/v1/auth/wechat/login').success({ statusCode: 503, data: {} })
   await assert.rejects(pending)
   assert.strictEqual(api.profile().guest, true)
+  var pendingCount = requests.length
   pending = api.login(); logins.shift().success({}); await assert.rejects(pending)
-  assert.strictEqual(requests.length, 0, 'empty wx code never reaches backend')
+  assert.strictEqual(requests.length, pendingCount, 'empty wx code never reaches backend')
   state.setSession({ token: 'expired', expires_at: new Date(Date.now() - 1000).toISOString(), user: { id: 'old' } })
   assert.strictEqual(state.token(), '')
   assert.strictEqual(api.accountKind(), 'guest')

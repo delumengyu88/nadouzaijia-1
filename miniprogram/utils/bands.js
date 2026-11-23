@@ -103,4 +103,58 @@ function findRow(view, id) {
   return found
 }
 
-module.exports = { timeline: timeline, findRow: findRow, LABELS: LABELS, ORDER: ORDER }
+function pickRecentHit(rows) {
+  if (!rows || !rows.length || !rows[0] || !rows[0].id) return null
+  var queryId = rows[0].id
+  for (var i = 0; i < rows.length; i += 1) {
+    var row = rows[i]
+    if (!row || row.id !== queryId) break
+    if (row.badgeCls === 'ok' && row.name) return { id: row.id, name: row.name }
+  }
+  return null
+}
+
+// 首页「最近查询」：只展示最近一次查询里当前用户已经能看的记录，最多 3 条。
+// 锁定档和 30 天内一律不进这一块。有分档数据时走时间轴的 open 档；旧服务端没有
+// bands 时，只保留带明确档位、且不是 lt_30 的未锁定记录。没有可展示的记录则返回 null。
+function homePreview(search, limit) {
+  var max = typeof limit === 'number' && limit > 0 ? limit : 3
+  if (!search || search.example || search.publicExample) return null
+  if (search.outcome !== 'hit' && search.outcome !== 'recent_only') return null
+  var rows = []
+  var total = 0
+  var view = timeline(search)
+  if (view) {
+    view.bands.forEach(function (band) {
+      if (!band.open || band.key === 'lt_30') return
+      total += band.count
+      band.rows.forEach(function (row) { rows.push(row) })
+    })
+  } else {
+    (search.records || []).forEach(function (rec) {
+      if (!rec || rec.locked || rec.summary_only) return
+      if (!rec.age_bucket || rec.age_bucket === 'lt_30' || rec.age_bucket === 'unknown') return
+      rows.push(rowOf(rec, rows.length))
+    })
+    total = rows.length
+  }
+  if (!total || !rows.length) return null
+  return {
+    name: search.program_name || '',
+    count: total,
+    rows: rows.slice(0, max).map(function (row) {
+      return Object.assign({}, row, { expanded: true })
+    }),
+    framesReady: !!(view && view.framesReady),
+    blur: rows.slice(0, max).some(function (row) { return row.blur })
+  }
+}
+
+module.exports = {
+  timeline: timeline,
+  findRow: findRow,
+  pickRecentHit: pickRecentHit,
+  homePreview: homePreview,
+  LABELS: LABELS,
+  ORDER: ORDER
+}

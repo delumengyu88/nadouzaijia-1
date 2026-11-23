@@ -23,10 +23,41 @@
     <view class="btn" bindtap="start">开始查询</view>
   </view>
   <view class="guide">
-    <view class="guide-item"><text class="guide-no">1</text><text class="guide-text">检索全平台播出/命中记录</text></view>
-    <view class="guide-item"><text class="guide-no">2</text><text class="guide-text">按时间分档查看</text></view>
-    <view class="guide-item"><text class="guide-no">3</text><text class="guide-text">会员看更多</text></view>
-    <view class="guide-item"><text class="guide-no">4</text><text class="guide-text">可下载报告</text></view>
+    <text class="guide-tag">全网检索</text>
+    <text class="guide-tag">分档查看</text>
+    <text class="guide-tag">会员多看</text>
+    <text class="guide-tag">下载报告</text>
+  </view>
+  <view class="recent" wx:if="{{recent}}">
+    <view class="recent-head">
+      <text class="recent-title">最近查询 · {{recent.name}} · 已可看 {{recent.count}} 条</text>
+      <text class="recent-all" bindtap="openRecent">查看全部 ›</text>
+    </view>
+    <view class="recent-card">
+      <view class="tl-rec" wx:for="{{recent.rows}}" wx:for-item="row" wx:for-index="ri" wx:key="id">
+        <view class="tl-rec-top" data-row="{{ri}}" bindtap="toggleRecentRow">
+          <text class="tl-platform">{{row.platform}}<text class="tl-subtype" wx:if="{{row.sub}}"> {{row.sub}}</text></text>
+          <text class="tl-meta" wx:if="{{row.expanded}}">{{row.network}}</text>
+          <text class="tl-meta" wx:else>{{row.network}}{{row.network && row.frames ? ' · ' : ''}}{{row.frames}}{{row.date ? ' · ' + row.date : ''}}</text>
+        </view>
+        <block wx:if="{{row.expanded}}">
+          <view class="tl-rec-sub"><text>{{row.frames}}</text><text>{{row.date}}</text></view>
+          <view class="tl-shots">
+            <view class="tl-shot {{row.blur ? 'blur' : ''}}" data-row="{{ri}}" bindtap="openRecentFrame">
+              <image wx:if="{{row.src}}" class="tl-img" src="{{row.src}}" mode="aspectFill" />
+              <view wx:else class="tl-ph"></view>
+              <text class="tl-wm" wx:if="{{!row.src}}">那豆在架</text>
+            </view>
+            <view class="tl-times">
+              <view class="tl-times-label">命中时间点</view>
+              <view class="tl-time" wx:for="{{row.times}}" wx:for-item="time" wx:key="*this">{{time}}</view>
+            </view>
+          </view>
+        </block>
+      </view>
+      <view class="tl-note" wx:if="{{recent.blur}}">模糊预览 · <text class="tl-link" bindtap="buyRecentMember">开通会员看清晰图 ›</text></view>
+      <view class="tl-note" wx:elif="{{recent.framesReady}}">清晰截图 · 点击图片放大</view>
+    </view>
   </view>
   <block wx:if="{{examples.length || examplesError}}">
   <view class="sec-head">
@@ -68,6 +99,10 @@
     <view class="btn" bindtap="openDone">去查看</view>
   </view>
 </view>
+</view>
+<view class="tl-zoom" wx:if="{{zoomSrc}}" bindtap="closeRecentZoom">
+  <image class="tl-zoom-img" src="{{zoomSrc}}" mode="aspectFit" />
+  <view class="tl-zoom-close">点击任意处关闭</view>
 </view>
 <include src="../../components/launch-poster/view.wxml" />
 <privacy-popup />
