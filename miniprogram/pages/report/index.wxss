@@ -30,6 +30,7 @@
 .tl-card { flex: 1; min-width: 0; background: #fff; border-radius: 20rpx; padding: 22rpx 24rpx; margin-bottom: 20rpx; border: 2rpx solid #e3e8ef; }
 .tl-card.open { border-color: #1D4E9E; }
 .tl-head { display: flex; align-items: center; justify-content: space-between; min-height: 56rpx; }
+.tl-chevron { flex-shrink: 0; margin-left: 12rpx; color: #8b95a3; font-size: 28rpx; line-height: 1; }
 .tl-title { flex: 1; min-width: 0; font-size: 30rpx; font-weight: 600; color: #1c2430; }
 .tl-lock { margin-right: 8rpx; font-size: 26rpx; }
 .tl-state { flex-shrink: 0; margin-left: 16rpx; font-size: 24rpx; color: #1D4E9E; }

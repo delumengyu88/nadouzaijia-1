@@ -45,17 +45,20 @@
   </view>
   <view class="tline" wx:if="{{useTimeline}}">
     <view class="tl-band" wx:for="{{timeline.bands}}" wx:for-item="band" wx:for-index="bi" wx:key="key">
-      <view class="tl-axis"><view class="tl-node {{band.open && !band.empty ? 'on' : ''}}"></view></view>
-      <view class="tl-card {{band.open && !band.empty ? 'open' : ''}}">
+      <view class="tl-axis"><view class="tl-node {{band.expanded ? 'on' : ''}}"></view></view>
+      <view class="tl-card {{band.expanded ? 'open' : ''}} {{band.foldable ? 'foldable' : ''}}">
+        <view class="tl-summary" data-index="{{bi}}" bindtap="toggleBand">
         <view class="tl-head">
           <view class="tl-title"><text wx:if="{{band.locked}}" class="tl-lock">🔒</text>{{band.title}}</view>
           <text class="tl-state" wx:if="{{band.open && !band.empty}}">{{band.status}}</text>
-          <view class="tl-buy" wx:elif="{{band.locked && !band.empty && band.buyText}}" data-index="{{bi}}" bindtap="unlockBand">{{band.buyText}}</view>
-          <view class="tl-buy" wx:elif="{{band.evidence && !band.empty}}" bindtap="evidence">去委托取证</view>
+          <view class="tl-buy" wx:elif="{{band.locked && !band.empty && band.buyText}}" data-index="{{bi}}" catchtap="unlockBand">{{band.buyText}}</view>
+          <view class="tl-buy" wx:elif="{{band.evidence && !band.empty}}" catchtap="evidence">去委托取证</view>
+          <text class="tl-chevron" wx:if="{{band.foldable}}">{{band.expanded ? '∧' : '∨'}}</text>
         </view>
         <view class="tl-hint" wx:if="{{band.hint && !band.empty}}">{{band.hint}}</view>
         <view class="tl-hint" wx:if="{{band.empty}}">暂无记录</view>
-        <block wx:if="{{band.open && !band.empty}}">
+        </view>
+        <block wx:if="{{band.expanded && band.open && !band.empty}}">
           <view class="tl-rec" wx:for="{{band.rows}}" wx:for-item="row" wx:for-index="ri" wx:key="id">
             <view class="tl-rec-top" data-band="{{bi}}" data-row="{{ri}}" bindtap="toggleRow">
               <text class="tl-platform">{{row.platform}}<text class="tl-subtype" wx:if="{{row.sub}}"> {{row.sub}}</text></text>

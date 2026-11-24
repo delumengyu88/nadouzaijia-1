@@ -73,7 +73,9 @@ function timeline(search) {
       product: locked && offer ? offer.product : '',
       buyText: locked && offer && offer.price_text ? offer.price_text + ' 解锁' : '',
       purchasable: !!(locked && offer && offer.purchasable),
-      hint: locked ? (src.upgrade_hint || '') : ''
+      hint: locked ? (src.upgrade_hint || '') : '',
+      foldable: src.state === 'open' && count > 0,
+      expanded: false
     }
   }).filter(Boolean)
   var platforms = search.platform_count > 0 ? search.platform_count : distinctPlatforms(records)

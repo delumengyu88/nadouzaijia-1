@@ -71,7 +71,7 @@ class MemberCopy {
     if (tier === 'vip') return 'VIP 至 ' + until
     if (tier === 'regular') return '普通会员 至 ' + until
     if (tier === 'guest') return '未登录'
-    return '免费 · 可看 180 天以上低清记录'
+    return '免费 · 可看 180 天以上记录'
   }
 
   static screenUsage(layout) {
@@ -110,7 +110,7 @@ MemberCopy.REGULAR_PERKS = [
 ]
 
 MemberCopy.FREE_PERKS = [
-  { ok: true, text: '180 天以上记录（低清）' },
+  { ok: true, text: '180 天以上记录' },
   { ok: false, text: '高清截图 · 仅会员' },
   { ok: false, text: '下载 · 仅会员' }
 ]

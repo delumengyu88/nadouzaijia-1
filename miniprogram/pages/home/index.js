@@ -6,7 +6,7 @@ var httpApi = require('../../api/http')
 var seenAnnounce = Object.create(null)
 var MOCK_ANNOUNCE = {
   title: '公告',
-  body: '每月 2 日和 16 日更新片单索引。免费用户可看 ≥180 天低清记录。',
+  body: '每月 2 日和 16 日更新片单索引。免费用户可看 ≥180 天记录。',
   buttonText: '我知道了'
 }
 

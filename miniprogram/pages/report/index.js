@@ -200,9 +200,13 @@ Page(require('../../api/splash').page({
     var revision = state.sessionRevision()
     var seq = this._searchSeq
     var rows = []
-    timeline.bands.forEach(function (band) {
-      band.rows.forEach(function (row) { rows.push({ id: row.id, view: row.view }) })
+    ;(timeline && timeline.bands || []).forEach(function (band) {
+      if (!band.expanded) return
+      band.rows.forEach(function (row) {
+        if (!row.src) rows.push({ id: row.id, view: row.view })
+      })
     })
+    if (!rows.length) return
     function alive() {
       return !page.disposed && seq === page._searchSeq && revision === state.sessionRevision() && page.data.useTimeline
     }
@@ -213,6 +217,17 @@ Page(require('../../api/splash').page({
       update['timeline.bands[' + found.b + '].rows[' + found.r + '].src'] = path
       page.setData(update)
     }, alive)
+  },
+  toggleBand: function (event) {
+    if (this.data.phase !== 'ready' || !this.data.useTimeline) return
+    var index = Number(event.currentTarget.dataset.index)
+    var band = ((this.data.timeline && this.data.timeline.bands) || [])[index]
+    if (!band || !band.open || band.empty) return
+    var expanded = !band.expanded
+    var update = {}
+    update['timeline.bands[' + index + '].expanded'] = expanded
+    this.setData(update)
+    if (expanded && this.data.timeline.framesReady) this.loadFrames(this.data.timeline)
   },
   timelineRow: function (event) {
     var data = event.currentTarget.dataset
