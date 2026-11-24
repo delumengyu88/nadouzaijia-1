@@ -28,6 +28,7 @@ from nadou.payments.config import (
     live_virtual_product_id,
     user_may_use_test_tier,
 )
+from nadou.payments.notify_io import notify_body
 from nadou.payments.service import _view
 from nadou.payments.summary import require_context_product
 from nadou.payments.unlock import is_unlock, unlock_offer
@@ -77,6 +78,9 @@ def checked_payment(order, virtual, remote):
         raise HTTPException(409, "虚拟支付交易信息不匹配")
 
 
+PAID_STATUSES = (2, 3, 4)
+
+
 def lock(session, order, virtual):
     OrderLookup.lock_membership(session, order)
     session.refresh(virtual)
@@ -92,6 +96,31 @@ def grant(session, order, virtual, remote, now, notifier, writer):
     order.paid_at = order.paid_at or now
     order.status = "已支付"
     EntitlementIssuer(session, writer or OrderGrantWriter(), notifier, now).issue(order)
+
+
+def settle(session, order, virtual, remote, now, notifier, writer):
+    """Grant from a verified WeChat order query. Shared by /sync and the reconciler.
+
+    Call without holding locks (``remote`` is fetched first); this takes the owner lock.
+    """
+    lock(session, order, virtual)
+    checked_payment(order, virtual, remote)
+    # 2 = paid, awaiting delivery; 3/4 = WeChat is delivering / auto-marked delivered
+    # (about a minute after payment). All three are paid. grant() is idempotent.
+    if remote.get("status") in PAID_STATUSES:
+        grant(session, order, virtual, remote, now, notifier, writer)
+    if order.status == "已发放" and not virtual.delivery_confirmed:
+        # Persist the entitlement (and release the lock) before calling WeChat.
+        session.commit()
+        if remote.get("status") == 2:
+            xpay.provider_call(
+                xpay.configured(virtual.env),
+                "/xpay/notify_provide_goods",
+                {"order_id": order.order_number, "env": virtual.env},
+            )
+            virtual.delivery_confirmed = True
+        elif remote.get("status") == 4:
+            virtual.delivery_confirmed = True
 
 
 def handle_delivery(session, order, virtual, event, remote, clock, notifier, writer):
@@ -110,7 +139,7 @@ def handle_delivery(session, order, virtual, event, remote, clock, notifier, wri
     checked_payment(order, virtual, remote)
     if order.status == "已退款":
         return
-    if remote.get("status") not in (2, 3, 4):
+    if remote.get("status") not in PAID_STATUSES:
         raise HTTPException(409, "支付状态待核实")
     grant(session, order, virtual, remote, clock(), notifier, writer)
     if order.status != "已发放":
@@ -246,22 +275,9 @@ def register_virtual_orders(app: FastAPI, get_session, payer, clock, notifier, w
         if order.status == "已退款" or virtual.delivery_confirmed:
             return _private(_view(order, product_by_code(order.product)))
         remote = xpay.query_order(virtual.env, user.wechat_openid, number)
-        lock(session, order, virtual)
-        checked_payment(order, virtual, remote)
-        if remote.get("status") == 2:
-            grant(session, order, virtual, remote, clock(), notifier, writer)
-        if order.status == "已发放" and not virtual.delivery_confirmed:
-            # Persist the entitlement before acknowledging delivery to WeChat.
-            session.commit()
-            if remote.get("status") == 2:
-                xpay.provider_call(
-                    xpay.configured(virtual.env),
-                    "/xpay/notify_provide_goods",
-                    {"order_id": number, "env": virtual.env},
-                )
-                virtual.delivery_confirmed = True
-            elif remote.get("status") == 4:
-                virtual.delivery_confirmed = True
+        settle(session, order, virtual, remote, clock(), notifier, writer)
+        # Release the owner-row lock here, not in dependency teardown after the response.
+        session.commit()
         return _private(_view(order, product_by_code(order.product)))
 
     @app.get("/api/v1/xpay/notify")
@@ -270,13 +286,14 @@ def register_virtual_orders(app: FastAPI, get_session, payer, clock, notifier, w
         return PlainTextResponse(request.query_params.get("echostr", ""))
 
     @app.post("/api/v1/xpay/notify")
-    async def notify(request: Request, session: Session = Depends(get_session, scope="function")):
-        body = bytearray()
-        async for part in request.stream():
-            if len(body) + len(part) > 65536:
-                raise HTTPException(413, "通知内容过大")
-            body.extend(part)
-        event = xpay_push.open_event(request.query_params, bytes(body))
+    def notify(
+        request: Request,
+        body: bytes = Depends(notify_body),
+        session: Session = Depends(get_session, scope="function"),
+    ):
+        # Sync HTTP and row-lock waits MUST stay off the ASGI event loop. A
+        # competing request needs that loop to schedule its commit/lock release.
+        event = xpay_push.open_event(request.query_params, body)
         kind = event.get("Event")
         if kind not in ("xpay_goods_deliver_notify", "xpay_refund_notify"):
             raise HTTPException(400, "不支持的通知类型")

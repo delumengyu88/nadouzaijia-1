@@ -166,7 +166,9 @@ class EvidenceUserLock:
     @staticmethod
     def hold(session: Session, user_id: str) -> None:
         if session.get_bind().dialect.name != "sqlite":
-            session.execute(select(User.id).where(User.id == user_id).with_for_update())
+            from nadou.payments.notify_io import bounded_row_lock
+
+            bounded_row_lock(session, select(User.id).where(User.id == user_id).with_for_update())
             return
         session.commit()
         session.execute(text("PRAGMA busy_timeout = 8000"))
@@ -396,13 +398,13 @@ class UserEvidence:
             return JSONResponse(status_code=exc.status_code, content=content)
 
         @app.post("/api/v1/evidence-requests", status_code=201)
-        async def submit_user_evidence(
-            request: Request,
+        def submit_user_evidence(
             background: BackgroundTasks,
             user: User = Depends(current_user),
             session: Session = Depends(get_session, scope="function"),
+            fields: dict = Depends(EvidenceUserBody.read),
         ):
-            fields = await EvidenceUserBody.read(request)
+            # Sync worker: the user-row lock wait must not block the event loop.
             row = EvidenceUserBook(session, clock()).submit(user, fields)
             # Commit before the notice. DingTalk must not keep the user-row lock,
             # and a commit failure must not announce a ticket that was not stored.

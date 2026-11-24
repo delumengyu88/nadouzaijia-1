@@ -25,6 +25,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -138,11 +139,12 @@ def register_trial_tools(app: FastAPI, get_session, clock) -> None:
         # field (including a forged experience-build flag) is consulted.
         if request.method != "POST" or not trial_tools_enabled():
             raise HTTPException(status_code=404, detail=_MISSING)
-        user = _user_or_missing(session, authorization, clock())
+        # DB work runs in the threadpool so a row-lock wait cannot stall the event loop.
+        user = await run_in_threadpool(_user_or_missing, session, authorization, clock())
         if not user_may_use_test_tier(user.id):
             raise HTTPException(status_code=404, detail=_MISSING)
         tier = await _tier_name(request)
-        return TrialTierSwitch().apply(session, user, tier, clock())
+        return await run_in_threadpool(TrialTierSwitch().apply, session, user, tier, clock())
 
 
 def _user_or_missing(session: Session, authorization: str | None, now: datetime) -> User:

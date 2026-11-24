@@ -22,7 +22,11 @@ class OrderLookup:
         if session.get_bind().dialect.name == "sqlite":
             session.execute(update(User).where(User.id == order.user_id).values(id=User.id))
         else:
-            session.execute(select(User.id).where(User.id == order.user_id).with_for_update())
+            from nadou.payments.notify_io import bounded_row_lock
+
+            bounded_row_lock(
+                session, select(User.id).where(User.id == order.user_id).with_for_update()
+            )
         session.refresh(order)
 
     @staticmethod

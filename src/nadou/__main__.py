@@ -56,6 +56,10 @@ class NadouCommand:
             from nadou.query_retention import run
 
             raise SystemExit(run(args[1:]))
+        if args[:1] == ["xpay-reconcile"]:
+            from nadou.payments.xpay_reconcile import run
+
+            raise SystemExit(run(args[1:]))
         if args[:1] == ["public-example-permit"]:
             from nadou.public_example_permit import run
 
