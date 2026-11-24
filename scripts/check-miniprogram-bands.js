@@ -168,6 +168,11 @@ async function main() {
   assert.strictEqual(report.data.zoomSrc, undefined)
   assert.strictEqual(modals[modals.length - 1].title, '模糊预览')
 
+  // 「开通会员」进入会员中心（tabBar 页，不能带节目参数）。
+  redirects = []
+  report.buyTimelineMember()
+  assert.strictEqual(redirects[0], '/pages/member/index')
+
   // 单档解锁：可购 → 确认页；未上架 → 提示，不跳转。
   redirects = []
   report.unlockBand({ currentTarget: { dataset: { index: 1 } } })
