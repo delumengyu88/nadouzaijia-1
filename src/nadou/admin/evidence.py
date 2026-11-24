@@ -137,6 +137,15 @@ class EvidenceView:
         }
 
     @staticmethod
+    def shown_phone(
+        request: EvidenceRequest, account_phone: str | None, *, reveal_phone: bool
+    ) -> str | None:
+        # Prefer the number the member typed on the form. Fall back to the
+        # account phone for staff-created rows that never stored one.
+        phone = request.contact_phone or account_phone
+        return phone if reveal_phone else PhoneMask.apply(phone)
+
+    @staticmethod
     def detail(
         request: EvidenceRequest,
         notes: list[EvidenceNote],
@@ -147,7 +156,7 @@ class EvidenceView:
         reveal_phone: bool,
     ) -> dict:
         body = EvidenceView.summary(request, overdue=overdue, vip=vip)
-        shown = phone if reveal_phone else PhoneMask.apply(phone)
+        shown = EvidenceView.shown_phone(request, phone, reveal_phone=reveal_phone)
         body["phone"] = shown
         body.update(
             {
@@ -558,8 +567,9 @@ class EvidenceList:
                 vip=row.user_id in vip_ids,
             )
             body["membership"] = membership
-            phone = phones.get(row.user_id)
-            body["phone"] = phone if reveal_phone else PhoneMask.apply(phone)
+            body["phone"] = EvidenceView.shown_phone(
+                row, phones.get(row.user_id), reveal_phone=reveal_phone
+            )
             listed.append(body)
         return listed
 

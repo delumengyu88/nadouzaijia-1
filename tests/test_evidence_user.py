@@ -610,20 +610,66 @@ def test_admin_list_shows_the_member_request(workbench):
     assert found[0]["request_type"] == "近期"
     assert found[0]["status"] == "已提交"
     assert found[0]["platform_label"] is None
-    admin_text = call(
+    assert found[0]["phone"] == "13900005555"
+    admin = call(
         workbench,
         "GET",
         f"/api/v1/admin/evidence-requests/{created.json()['id']}",
         workbench.admin_token,
-    ).text
-    support_text = call(
+    ).json()
+    support = call(
         workbench,
         "GET",
         f"/api/v1/admin/evidence-requests/{created.json()['id']}",
         workbench.support_token,
-    ).text
-    assert "13900005555" not in admin_text
-    assert "13900005555" not in support_text
+    ).json()
+    # The form number, not the account number, is what staff should call.
+    assert admin["phone"] == "13900005555"
+    assert support["phone"] == "*******5555"
+    assert "13800004444" not in admin["phone"]
+
+
+def test_workbench_shows_contact_phone_when_account_has_none(workbench):
+    # WeChat login stores no users.phone. The form number is the only one staff have.
+    _user, headers = login(workbench, None)
+    created = submit(
+        workbench,
+        headers,
+        name="无账号手机",
+        kind="normal",
+        phone="13600007777",
+    )
+    assert created.status_code == 201, created.text
+    listed = call(
+        workbench,
+        "GET",
+        "/api/v1/admin/evidence-requests",
+        workbench.admin_token,
+    ).json()
+    found = [item for item in listed if item["id"] == created.json()["id"]]
+    assert found[0]["phone"] == "13600007777"
+    support_list = call(
+        workbench,
+        "GET",
+        "/api/v1/admin/evidence-requests",
+        workbench.support_token,
+    ).json()
+    support_found = [item for item in support_list if item["id"] == created.json()["id"]]
+    assert support_found[0]["phone"] == "*******7777"
+    admin = call(
+        workbench,
+        "GET",
+        f"/api/v1/admin/evidence-requests/{created.json()['id']}",
+        workbench.admin_token,
+    ).json()
+    support = call(
+        workbench,
+        "GET",
+        f"/api/v1/admin/evidence-requests/{created.json()['id']}",
+        workbench.support_token,
+    ).json()
+    assert admin["phone"] == "13600007777"
+    assert support["phone"] == "*******7777"
 
 
 def test_concurrent_submit_keeps_a_single_open_request(tmp_path, clock, monkeypatch):
