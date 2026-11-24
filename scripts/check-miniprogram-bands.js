@@ -60,8 +60,9 @@ function makePage(rel) {
   page.setData = function (value) {
     var self = this
     Object.keys(value).forEach(function (key) {
-      var match = /^timeline\.bands\[(\d+)\]\.rows\[(\d+)\]\.(\w+)$/.exec(key)
-      if (match) self.data.timeline.bands[Number(match[1])].rows[Number(match[2])][match[3]] = value[key]
+      var match = /^timeline\.bands\[(\d+)\](?:\.rows\[(\d+)\])?\.(\w+)$/.exec(key)
+      if (match && match[2] !== undefined) self.data.timeline.bands[Number(match[1])].rows[Number(match[2])][match[3]] = value[key]
+      else if (match) self.data.timeline.bands[Number(match[1])][match[3]] = value[key]
       else self.data[key] = value[key]
     })
   }
@@ -118,9 +119,15 @@ var tl = bands.timeline(clean)
 assert.strictEqual(tl.line, '共 6 条 · 5 个平台 · 你已看到 2 条')
 assert.deepStrictEqual(tl.bands.map(function (b) { return b.title }), ['180天以上 · 2 条', '90–180天 · 2 条', '30–90天 · 1 条', '30天内 · 1 条'])
 assert.strictEqual(tl.bands[0].open, true)
+assert.strictEqual(tl.bands[0].foldable, true)
+assert.strictEqual(tl.bands[0].expanded, false, 'visible bands start collapsed')
 assert.strictEqual(tl.bands[0].rows.length, 2)
 assert.strictEqual(tl.bands[0].rows[0].expanded, true)
 assert.strictEqual(tl.bands[0].rows[1].expanded, false)
+assert.strictEqual(tl.bands[1].foldable, false)
+assert.strictEqual(tl.bands[2].foldable, false)
+assert.strictEqual(tl.bands[3].foldable, false)
+assert.strictEqual(tl.bands[3].expanded, false)
 assert.strictEqual(tl.bands[0].blur, true)
 assert.strictEqual(tl.bands[1].buyText, '¥19.9 解锁')
 assert.strictEqual(tl.bands[1].purchasable, true)
@@ -159,9 +166,29 @@ async function main() {
   assert.strictEqual(report.data.showOpen, false)
   assert.strictEqual(report.data.header, '共 6 条 · 5 个平台 · 你已看到 2 条')
   assert.strictEqual(report.data.showDownload, true, 'free users can download the report on new servers')
+  assert.strictEqual(report.data.timeline.bands[0].expanded, false)
+  assert.strictEqual(report.data.timeline.bands[0].foldable, true)
   var frameCalls = calls.filter(function (opt) { return /\/frame$/.test(opt.url) })
+  assert.strictEqual(frameCalls.length, 0, 'frames stay unloaded until a band is expanded')
+
+  // 有权限且有记录的档：点卡片展开才加载该档截图；再点收起；无权限/空档/30天内不可展开。
+  report.toggleBand({ currentTarget: { dataset: { index: 1 } } })
+  report.toggleBand({ currentTarget: { dataset: { index: 3 } } })
+  assert.strictEqual(report.data.timeline.bands[1].expanded, false)
+  assert.strictEqual(report.data.timeline.bands[3].expanded, false)
+  report.toggleBand({ currentTarget: { dataset: { index: 0 } } })
+  await drain(); await drain()
+  assert.strictEqual(report.data.timeline.bands[0].expanded, true)
+  frameCalls = calls.filter(function (opt) { return /\/frame$/.test(opt.url) })
   assert.strictEqual(frameCalls.length, 2)
   assert(report.data.timeline.bands[0].rows[0].src.indexOf('wxfile://usr/nadou-frames/r1-blur.jpg') === 0)
+  report.toggleBand({ currentTarget: { dataset: { index: 0 } } })
+  assert.strictEqual(report.data.timeline.bands[0].expanded, false)
+  assert.strictEqual(calls.filter(function (opt) { return /\/frame$/.test(opt.url) }).length, 2, 'collapse does not reload frames')
+  report.toggleBand({ currentTarget: { dataset: { index: 0 } } })
+  await drain(); await drain()
+  assert.strictEqual(report.data.timeline.bands[0].expanded, true)
+  assert.strictEqual(calls.filter(function (opt) { return /\/frame$/.test(opt.url) }).length, 2, 'already-loaded rows are not fetched again')
 
   // 模糊图不能放大，只提示开通会员。
   report.openFrame({ currentTarget: { dataset: { band: 0, row: 0 } } })
@@ -203,6 +230,9 @@ async function main() {
   clear.applySearch(shape.sanitizeSearch(vip), '夏日友人帐', {})
   await drain(); await drain()
   assert.strictEqual(clear.data.showDownload, false, 'no query id → no server report entry')
+  assert.strictEqual(clear.data.timeline.bands[0].expanded, false)
+  clear.toggleBand({ currentTarget: { dataset: { index: 0 } } })
+  await drain(); await drain()
   clear.openFrame({ currentTarget: { dataset: { band: 0, row: 0 } } })
   assert(clear.data.zoomSrc.indexOf('r1-clear.jpg') !== -1)
 
@@ -289,6 +319,10 @@ async function main() {
   var reportWxml = fs.readFileSync(path.join(root, 'pages/report/index.wxml'), 'utf8')
   assert(reportWxml.indexOf('一次看全部') === -1, 'footer must not say 一次看全部')
   assert(reportWxml.indexOf('或 <text class="tl-link" bindtap="buyTimelineMember">{{timeline.memberCta}}</text> · 30天以上全部可看') !== -1, 'footer limits membership to 30天以上')
+  assert(reportWxml.indexOf('bindtap="toggleBand"') !== -1, 'foldable band header toggles open/closed')
+  assert(reportWxml.indexOf('band.expanded && band.open && !band.empty') !== -1, 'records render only after the band is expanded')
+  assert(reportWxml.indexOf('catchtap="unlockBand"') !== -1, 'unlock tap does not also toggle the card')
+  assert(reportWxml.indexOf('catchtap="evidence"') !== -1, 'evidence tap does not also toggle the card')
 
   // 10. 首页说明：四个四字标签同一行。
   var homeWxml = fs.readFileSync(path.join(root, 'pages/home/index.wxml'), 'utf8')

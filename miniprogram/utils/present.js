@@ -37,7 +37,7 @@ function toRow(rec, programName, mock, publicExample) {
   var checked = beijingTime(rec.checked_at)
   var badge = ''
   if (!(publicExample && (rec.access == null || rec.access === ''))) {
-    badge = extra.low || rec.access === 'lowres' ? '低清' : (mock || imageUrl(rec.hd_url) ? '高清' : '')
+    badge = extra.low || rec.access === 'lowres' ? '' : (mock || imageUrl(rec.hd_url) ? '高清' : '')
   }
   return {
     id: rec.record_id,

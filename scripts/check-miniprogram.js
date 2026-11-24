@@ -515,7 +515,7 @@ function checkMemberRules() {
   expect(!plans[2].selectable && plans[2].name === '免费用户' && plans[2].priceText === '免费', 'free card has no purchase price')
   expect(texts(plans[0]) === 'y:30–89 天记录|y:90 天以上记录|y:高清截图与下载', 'vip perk rows')
   expect(texts(plans[1]) === 'n:30–89 天记录 · 仅 VIP|y:90 天以上记录|y:高清截图与下载', 'regular perk rows')
-  expect(texts(plans[2]) === 'y:180 天以上记录（低清）|n:高清截图 · 仅会员|n:下载 · 仅会员', 'free perk rows')
+  expect(texts(plans[2]) === 'y:180 天以上记录|n:高清截图 · 仅会员|n:下载 · 仅会员', 'free perk rows')
   expect(member.freeCornerLabel('free') === '当前' && member.freeCornerLabel('vip') === '免费' && member.freeCornerLabel('regular') === '免费' && member.freeCornerLabel('guest') === '免费', 'free corner is 当前 only for the free tier')
   plans.forEach(function (plan) {
     expect(plan.perks.length === 3, 'three perk rows')
@@ -528,7 +528,7 @@ function checkMemberRules() {
   expect(member.confirmLabel(plans[0]) === '确认开通', 'vip confirm label')
   expect(member.confirmLabel(plans[1]) === '确认开通', 'regular confirm label')
   expect(member.statusLine('guest') === '未登录', 'guest status')
-  expect(member.statusLine('free') === '免费 · 可看 180 天以上低清记录', 'free status names the low-res window')
+  expect(member.statusLine('free') === '免费 · 可看 180 天以上记录', 'free status names the 180-day window')
   expect(member.statusLine('vip', '2026-12-18') === 'VIP 至 2026-12-18', 'vip status')
   expect(member.statusLine('regular', '2026-12-18') === '普通会员 至 2026-12-18', 'regular status')
   var fit = member.screenUsage()
@@ -555,7 +555,7 @@ function checkMemberRules() {
   var viewerXml = fs.readFileSync(path.join(root, 'pages/viewer/index.wxml'), 'utf8')
   expect(viewerXml.indexOf('wx:if="{{downloadEntry}}"') !== -1, 'download entry is conditional')
   expect(viewerXml.indexOf('{{blockedReason}}') !== -1, 'blocked download writes the reason')
-  expect(viewerXml.indexOf('当前为低清水印图，开通会员可看高清</view>') !== -1, 'free screenshot warning has no period')
+  expect(viewerXml.indexOf('当前为水印图，开通会员可看高清</view>') !== -1, 'free screenshot warning has no period')
   expect(viewerXml.indexOf('开通会员可看高清。') === -1 && viewerXml.indexOf('不可放大到高清') === -1, 'old low-res warning is gone')
   var freeOffer = member.downloadOffer({ canSave: false, low: true, tier: 'free' })
   expect(!freeOffer.downloadEntry && freeOffer.blockedReason === '开通会员后下载', 'free user has no download entry')
@@ -570,9 +570,24 @@ function checkMemberRules() {
   expect(!program.downloadEntry && program.blockedReason === '', 'program grant is not a download entry')
 }
 
+function checkNoLowresCopy() {
+  function walk(dir) {
+    fs.readdirSync(dir).forEach(function (name) {
+      if (name === 'node_modules') return
+      var full = path.join(dir, name)
+      if (fs.statSync(full).isDirectory()) { walk(full); return }
+      if (!/\.(js|wxml|wxss|json)$/.test(name)) return
+      var text = fs.readFileSync(full, 'utf8')
+      expect(text.indexOf('低清') === -1, 'no user-facing 低清 in ' + path.relative(root, full))
+    })
+  }
+  walk(root)
+}
+
 async function main() {
 try {
   checkMemberRules()
+  checkNoLowresCopy()
 
   var titlesUtil = require(path.join(root, 'utils/text'))
   var approvedWords = require(path.join(root, 'stop-words.json'))
@@ -745,7 +760,7 @@ try {
   cover('P04-nomember')
   cover('P18-empty')
   var memberPage = open('pages/member/index', {}, 'show')
-  expect(memberPage.data.statusLine === '免费 · 可看 180 天以上低清记录', 'free member center')
+  expect(memberPage.data.statusLine === '免费 · 可看 180 天以上记录', 'free member center')
   expect(memberPage.data.plans[2].priceText === '当前' && !memberPage.data.plans[2].selectable, 'free tier shows 当前')
   expect(memberPage.data.selected === 'membership_vip' && memberPage.data.showPay && memberPage.data.payLabel === '确认开通', 'free defaults to vip')
   memberPage.pick({ currentTarget: { dataset: { id: 'free' } } })

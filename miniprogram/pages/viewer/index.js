@@ -70,8 +70,7 @@ Page(require('../../api/splash').page({
         date: beijingTime(checked),
         time: picked && picked.timestamps ? picked.timestamps.join('、') : '',
         low: picked && picked.access === 'lowres',
-        quality: picked && picked.access === 'full' && picked.hd_url ? '高清' :
-          picked && picked.access === 'lowres' ? '低清' : '',
+        quality: picked && picked.access === 'full' && picked.hd_url ? '高清' : '',
         canSave: false,
         programOnly: false,
         loading: false,
@@ -120,7 +119,7 @@ Page(require('../../api/splash').page({
       date: real ? beijingTime(row && row.checked_at) : (extra.date || '') + ' ' + (extra.clock || ''),
       time: real ? (row && row.timestamps || []).join('、') : extra.time || '',
       low: low,
-      quality: low ? '低清' : (!real || (row && imageUrl(row.hd_url)) ? '高清' : ''),
+      quality: low ? '' : (!real || (row && imageUrl(row.hd_url)) ? '高清' : ''),
       canSave: canSave,
       downloadEntry: offer.downloadEntry,
       blockedReason: offer.blockedReason,
