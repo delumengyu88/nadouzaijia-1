@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from nadou.auth import UserSessions
 from nadou.models import User
+from nadou.payments.notify_io import notify_body
 from nadou.payments.service import PayError, PaymentService
 from nadou.payments.summary import membership_options, require_context_product
 from nadou.payments.unlock import unlock_offer
@@ -125,13 +126,17 @@ class PaymentApi:
             session: Session = Depends(get_session, scope="function"),
             payments: PaymentService = Depends(service),
         ):
-            return payments.sync(session, user, order_number)
+            result = payments.sync(session, user, order_number)
+            # Release the owner-row lock here, not in dependency teardown after the response.
+            session.commit()
+            return result
 
         @app.post("/api/v1/pay/wechat/notify")
-        async def wechat_notify(
+        def wechat_notify(
             request: Request,
+            body: bytes = Depends(notify_body),
             session: Session = Depends(get_session, scope="function"),
             payments: PaymentService = Depends(service),
         ):
-            payments.handle_notify(session, await request.body(), request.headers)
+            payments.handle_notify(session, body, request.headers)
             return Response(status_code=204)
