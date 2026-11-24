@@ -264,9 +264,7 @@ Page(require('../../api/splash').page({
   },
   buyTimelineMember: function () {
     if (this.data.phase !== 'ready' || !this.data.useTimeline) return
-    if (require('../../utils/trial').blockPayment()) return
-    var product = (this.data.timeline && this.data.timeline.memberProduct) || 'membership_regular'
-    wx.navigateTo({ url: '/pages/pay/index?product=' + product + '&name=' + encodeURIComponent(this.data.name) })
+    wx.switchTab({ url: '/pages/member/index' })
   },
   imageFailed: function (event) {
     var data = event.currentTarget.dataset
